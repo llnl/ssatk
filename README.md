@@ -166,7 +166,7 @@ demos from a source checkout. CI also publishes the gallery to GitHub Pages.
 The user guide, API reference, benchmarking study and 6-DoF design notes are
 built with Sphinx:
 
-- Hosted: <https://ssapy-toolkit.readthedocs.io>
+- Hosted: <https://ssatk.readthedocs.io>
 - Local build:
 
   ```bash

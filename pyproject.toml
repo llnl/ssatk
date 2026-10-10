@@ -124,7 +124,7 @@ dev = [
 Homepage = "https://github.com/LLNL/ssatk"
 Repository = "https://github.com/LLNL/ssatk"
 Issues = "https://github.com/LLNL/ssatk/issues"
-Documentation = "https://ssapy-toolkit.readthedocs.io/"
+Documentation = "https://ssatk.readthedocs.io/"
 
 [tool.setuptools]
 packages = { find = { where = ["."], include = ["ssatk*", "demos*"] } }
