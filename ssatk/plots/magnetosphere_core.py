@@ -99,18 +99,9 @@ STAR_SPHERE_FACTOR = 50.0
 _CAM_FILL = 1.35
 
 
-_TEXTURE_SEARCH = [
-    "~/earth_texture.jpg",
-    "~/blue_marble.jpg",
-    "~/ssatk/assets/earth_texture.jpg",
-    "~/SSAPy-Toolkit/assets/earth_texture.jpg",   # checkouts made before the repo rename
-    "~/SSAPy/ssapy/data/earth_texture.jpg",
-    "./assets/earth_texture.jpg",
-]
-
-
 EARTH_TEXTURE_URLS = [
-    # NASA Blue Marble, public domain (Earth Observatory)
+    # NASA Blue Marble, public domain (Earth Observatory). Fetched only when a
+    # caller passes allow_download=True; the default texture is packaged.
     "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/"
     "world.topo.bathy.200412.3x5400x2700.jpg",
     "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57752/"
@@ -118,42 +109,63 @@ EARTH_TEXTURE_URLS = [
 ]
 
 
+def _download_earth_texture(timeout=20):
+    """Fetch NASA Blue Marble once into the cache. Returns a Path or None.
 
-
-def _download_earth_texture(timeout=90):
-    """Fetch NASA Blue Marble once into the cache.  Returns a Path or None."""
+    Only reached with ``allow_download=True``.
+    """
     import urllib.request
+    import warnings
+
     dest = _texture_cache_dir() / "earth_texture.jpg"
     if dest.exists() and dest.stat().st_size > 50_000:
         return dest
     for url in EARTH_TEXTURE_URLS:
         try:
-            print(f"  downloading Earth texture: {url.rsplit('/', 1)[-1]} ...", flush=True)
             tmp = dest.with_suffix(".part")
             with urllib.request.urlopen(url, timeout=timeout) as r, open(tmp, "wb") as f:
                 f.write(r.read())
             if tmp.stat().st_size > 50_000:
                 tmp.replace(dest)
-                print(f"  cached -> {dest}", flush=True)
                 return dest
-        except Exception as e:
-            print(f"  texture download failed ({e}); trying next source", flush=True)
+        except Exception as e:  # noqa: BLE001 - try the next mirror
+            warnings.warn(f"Earth texture download failed from {url}: {e}", RuntimeWarning, stacklevel=2)
     return None
 
 
-def _resolve_texture_path(texture_path, allow_download=True):
-    """Turn texture_path (None | 'auto' | path) into a concrete file, if any."""
+def _resolve_texture_path(texture_path, allow_download=False):
+    """Turn texture_path (None | 'auto' | path) into a concrete file, if any.
+
+    ``None``/``"auto"`` resolve to the Earth texture in the installed
+    ``ssatk-data-core`` package (:func:`ssatk.plots._textures.earth_texture_path`),
+    so the result is the same file on every installation, offline included.
+
+    This used to try home-directory and working-directory guesses
+    (``~/earth_texture.jpg``, ``~/SSAPy-Toolkit/assets/...``,
+    ``./assets/earth_texture.jpg``) and then download Blue Marble from NASA on
+    first use. On a machine whose network silently drops traffic that blocked
+    the plot for more than 250 s before falling back, and the texture used
+    depended on which files happened to sit in the user's home or current
+    directory. Pass a path to use a specific image; pass
+    ``allow_download=True`` to fetch NASA Blue Marble into the cache when no
+    packaged texture is installed.
+    """
     if texture_path is False or str(texture_path).lower() in ("none", "off", "flat"):
         return None
     if texture_path is not None and str(texture_path).lower() != "auto":
         p = Path(str(texture_path)).expanduser()
         if p.exists():
             return p
-        print(f"  texture not found at {p}; falling back to auto", flush=True)
-    for cand in _TEXTURE_SEARCH:
-        p = Path(cand).expanduser()
-        if p.exists():
-            return p
+        import warnings
+
+        warnings.warn(f"Earth texture not found at {p}; using the packaged texture",
+                      RuntimeWarning, stacklevel=2)
+    try:
+        from ._textures import earth_texture_path
+
+        return earth_texture_path()
+    except FileNotFoundError:
+        pass
     cached = _texture_cache_dir() / "earth_texture.jpg"
     if cached.exists() and cached.stat().st_size > 50_000:
         return cached
@@ -244,7 +256,7 @@ def _sample_equirect_bilinear(tex, lat_deg, lon_deg, prefilter_to=None):
 
 
 def _build_earth_mesh(texture_path, n_lon=480, n_lat=240, sun_shading=False,
-                      date=None, night_floor=0.30, allow_download=True):
+                      date=None, night_floor=0.30, allow_download=False):
     """
     WGS84 oblate ellipsoid with a real equirectangular texture.
 

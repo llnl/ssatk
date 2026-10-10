@@ -80,8 +80,30 @@ except Exception:
     _pp = None
     _HAS_PPIGRF = False
 
+# geopack (geomagnetics extra) fetches IGRF coefficient files from NOAA over
+# HTTP the first time it is imported, with no timeout, and stores them inside
+# its own installed package. On a network that silently drops traffic that
+# import blocked indefinitely (measured: still blocked after 60 s). Bound every
+# socket operation during the import; offline, geopack then falls back to any
+# coefficient files it already has, and if it cannot load, the T89/T96 paths
+# stay disabled as before.
+_GEOPACK_IMPORT_TIMEOUT_S = 5.0
+
+
+def _import_geopack():
+    import socket
+
+    previous = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(_GEOPACK_IMPORT_TIMEOUT_S)
+    try:
+        from geopack import geopack as gp, t89, t96
+    finally:
+        socket.setdefaulttimeout(previous)
+    return gp, t89, t96
+
+
 try:
-    from geopack import geopack as _gp, t89 as _t89, t96 as _t96
+    _gp, _t89, _t96 = _import_geopack()
     _HAS_GEOPACK = True
 except Exception:
     _HAS_GEOPACK = False
@@ -186,6 +208,7 @@ _OMNI_COLS = dict(doy=1, hour=2, by_gsm=15, bz_gsm=16, density=23, speed=24,
 _OMNI_FILL = dict(by_gsm=999.0, bz_gsm=999.0, density=999.0, speed=9999.0,
                   pressure=99.0, kp=99.0, dst=99999.0)
 _OMNI_URL = "https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_{year}.dat"
+_OMNI_TIMEOUT_S = 20.0
 _OMNI_CACHE = {}
 
 
@@ -774,10 +797,14 @@ def _load_omni_year(year):
     if not fp.exists() or fp.stat().st_size < 1e5:
         try:
             print(f"  downloading OMNI solar-wind record for {year} ...", flush=True)
-            with urllib.request.urlopen(_OMNI_URL.format(year=year), timeout=180) as r:
+            # Per-socket-operation timeout. It was 180 s, which held the plot
+            # for minutes on networks that drop traffic before falling back
+            # to nominal drivers; 20 s still covers slow links.
+            with urllib.request.urlopen(_OMNI_URL.format(year=year), timeout=_OMNI_TIMEOUT_S) as r:
                 fp.write_bytes(r.read())
         except Exception as e:
             print(f"  OMNI download failed ({e})", flush=True)
+            _OMNI_CACHE[year] = None   # don't retry (and wait again) for this year in this session
             return None
     rows = []
     for ln in fp.read_text(errors="replace").splitlines():
