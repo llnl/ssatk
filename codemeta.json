@@ -2,11 +2,11 @@
     "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
     "@type": "SoftwareSourceCode",
     "name": "Space Situational Awareness Toolkit (SSATK)",
-    "description": "SSATK provides higher-level orbital mechanics, plotting, data I/O, coordinate/time conversion, transfer-design, and workflow utilities built on LLNL SSAPy.",
+    "description": "SSATK is a Python toolkit for space situational awareness and astrodynamics: orbit and 6-DoF spacecraft propagation, impulsive and continuous-thrust transfer design, coordinate and time frames, space-environment models, conjunction screening and orbit determination, standard orbit-data formats, and visualization.",
     "codeRepository": "https://github.com/LLNL/ssatk",
     "url": "https://github.com/LLNL/ssatk",
     "license": "https://spdx.org/licenses/BSD-3-Clause",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "programmingLanguage": "Python",
     "creator": {
         "@type": "Person",
@@ -64,6 +64,7 @@
         "astrodynamics",
         "space situational awareness",
         "visualization",
-        "SSAPy"
+        "orbit propagation",
+        "spacecraft dynamics"
     ]
 }

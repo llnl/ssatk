@@ -17,7 +17,8 @@ tool. Performance and accuracy numbers should only be added after running a
 controlled benchmark suite with fixed versions, input data, tolerances, and
 hardware.
 
-Review date: 2026-08-20.
+Review date: 2026-08-20. Positioning updated 2026-10-10 for the 1.1.0 rename to
+SSATK (Space Situational Awareness Toolkit).
 
 Scope
 -----
@@ -25,7 +26,7 @@ Scope
 The review focuses on capabilities relevant to SSATK:
 
 * orbital mechanics and transfer design,
-* SSAPy interoperability,
+* interoperability with ``Orbit`` objects, Astropy times and standard data formats,
 * frame and coordinate conversions,
 * plotting and analyst-facing workflows,
 * data I/O,
@@ -80,9 +81,10 @@ Each package is evaluated against these criteria:
 Executive Summary
 -----------------
 
-SSATK is strongest when it acts as the Python analyst layer around SSAPy:
+SSATK is strongest as a single Python package for SSA analysis:
 
-* It should keep SSAPy as the primary high-fidelity orbit engine.
+* It should reuse established numerical kernels from its dependencies (for
+  example SSAPy, Astropy/ERFA and SciPy) rather than reimplement them.
 * It should provide convenient transfer, plotting, data, and workflow functions
   that are faster to use than lower-level astrodynamics libraries.
 * It should add lightweight 6-DoF spacecraft dynamics for research workflows
@@ -236,10 +238,9 @@ SSAPy
 Role
 ^^^^
 
-SSAPy is the base package for high-fidelity orbital modeling in the LLNL
-ecosystem. SSATK should continue to treat SSAPy as the authoritative engine for
-core orbit propagation, force models, observer geometry, and orbit
-determination.
+SSAPy (``llnl-ssapy``) is one of SSATK's dependencies. SSATK uses it for orbit
+objects, analytic and SGP4 propagation, and Earth-orientation and ephemeris
+routines.
 
 Strengths
 ^^^^^^^^^
@@ -247,8 +248,6 @@ Strengths
 * High-fidelity Earth-orbit through cislunar propagation workflows.
 * Force-model support for gravity, solar radiation pressure, drag, third-body
   perturbations, and maneuvers.
-* Core objects such as ``Orbit`` and ``rv`` already define the user mental
-  model for many SSATK users.
 * Existing validation and operational use inside the LLNL ecosystem.
 
 Limitations for SSATK's 6-DoF goals
@@ -257,8 +256,8 @@ Limitations for SSATK's 6-DoF goals
 * SSAPy is not primarily a spacecraft body-dynamics simulator.
 * It does not provide a Basilisk-style hub/facet/thruster/tank/wheel component
   model as the central public abstraction.
-* Attitude-dependent body forces and torque propagation are better developed in
-  SSATK as an extension layer than forced into base SSAPy.
+* Attitude-dependent body forces and torque propagation are developed in
+  SSATK.
 
 SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -266,10 +265,9 @@ SSATK benchmark implication
 SSATK should benchmark against SSAPy for:
 
 * identical two-body propagation for point-mass cases,
-* agreement with SSAPy acceleration models where SSATK wraps or mirrors them,
-* correct behavior when accepting SSAPy ``Orbit`` objects as inputs,
-* no user-facing ambiguity about whether a common constant or helper comes from
-  SSAPy or SSATK.
+* agreement with SSAPy acceleration models where SSATK uses or mirrors them,
+* correct behavior when accepting ``Orbit`` objects as inputs,
+* one unambiguous name for each constant or helper in the ``ssatk`` namespace.
 
 SSATK
 -----
@@ -277,16 +275,17 @@ SSATK
 Current role
 ^^^^^^^^^^^^
 
-SSATK is the high-level, Python-first workflow package around SSAPy. It provides
-plotting, orbital mechanics helpers, transfer design, data I/O, demo workflows,
-coordinate conversions, and early 6-DoF dynamics.
+SSATK is a Python-first SSA and astrodynamics toolkit. It provides orbit and
+6-DoF propagation, orbital mechanics and transfer design, frames and time,
+space-environment models, conjunction screening, data I/O, plotting, and demo
+workflows.
 
 Current strengths
 ^^^^^^^^^^^^^^^^^
 
-* Single import path for common SSAPy-adjacent research workflows.
+* Single import path for SSA research workflows.
 * Rich plotting and demo-gallery workflows.
-* Transfer-design helpers that accept either SSAPy objects or raw inertial
+* Transfer-design helpers that accept either ``Orbit`` objects or raw inertial
   states.
 * Data-access strategy that keeps reusable datasets in the split ``ssatk-data-*`` packages rather
   than embedding large files in the Toolkit repository.
@@ -357,12 +356,12 @@ Target benchmark identity
 
 SSATK should be benchmarked as:
 
-* easier to use than lower-level libraries for common SSAPy workflows,
+* easier to use than lower-level libraries for common SSA workflows,
 * less comprehensive but lighter-weight than Basilisk/Tudat for spacecraft body
   simulation,
 * more Python-native and package-integrated than GUI/mission-design tools,
 * accurate enough for research prototyping when compared against analytical
-  checks and SSAPy baseline propagation.
+  checks and independent reference implementations.
 
 Basilisk
 --------
@@ -395,7 +394,7 @@ Limitations relative to SSATK
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Heavier simulation-framework mindset.
-* Not centered on SSAPy ``Orbit`` objects or SSATK plotting/data workflows.
+* Not centered on SSATK's orbit-object, plotting and data workflows.
 * More setup overhead for simple analyst tasks.
 
 SSATK benchmark implication
@@ -431,7 +430,7 @@ Limitations relative to SSATK
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Not a Python-first analysis package.
-* Not integrated with SSAPy or SSATK plotting/data workflows.
+* Not integrated with SSATK plotting/data workflows.
 * More specialized setup and configuration style.
 
 SSATK benchmark implication
@@ -465,7 +464,7 @@ Limitations relative to SSATK
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Larger conceptual surface area.
-* Not built around SSAPy's API.
+* Not built around SSATK's API.
 * More setup overhead for simple Toolkit workflows.
 
 SSATK benchmark implication
@@ -504,7 +503,7 @@ Limitations relative to SSATK
 
 * Not a lightweight Python package.
 * Requires a simulation-framework workflow.
-* Not intended as a simple SSAPy-adjacent analyst utility.
+* Not intended as a lightweight Python analyst utility.
 
 SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -583,7 +582,7 @@ Limitations relative to SSATK
 * Java-first.
 * Attitude providers are not the same as a lightweight Python rigid-body
   spacecraft simulation API.
-* Not integrated with SSAPy plotting and data workflows.
+* Not integrated with SSATK plotting and data workflows.
 
 SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -620,7 +619,7 @@ Limitations relative to SSATK
 
 * Proprietary.
 * Not a Python package.
-* Not designed as an SSAPy extension layer.
+* Not designed as a lightweight Python analysis layer.
 
 SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -690,7 +689,7 @@ Limitations relative to SSATK
 
 * Proprietary.
 * MATLAB/Simulink-first rather than Python-first.
-* Not designed around SSAPy objects or SSATK plotting/data conventions.
+* Not designed around SSATK objects or plotting/data conventions.
 
 SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -750,7 +749,7 @@ Strengths relative to SSATK
 Limitations relative to SSATK
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Not centered on SSAPy.
+* Not centered on SSA analyst workflows.
 * Not a high-fidelity spacecraft body-dynamics package.
 * Development status and dependency compatibility should be checked before any
   direct comparison.
@@ -759,7 +758,7 @@ SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 poliastro is a good usability reference for simple transfers and plotting. SSATK
-should exceed it for SSAPy-specific workflows and cislunar/SSA-oriented plots,
+should exceed it for SSA and cislunar workflows and plots,
 not necessarily for all general orbital mechanics examples.
 
 Astropy
@@ -784,7 +783,7 @@ Limitations relative to SSATK
 
 * Not a spacecraft dynamics package.
 * Not a transfer-design package.
-* Not specific to SSAPy.
+* Not specific to SSA workflows.
 
 SSATK benchmark implication
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -815,7 +814,7 @@ Limitations relative to SSATK
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Not an orbital/cislunar spacecraft toolkit.
-* Not centered on SSAPy.
+* Not centered on SSA analyst workflows.
 * Atmospheric aircraft abstractions are not the right default for satellite
   body dynamics.
 
@@ -846,7 +845,7 @@ Limitations relative to SSATK
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Different primary domain.
-* Not designed around long-duration orbital propagation or SSAPy.
+* Not designed around long-duration orbital propagation.
 * Rocket-specific abstractions should not dominate satellite 6-DoF APIs.
 
 SSATK benchmark implication
@@ -1090,7 +1089,7 @@ SSATK Positioning
 
 SSATK should be described as:
 
-* an SSAPy-centered research toolkit,
+* a standalone Python research toolkit for SSA and astrodynamics,
 * a convenience and workflow layer for orbital mechanics, plotting, transfer
   design, data I/O, and demonstrations,
 * a lightweight 6-DoF spacecraft dynamics layer for early-stage research and

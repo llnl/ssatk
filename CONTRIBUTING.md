@@ -7,10 +7,8 @@ Contributions are welcome via pull request targeting the `main` branch of the
 are reviewed by the project maintainers and must pass the repository's CI checks
 (tests and linting) before they can be merged.
 
-Work that primarily concerns the core propagation and modeling engine should be
-contributed to the [SSAPy](https://github.com/llnl/SSAPy) repository instead;
-SSATK is for higher-level, analysis-ready utilities and workflows built
-on top of SSAPy.
+SSATK is a standalone toolkit; changes to its dependencies, including
+[SSAPy](https://github.com/llnl/SSAPy) (`llnl-ssapy`), belong in those projects.
 
 By contributing, you agree to abide by the project's
 [Code of Conduct](CODE_OF_CONDUCT.md).

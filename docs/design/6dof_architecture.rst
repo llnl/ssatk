@@ -15,13 +15,13 @@ Survey date: 2026-08-20.
 Problem Statement
 -----------------
 
-SSATK already depends on SSAPy for high-fidelity orbit modeling. The 6-DoF
-layer should extend that orbit workflow with spacecraft attitude and body
-physics without replacing SSAPy, Basilisk, Tudat, GMAT, Orekit, STK, FreeFlyer,
-or launch-vehicle flight-dynamics tools.
+SSATK propagates orbits and analyses them end to end. The 6-DoF layer adds
+spacecraft attitude and body physics to that same workflow. It is not meant to
+replace Basilisk, Tudat, GMAT, Orekit, STK, FreeFlyer, or launch-vehicle
+flight-dynamics tools.
 
-The target use case is an analyst who already works with SSAPy ``Orbit`` objects
-or inertial position/velocity arrays and needs to add:
+The target use case is an analyst who works with ``ssatk.Orbit`` objects or
+inertial position/velocity arrays and needs to add:
 
 * quaternion attitude state,
 * body-frame angular rate,
@@ -485,13 +485,13 @@ SSATK should follow Basilisk's componentized spacecraft pattern and Tudat's
 separation of propagated states, environment, forces, and torques, while
 remaining smaller and more direct than either package.
 
-SSAPy's ``NTW`` convention remains useful because it is already part of the
-SSAPy API and gives a compact normal/tangential/cross-track burn input. It is
+The ``NTW`` convention remains useful because it is already part of the
+``Orbit`` API and gives a compact normal/tangential/cross-track burn input. It is
 not the only standard used in satellite operations. Mission-analysis tools also
 use ``RTN``/``RSW``/``RIC``/``LVLH`` for radial-transverse-normal commands and
 ``VNB``/``VNC`` for velocity-normal-binormal commands. SSATK should therefore
 avoid a new NTW-only interface and expose a single ``frame=...`` argument. This
-keeps SSAPy compatibility through ``frame="ntw"`` while making operational
+keeps ``Orbit``-API compatibility through ``frame="ntw"`` while making operational
 frame choices explicit.
 
 The public workflow should remain:

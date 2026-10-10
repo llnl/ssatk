@@ -20,15 +20,16 @@ contact:
     given-names: "Travis R."
     email: "yeagerastro@gmail.com"
     affiliation: "Lawrence Livermore National Laboratory"
-abstract: "SSATK provides higher-level orbital mechanics, plotting, data I/O, coordinate/time conversion, transfer-design, and workflow utilities built on LLNL SSAPy."
+abstract: "SSATK is a Python toolkit for space situational awareness and astrodynamics: orbit and 6-DoF spacecraft propagation, impulsive and continuous-thrust transfer design, coordinate and time frames, space-environment models, conjunction screening and orbit determination, standard orbit-data formats, and visualization."
 keywords:
   - orbital mechanics
   - astrodynamics
   - space situational awareness
   - visualization
-  - SSAPy
+  - orbit propagation
+  - spacecraft dynamics
 license: "BSD-3-Clause"
 repository-code: "https://github.com/LLNL/ssatk"
 url: "https://github.com/LLNL/ssatk"
-version: "1.1.0"
-date-released: "2026-10-09"
+version: "1.1.1"
+date-released: "2026-10-10"

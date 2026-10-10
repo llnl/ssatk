@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssatk"
-version = "1.1.0"
-description = "Space Situational Awareness Toolkit (SSATK): orbital mechanics, plotting, and data IO built on SSAPy"
+version = "1.1.1"
+description = "Space Situational Awareness Toolkit (SSATK): orbit and 6-DoF propagation, transfer design, frames, space environment, conjunction screening, data I/O and visualization"
 authors = [
   { name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }
 ]

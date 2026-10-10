@@ -4,14 +4,25 @@ Usage Guide
 Installation
 ------------
 
-Install in editable mode with development extras:
+SSATK supports Python 3.10–3.13:
 
 .. code-block:: bash
 
-   python -m pip install -e .[dev]
+   python -m pip install ssatk
 
-Plotting installs the Python packages needed for HTML, image, and GIF outputs,
-including Plotly, Matplotlib, Pillow, imageio, and split SSATK data packages.
+This also installs the four required ``ssatk-data-*`` packages (about 210 MB):
+Earth-orientation and space-weather tables, gravity models, planetary and lunar
+ephemerides, the star catalogue, and Earth and Moon textures. One dependency
+compiles a C++ extension during installation, so a C++ compiler must be
+available.
+
+For development, install from a checkout in editable mode:
+
+.. code-block:: bash
+
+   python -m pip install -e ".[dev,geomagnetics,atmosphere,propulsion]"
+
+The plotting stack (Plotly, Matplotlib, Pillow, imageio) is installed by default.
 Install ``ssatk[static]`` for Plotly static-image export through Kaleido.
 Install ``ssatk[pdf]`` to append pages to existing PDF plots.
 Install ``ssatk[notebook]`` for IPython display and ipyvolume
@@ -43,7 +54,7 @@ Basic Example
    )
    r, v = ssatk.rv(orbit, time=[0.0, 60.0])
 
-   # Use Toolkit keplerian routines and plotting helpers around SSAPy objects.
+   # The same state in several views.
    from ssatk.plots import orbit_plot
 
    orbit_plot(r, view="xy", frame="gcrf")
@@ -80,24 +91,54 @@ For :func:`ssatk.plots.orbit_plot`, ``.mp4`` and ``.gif`` save paths
 create animated quicklooks with short fading tails. Static extensions such as
 ``.png`` and ``.jpg`` save the full time-series figure.
 
+Saving data products
+--------------------
 
-Relationship to SSAPy
-----------------------
+For general data products, ``ssatk_save`` and ``ssatk_read`` choose the storage
+format from the file extension. Bare and relative data filenames are rooted
+under ``~/ssatk_output``; bare and relative figure filenames are rooted under
+``~/ssatk_output/figures``; absolute paths are honored.
 
-Space Situational Awareness Toolkit (SSATK) is designed as an extension library for `SSAPy <https://github.com/llnl/SSAPy/tree/main>`_, which provides high-fidelity orbital modeling and analysis across LEO through the cislunar regime. SSAPy handles orbit propagation, force models, integrators, and rich coordinate/frame support; SSATK builds on top of that to provide convenience utilities for data IO, plotting (including ground tracks and cislunar visualizations), and higher-level orbital mechanics helpers.
 
-Use ``import ssatk`` as the main user-facing entry point.
-Shared astrodynamics constants are available through ``ssatk.constants`` and as
-lazy top-level attributes such as ``ssatk.EARTH_MU``. Core SSAPy classes and
-functions such as ``ssatk.Orbit``, ``ssatk.rv``, ``ssatk.groundTrack``, and
-``ssatk.AccelKepler`` are also lazily available through the Toolkit. If a name
-exists in both packages, Toolkit helpers and submodules take precedence; direct
-base-package access remains available through ``ssatk.ssapy``.
-Earth/Moon helpers formerly provided by ``ssapy.plotUtils`` are available as
-``ssatk.draw_earth``, ``ssatk.draw_moon``, ``ssatk.load_earth_file``, and
-``ssatk.load_moon_file``.
-Wildcard imports are intentionally unsupported; use ``import ssatk as
-ssatk`` or import individual names explicitly.
+.. code-block:: python
+
+   ssatk.ssatk_save({"r": r, "v": v, "t": t}, "runs/orbit.h5")
+   state = ssatk.ssatk_read("runs/orbit.h5")
+
+   ssatk.ssatk_save(r, "arrays/state.npy")
+   ssatk.ssatk_save({"r": r, "v": v}, "arrays/state.npz")
+   ssatk.ssatk_save(table, "tables/summary.csv")
+   ssatk.ssatk_save(fig, "quicklooks/orbit.png")
+
+
+For keyed HDF5 or NPZ outputs, pass ``key=``. Non-mapping objects default to
+``"data"``; dictionaries use their own keys; nested dictionaries become nested
+HDF5 groups or slash-delimited NPZ members.
+
+
+
+Top-level namespace
+-------------------
+
+``import ssatk`` is the entry point. Physical constants are in
+``ssatk.constants`` and also available as top-level attributes such as
+``ssatk.EARTH_MU``. Orbit objects and core orbit functions such as
+``ssatk.Orbit``, ``ssatk.rv``, ``ssatk.groundTrack`` and ``ssatk.AccelKepler``
+are loaded on first use. Where a name exists both in SSATK and in its
+``llnl-ssapy`` dependency, the SSATK version takes precedence; the dependency
+itself is reachable as ``ssatk.ssapy``. Earth and Moon drawing helpers are
+``ssatk.draw_earth``, ``ssatk.draw_moon``, ``ssatk.load_earth_file`` and
+``ssatk.load_moon_file``. Wildcard imports are intentionally unsupported; use
+``import ssatk`` or import individual names explicitly.
+
+For task code, import the module you need:
+
+.. code-block:: python
+
+   from ssatk.orbital_mechanics import keplerian, transfer_hohmann, transfer_bielliptic
+   from ssatk.coordinates import gcrf_to_itrf
+   from ssatk.plots import orbit_plot
+
 
 CCSDS conjunction messages
 ---------------------------
@@ -136,7 +177,7 @@ returns a GCRF vector.
        transform_to_gcrf,
    )
 
-   # SSAPy maneuver convention: [N, T, W].
+   # NTW convention: [N, T, W] with N = T x W (right-handed).
    ntw_to_gcrf = frame_to_gcrf_matrix("ntw", r=r_gcrf, v=v_gcrf)
    thrust_gcrf = transform_to_gcrf([0.0, 1e-7, 0.0], "ntw", r=r_gcrf, v=v_gcrf)
 
@@ -296,6 +337,66 @@ geomagnetic indices, install ``ssatk[atmosphere]`` and configure
 ``SpaceEnvironment(atmosphere_density_model="nrlmsise00")``. The adapter
 rejects predicted space-weather and Earth-orientation records by default.
 
+Orbital transfers
+-----------------
+
+``transfer_bielliptic`` computes the analytic three-impulse, two-half-ellipse
+transfer between coplanar circular orbits through an intermediate apoapsis
+radius. It is useful for quick radius-to-radius trade studies; use
+``transfer_ssapy`` or ``transfer_optimal`` when fixed epochs, target phasing,
+perturbed propagation, or non-circular boundary states matter.
+Transfer entry points accept either ``ssatk.Orbit`` objects (``orbit1``/``orbit2``,
+``initial``/``target``) or raw inertial state vectors (``r1, v1, r2, v2``). For
+``transfer_optimal``, set ``departure_mode="now"`` or ``leave_now=True`` to depart
+from the supplied state; leave the default ``departure_mode="optimize"`` to search
+for the best departure phase/time.
+Set ``stage_mode="immediate"`` or ``stage_mode="timed"`` to explicitly search
+staged transfers through candidate staging orbits; ``stage_mode="best"`` compares
+the direct and staged routes. Timed staging allows each post-stage leg to wait
+for an appropriate phase instead of leaving the staging orbit immediately. The
+default ``n_stage_stops=1`` searches one intermediate staging orbit; increase
+``n_stage_stops`` and set ``stage_beam_width`` for bounded multi-stop searches.
+For larger design trades, ``transfer_optimal`` also accepts a structured
+``problem={...}`` schema that groups boundary conditions, objective, constraints,
+route, and solver controls in one call:
+
+
+.. code-block:: python
+
+   from ssatk.orbital_mechanics import transfer_optimal
+
+   result = transfer_optimal(
+       problem={
+           "boundary": {
+               "initial": orbit1,              # or r1/v1/r2/v2 at top level
+               "target": orbit2,
+               "departure_mode": "leave now", # or "leave whenever"
+               # inject: free-phase/first burn only; intercept: target position only;
+               # rendezvous: target position + velocity; insertion: free-phase velocity match
+               "arrival_mode": "rendezvous",
+           },
+           "objective": {"minimize": "delta_v", "delta_v_mode": "total"},
+           "constraints": {
+               "tof_range": (1800.0, 86400.0),
+               "dv_budget": None,
+               "perigee_altitude_min": 100e3,
+               "max_burns": 4,
+           },
+           "route": {
+               "mode": "multi_stage",         # direct, immediate, multi_stage, best
+               "timing": "optimized",         # immediate or optimized/timed
+               "n_stage_stops": 1,
+               "stage_candidates": {"radii": [20_000e3, 40_000e3]},
+           },
+           "solver": {"n_grid": (8, 8), "polish": False, "refine": False},
+       },
+   )
+
+
+The result diagnostics include ``problem_schema="ssatk.transfer_problem.v1"``
+when the structured interface is used.
+
+
 6-DoF dynamics
 --------------
 
@@ -306,8 +407,8 @@ translational and rigid-body attitude propagation. The state uses inertial
 ``r``/``v`` vectors, a quaternion ``q=[w, x, y, z]`` that rotates body-frame
 vectors into the inertial frame, and body-frame angular rates ``omega`` in
 rad/s. Use ``Spacecraft.from_orbit(orbit, ...)`` to attach attitude/body state
-to an SSAPy ``Orbit`` and ``spacecraft.to_orbit()`` to return the translational
-state to SSAPy workflows.
+to an ``ssatk.Orbit`` and ``spacecraft.to_orbit()`` to return the translational
+state as an ``Orbit``.
 
 .. code-block:: python
 
@@ -347,7 +448,7 @@ The high-accuracy convenience wrapper accepts the same environment presets:
 
 Without an attitude-dependent ``acceleration`` callback, attitude does not feed
 back into the orbital trajectory. Provide ``acceleration(t, r, v, q, omega)``
-for inertial/GCRF m/s², ``ntw_acceleration(t, r, v, q, omega)`` for SSAPy
+for inertial/GCRF m/s², ``ntw_acceleration(t, r, v, q, omega)`` for
 ``[N, T, W]`` m/s², or ``body_acceleration(t, r, v, q, omega)`` for body-frame
 m/s² when thrust, drag, solar-radiation pressure, or another orientation-
 dependent force should change ``r`` and ``v``. The propagated quaternion remains
@@ -430,7 +531,7 @@ For normal finite satellite maneuvers, use ``SpacecraftManeuverAccel`` with an
 explicit ``frame``. ``frame="rtn"``/``"lvlh"``/``"ric"`` maps to the common
 radial-transverse-normal operations convention, ``frame="vnb"`` maps to
 velocity-normal-binormal, ``frame="body"`` maps body-mounted thrust through the
-current attitude, and ``frame="ntw"`` preserves exact SSAPy ``[N, T, W]``
+current attitude, and ``frame="ntw"`` uses the exact ``[N, T, W]``
 convention. Thrust can be constant, trapezoidal, smoothstep, exponential,
 pulsed, callable, or loaded from a CSV file through ``ThrustCurve``. Citable
 engine curves should live in the propulsion data package, not this source repository, and can be
@@ -509,26 +610,35 @@ center of mass, and inertia when those values are not provided directly.
 Packaged data
 -------------
 
-SSATK should not commit reusable datasets, generated figures, or other
-binary artifacts. Toolkit functions that require reusable data should read it
-from the installed split data dependencies instead. These packages expose
-the ``ssapy_data`` import package with resources below ``ssapy_data/data``.
+Reusable datasets ship as separate ``ssatk-data-*`` distributions rather than
+in the source repository. Each installs its own import package, with files
+below ``<package>/data``:
 
-Use :mod:`ssatk.data` when a toolkit function needs a packaged data
-file:
+================================  ============================  ============================
+Distribution                      Import package                Installed by
+================================  ============================  ============================
+``ssatk-data-core``               ``ssapy_data_core``           ``pip install ssatk``
+``ssatk-data-gravity``            ``ssapy_data_gravity``        ``pip install ssatk``
+``ssatk-data-lunar``              ``ssapy_data_lunar``          ``pip install ssatk``
+``ssatk-data-lunar-gravity``      ``ssapy_data_lunar_gravity``  ``pip install ssatk``
+``ssatk-data-propulsion``         ``ssapy_data_propulsion``     ``ssatk[propulsion]``
+``ssatk-data-benchmarks``         ``ssapy_data_benchmarks``     ``ssatk[benchmarks]``
+================================  ============================  ============================
+
+Use :mod:`ssatk.data` to read a packaged file. With no ``package`` argument it
+searches the installed data packages in the order above and returns the first
+match; a missing file raises an error that names the extra to install:
 
 .. code-block:: python
 
-   from ssatk.data import data_path, read_data_text
+   from ssatk.data import data_path, read_data_text, resource_package
 
-   catalog_text = read_data_text("catalogs/example.csv")
+   eop_text = read_data_text("environment/eop/finals2000A.all")
+   print(resource_package("environment/eop/finals2000A.all"))   # ssapy_data_core
 
-   with data_path("catalogs/example.csv") as catalog_path:
+   with data_path("bright_stars.csv") as catalog_path:
        # Pass catalog_path to libraries that require a filesystem path.
        print(catalog_path)
-
-This keeps ``SSATK`` source-only while allowing users to get required
-data through normal ``pip`` installation.
 
 Optional demo data
 ------------------
