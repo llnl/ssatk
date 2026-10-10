@@ -40,16 +40,6 @@ jobs:
           PY
           )"
           test "$RELEASE_TAG" = "v$project_version"
-          # The transitional ssapy-toolkit package must ship the same version
-          # and pin exactly that ssatk release.
-          python - "$project_version" <<'PY'
-          import sys, tomllib
-          from pathlib import Path
-
-          compat = tomllib.loads(Path("packaging/ssapy-toolkit-compat/pyproject.toml").read_text())["project"]
-          assert compat["version"] == sys.argv[1], (compat["version"], sys.argv[1])
-          assert compat["dependencies"] == [f"ssatk=={sys.argv[1]}"], compat["dependencies"]
-          PY
 
       - name: Run tests
         run: python -m pytest -q
@@ -101,10 +91,7 @@ jobs:
           pip install build twine
 
       - name: Build distributions
-        run: |
-          python -m build
-          # Transitional ssapy-toolkit -> ssatk package, uploaded alongside.
-          python -m build packaging/ssapy-toolkit-compat --outdir dist
+        run: python -m build
 
       - name: Check distributions
         run: python -m twine check dist/*
@@ -137,19 +124,5 @@ jobs:
           assert {"ssatk-demo-gallery", "ssatk-benchmark", "ssatk-magnetosphere"} <= scripts
           assert find_spec("ssapy_toolkit") is None, "the ssatk wheel must not ship the legacy alias"
           PY
-          # Transitional package: installs the alias and resolves to ssatk.
-          pip install --no-deps dist/ssapy_toolkit-*.whl
-          python -I - <<'PY'
-          import warnings
-          import ssatk
-          with warnings.catch_warnings(record=True) as caught:
-              warnings.simplefilter("always")
-              import ssapy_toolkit
-          assert any(issubclass(w.category, FutureWarning) for w in caught), "alias must warn"
-          from ssapy_toolkit.coordinates.frames import eci_to_ecf_matrix
-          assert ssapy_toolkit.__version__ == ssatk.__version__
-          assert eci_to_ecf_matrix is ssatk.coordinates.frames.eci_to_ecf_matrix
-          PY
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
