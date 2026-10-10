@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.propagators_6dof.sixdof import propagate_6dof
+from ssatk.propagators_6dof.sixdof import propagate_6dof
 
 
 class TerminalEventTests(unittest.TestCase):

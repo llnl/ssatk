@@ -1,7 +1,7 @@
-SSAPy Toolkit
-=============
+Space Situational Awareness Toolkit (SSATK)
+===========================================
 
-Welcome to the SSAPy Toolkit documentation.
+Welcome to the SSATK documentation.
 
 .. toctree::
    :maxdepth: 2

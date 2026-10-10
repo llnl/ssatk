@@ -8,11 +8,11 @@ segmented run even when each segment was propagated with
 
 import numpy as np
 
-from ssapy_toolkit.propagators_6dof.high_accuracy import (
+from ssatk.propagators_6dof.high_accuracy import (
     ImpulseManeuver,
     propagate_spacecraft_segments,
 )
-from ssapy_toolkit.propagators_6dof.sixdof import (
+from ssatk.propagators_6dof.sixdof import (
     Spacecraft,
 )
 

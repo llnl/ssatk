@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.time import Time
 
-from ssapy_toolkit.compute.lambertian_magnitude import lambertian_reflection
-from ssapy_toolkit.constants import EARTH_RADIUS
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.compute.lambertian_magnitude import lambertian_reflection
+from ssatk.constants import EARTH_RADIUS
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 FIGDIR = "figures"

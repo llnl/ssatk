@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.plots.starfield import _to_datetime
+from ssatk.plots.starfield import _to_datetime
 
 
 @pytest.mark.parametrize("utc", ["2008-09-20T12:25:40.104", "2026-10-08T00:00:00"])

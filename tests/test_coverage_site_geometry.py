@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.plots.coverage_analysis import elevation_from_site, site_ecef
+from ssatk.plots.coverage_analysis import elevation_from_site, site_ecef
 
 A_WGS84 = 6378137.0
 F_WGS84 = 1.0 / 298.257223563

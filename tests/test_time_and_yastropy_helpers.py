@@ -1,9 +1,9 @@
 import numpy as np
 from astropy.time import Time
 
-from ssapy_toolkit.yastropy.astropy_gcrf_to_llh import astropy_gcrf_to_llh
-from ssapy_toolkit.yastropy.astropy_llh_to_gcrf import astropy_llh_to_gcrf
-from ssapy_toolkit.yastropy.astropy_surface_rv import astropy_surface_rv
+from ssatk.yastropy.astropy_gcrf_to_llh import astropy_gcrf_to_llh
+from ssatk.yastropy.astropy_llh_to_gcrf import astropy_llh_to_gcrf
+from ssatk.yastropy.astropy_surface_rv import astropy_surface_rv
 
 
 def test_astropy_llh_gcrf_roundtrip_and_surface_velocity():

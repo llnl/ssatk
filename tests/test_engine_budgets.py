@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import G0
-from ssapy_toolkit.engines.catalog import thruster_spec
-from ssapy_toolkit.engines.fuel_usage import estimate_fuel_usage
-from ssapy_toolkit.engines.rescale_burn import rescale_burn
+from ssatk.constants import G0
+from ssatk.engines.catalog import thruster_spec
+from ssatk.engines.fuel_usage import estimate_fuel_usage
+from ssatk.engines.rescale_burn import rescale_burn
 
 
 @pytest.mark.parametrize("steps", [10, 1000])

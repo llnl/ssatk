@@ -13,8 +13,8 @@ import os
 import sys
 from pathlib import Path
 
-from ssapy_toolkit.plots.earth_sun_plot import DEFAULT_CFG, build_figure, build_static_figure, _shrink_floats
-from ssapy_toolkit.plots.figpath import figpath
+from ssatk.plots.earth_sun_plot import DEFAULT_CFG, build_figure, build_static_figure, _shrink_floats
+from ssatk.plots.figpath import figpath
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

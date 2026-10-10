@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ssapy_toolkit.compute import lambertian_magnitude as photometry
+from ssatk.compute import lambertian_magnitude as photometry
 
 
 class PhotometryVisibilityTests(unittest.TestCase):

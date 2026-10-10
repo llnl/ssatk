@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit import constants
+from ssatk import constants
 
 
 def test_unit_conversions_match_their_si_and_iau_definitions():

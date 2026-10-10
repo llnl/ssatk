@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Demo: ellipse_fit vs multiple SSAPy propagations using ssapy_toolkit props.
+Demo: ellipse_fit vs multiple SSAPy propagations using ssatk props.
 
 Pytest-safe mode:
 - smaller sample count
@@ -14,14 +14,14 @@ import inspect
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.orbital_mechanics.ellipse_fit import ellipse_fit
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.io.pprint_utils import pprint
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.plots.groundtrack_dashboard import groundtrack_dashboard
-from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
-from ssapy_toolkit.ssapy_wrappers.ssapy_props import keplerian_prop, ssapy_prop, best_prop
+from ssatk.constants import RGEO
+from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
+from ssatk.plots.figpath import figpath
+from ssatk.io.pprint_utils import pprint
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.plots.groundtrack_dashboard import groundtrack_dashboard
+from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+from ssatk.ssapy_wrappers.ssapy_props import keplerian_prop, ssapy_prop, best_prop
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

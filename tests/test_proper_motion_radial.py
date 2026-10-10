@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.compute.proper_motions import proper_motion, proper_motion_ra_dec
+from ssatk.compute.proper_motions import proper_motion, proper_motion_ra_dec
 
 # R3: 1 rad = 648000/pi arcsec; REBOUND's G = 1 time unit in au and Msun is
 # yr2pi = 1/k day with the Gaussian constant k = 0.01720209895.

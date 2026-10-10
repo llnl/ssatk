@@ -20,9 +20,9 @@ from ssapy.accel import AccelKepler
 from ssapy.body import get_body
 from ssapy.propagator import SciPyPropagator
 
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.plots.divergence_gif import divergence_gif
-from ssapy_toolkit.plots.figpath import ssatk_path
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.plots.divergence_gif import divergence_gif
+from ssatk.plots.figpath import ssatk_path
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "analysis_dashboards"

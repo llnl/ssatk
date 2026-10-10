@@ -36,7 +36,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--package-dir",
         type=Path,
-        default=Path("ssapy_toolkit"),
+        default=Path("ssatk"),
         help="Package directory to audit.",
     )
     parser.add_argument(

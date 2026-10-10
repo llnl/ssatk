@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.transfer_optimal_function import transfer_optimal
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.transfer_optimal_function import transfer_optimal
 
 
 def _circular(radius, phase):

@@ -9,19 +9,19 @@
 From the top of the repository:
 
 ```bash
-python -m ssapy_toolkit.run_all_demos
+python -m ssatk.run_all_demos
 ```
 
 If you installed the repo in editable mode, you can also use the console script:
 
 ```bash
-ssapy-demo-gallery
+ssatk-demo-gallery
 ```
 
 Example with explicit paths:
 
 ```bash
-python -m ssapy_toolkit.run_all_demos --demos-dir demos --output ./gallery_output
+python -m ssatk.run_all_demos --demos-dir demos --output ./gallery_output
 ```
 
 ---
@@ -52,19 +52,19 @@ file sets `GALLERY_INCLUDE = False`.
 
 ---
 
-## Running after `pip install ssapy_toolkit`
+## Running after `pip install ssatk`
 
-If `ssapy_toolkit` is installed and the console entry point is available, the
+If `ssatk` is installed and the console entry point is available, the
 command auto-detects the packaged demos and can be run from any directory:
 
 ```bash
-ssapy-demo-gallery
+ssatk-demo-gallery
 ```
 
 Or run it as a module:
 
 ```bash
-python -m ssapy_toolkit.run_all_demos
+python -m ssatk.run_all_demos
 ```
 
 ---

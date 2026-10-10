@@ -1,1 +1,1 @@
-"""Orbit visualization SSAPy-Toolkit demos."""
+"""Orbit visualization SSATK demos."""

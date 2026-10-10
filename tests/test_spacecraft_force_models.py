@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.accelerations_6dof.spacecraft import (
+from ssatk.accelerations_6dof.spacecraft import (
     drag_acceleration,
     exponential_density_model,
     facet_drag_acceleration_torque,
@@ -13,8 +13,8 @@ from ssapy_toolkit.accelerations_6dof.spacecraft import (
     gravity_gradient_torque,
     srp_acceleration,
 )
-from ssapy_toolkit.constants import AU, EARTH_MU, SOLAR_FLUX_1_AU, c
-from ssapy_toolkit.satellites import Facet
+from ssatk.constants import AU, EARTH_MU, SOLAR_FLUX_1_AU, c
+from ssatk.satellites import Facet
 
 IDENTITY_Q = np.array([1.0, 0.0, 0.0, 0.0])
 R_LEO = np.array([6_778e3, 0.0, 0.0])

@@ -16,8 +16,8 @@ def test_base_plot_leaves_ut1_available_after_the_iers_b_span():
     # tests failed on Python 3.10. Reference: astropy's own UT1-UTC for a date
     # 7 days past the IERS-B span, taken before the plot exists; it must be
     # unchanged to 1 ns afterwards.
-    from ssapy_toolkit.plots.base_plot import BasePlot3D
-    from ssapy_toolkit.plots.orbit_state import OrbitalState
+    from ssatk.plots.base_plot import BasePlot3D
+    from ssatk.plots.orbit_state import OrbitalState
 
     t = Time(float(iers.IERS_B.open()["MJD"][-1].value) + 7.0, format="mjd", scale="utc")
     try:

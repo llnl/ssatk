@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Rigorous validation driver for ssapy_toolkit.ellipse_fit.
+Rigorous validation driver for ssatk.ellipse_fit.
 
 Pytest-safe mode:
 - runs with SAVE_PLOTS disabled by default
@@ -14,10 +14,10 @@ import sys
 import numpy as np
 from ssapy.propagator import KeplerianPropagator
 
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.orbital_mechanics.ellipse_fit import ellipse_fit
-from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import RGEO
+from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
+from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

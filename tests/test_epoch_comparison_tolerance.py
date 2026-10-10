@@ -11,7 +11,7 @@ seconds.
 import numpy as np
 import pytest
 
-from ssapy_toolkit.propagators_6dof.sixdof import _epochs_close
+from ssatk.propagators_6dof.sixdof import _epochs_close
 
 # GPS seconds. 1.4e9 is 2024-05-13; 3.8e9 is 2100-06-20.
 GPS_2024 = 1_400_000_000.0

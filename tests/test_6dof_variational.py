@@ -1,20 +1,20 @@
 import numpy as np
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.accelerations_6dof import (
+import ssatk
+from ssatk.accelerations_6dof import (
     SpacecraftAccelConstBody,
     SpacecraftAccelConstNTW,
     constant_body_torque,
 )
-from ssapy_toolkit.coordinates.attitude import normalize_quaternion, rotate_vector
-from ssapy_toolkit.propagators_6dof import (
+from ssatk.coordinates.attitude import normalize_quaternion, rotate_vector
+from ssatk.propagators_6dof import (
     attitude_error_stm,
     propagate_6dof,
     propagate_6dof_covariance,
     propagate_6dof_variational,
 )
-from ssapy_toolkit.propagators_6dof.sixdof import sixdof_rhs
-from ssapy_toolkit.propagators_6dof.variational import (
+from ssatk.propagators_6dof.sixdof import sixdof_rhs
+from ssatk.propagators_6dof.variational import (
     _body_acceleration_jacobian,
     _free_rigid_body_jacobian,
     _gravity_gradient_jacobian,
@@ -253,7 +253,7 @@ def test_gravity_gradient_jacobian_matches_torque_finite_difference():
         position, quaternion, inertia, ssatk.EARTH_MU
     )
 
-    from ssapy_toolkit.propagators_6dof.sixdof import _gravity_gradient_torque_prepared
+    from ssatk.propagators_6dof.sixdof import _gravity_gradient_torque_prepared
 
     finite_dr = np.empty((3, 3))
     finite_dq = np.empty((3, 4))

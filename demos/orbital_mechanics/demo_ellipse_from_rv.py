@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Demo: rigorous validation driver for ssapy_toolkit ellipse fitting.
+Demo: rigorous validation driver for ssatk ellipse fitting.
 
 Baseline:
   - Runs ellipse_fit twice (A/B) using v_pref to pick direction
@@ -25,11 +25,11 @@ import sys
 import traceback
 import numpy as np
 
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.orbital_mechanics.ellipse_fit import ellipse_fit
-from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import RGEO
+from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
+from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

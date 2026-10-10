@@ -23,8 +23,8 @@ def test_plot_sun_direction_matches_astropy_get_sun(utc):
     # replaces was 1236" off on 2024-04-08 and 1333" on 2026-10-09.
     from astropy.coordinates import get_sun
 
-    from ssapy_toolkit.plots.eclipse_brightness_plot import sun_direction_eci
-    from ssapy_toolkit.plots.globe_orbit_daynight_plotly import sun_direction_eci as globe_sun
+    from ssatk.plots.eclipse_brightness_plot import sun_direction_eci
+    from ssatk.plots.globe_orbit_daynight_plotly import sun_direction_eci as globe_sun
 
     t = Time(utc, scale="utc")
     reference = get_sun(t).cartesian.xyz.value
@@ -35,7 +35,7 @@ def test_plot_sun_direction_matches_astropy_get_sun(utc):
 
 
 def _bright_catalogue(when, frame):
-    from ssapy_toolkit.plots.starfield import _load_stars
+    from ssatk.plots.starfield import _load_stars
 
     stars = _load_stars(mag_limit=2.0, when=when, frame=frame)
     if stars is None:
@@ -50,7 +50,7 @@ def test_gcrf_stars_match_astropy_icrs_with_proper_motion():
     import astropy.units as u
     from astropy.coordinates import SkyCoord
 
-    from ssapy_toolkit.plots.starfield import _catalog_path, _apply_frame
+    from ssatk.plots.starfield import _catalog_path, _apply_frame
     import pandas as pd
 
     when = datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc)

@@ -7,7 +7,7 @@ from astropy.coordinates import GCRS, get_sun
 from astropy.time import Time
 from scipy.integrate import quad
 
-import ssapy_toolkit.compute.lambertian_magnitude as photometry
+import ssatk.compute.lambertian_magnitude as photometry
 
 
 def _planck(lam, temperature):

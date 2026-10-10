@@ -1,7 +1,7 @@
 import numpy as np
 
-from ssapy_toolkit.constants import AU, EARTH_RADIUS
-from ssapy_toolkit.plots.coverage_analysis import compute_eclipse
+from ssatk.constants import AU, EARTH_RADIUS
+from ssatk.plots.coverage_analysis import compute_eclipse
 
 
 def test_compute_eclipse_uses_finite_sun_disk_for_partial_shadow():

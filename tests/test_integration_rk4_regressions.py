@@ -5,11 +5,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ssapy_toolkit.propagators_orbit.rk4 import rk4
-from ssapy_toolkit.propagators_orbit.int_utils import precompute_third_body_positions
+from ssatk.propagators_orbit.rk4 import rk4
+from ssatk.propagators_orbit.int_utils import precompute_third_body_positions
 
 
-rk4_module = importlib.import_module("ssapy_toolkit.propagators_orbit.rk4")
+rk4_module = importlib.import_module("ssatk.propagators_orbit.rk4")
 
 
 class RK4InputTests(unittest.TestCase):

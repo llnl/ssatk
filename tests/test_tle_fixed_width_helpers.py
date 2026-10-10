@@ -2,7 +2,7 @@ import pytest
 import importlib
 
 
-read_3le_by_bit = importlib.import_module("ssapy_toolkit.io.read_3le_by_bit")
+read_3le_by_bit = importlib.import_module("ssatk.io.read_3le_by_bit")
 
 
 TLE1 = "1 25544U 98067A   20029.54791435  .00000742  00000-0  20455-4 0  9993"

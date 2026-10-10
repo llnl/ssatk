@@ -24,7 +24,7 @@ def test_gcrf_to_itrf_matrix_matches_astropy_gcrs_to_itrs(utc):
     # against astropy GCRS->ITRS (IAU 2006/2000A), 500 random directions.
     # Measured model difference: 0.021" (2000) to 0.050" (2026).
     # Tolerance 0.5 arcsec. The former GMST-only matrix was 1354" off in 2026.
-    from ssapy_toolkit.coordinates.frames import eci_to_ecf_matrix
+    from ssatk.coordinates.frames import eci_to_ecf_matrix
 
     t = Time(utc, scale="utc")
     rng = np.random.default_rng(7)
@@ -43,7 +43,7 @@ def test_earth_texture_rotation_is_gcrf_right_ascension_of_greenwich(utc):
     import astropy.units as u
     from astropy.coordinates import GCRS, ITRS, CartesianRepresentation
 
-    from ssapy_toolkit.plots.scene_primitives import earth_rotation_deg_from_time
+    from ssatk.plots.scene_primitives import earth_rotation_deg_from_time
 
     t = Time(utc, scale="utc")
     greenwich = ITRS(CartesianRepresentation(1.0, 0.0, 0.0, unit=u.m), obstime=t).transform_to(
@@ -61,7 +61,7 @@ def test_groundtrack_enhanced_itrf_matches_ssapy_ground_track_in_any_time_scale(
     # because a scalar Time was rebuilt from its ISO string as UTC.
     from ssapy.compute import groundTrack
 
-    from ssapy_toolkit.plots.groundtrack_enhanced import gcrf_to_itrf
+    from ssatk.plots.groundtrack_enhanced import gcrf_to_itrf
 
     t = Time("2026-10-09T12:00:00", scale="utc")
     rng = np.random.default_rng(3)
@@ -81,7 +81,7 @@ def test_groundtrack_enhanced_geodetic_matches_astropy_wgs84():
     import astropy.units as u
     from astropy.coordinates import EarthLocation
 
-    from ssapy_toolkit.plots.groundtrack_enhanced import ecef_to_geodetic
+    from ssatk.plots.groundtrack_enhanced import ecef_to_geodetic
 
     lat0 = np.array([-89.0, -45.0, 0.0, 30.363, 45.0, 71.0])
     lon0 = np.array([-170.0, 10.0, 0.0, -97.979, 120.0, 145.0])

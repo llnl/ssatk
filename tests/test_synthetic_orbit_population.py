@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import ssapy
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.synthetic_orbit_population import synthetic_orbit_population
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.synthetic_orbit_population import synthetic_orbit_population
 
 
 def test_population_spread_and_trajectories():

@@ -1,6 +1,6 @@
 """
 Demo + pytest benchmarks for `lambertian_sphere_brightness`
-(the model now living in ssapy_toolkit.compute).
+(the model now living in ssatk.compute).
 
 Two modes
 ---------
@@ -9,15 +9,15 @@ Two modes
             NO graphics are produced.
 * demo:     `python demo_lambertian_brightness.py`
             Same benchmarks AND benchmark figures, saved via
-            `ssapy_toolkit.plots.figsave` into figures/.
+            `ssatk.plots.figsave` into figures/.
 
-The model is imported from ssapy_toolkit.compute when available, falling
+The model is imported from ssatk.compute when available, falling
 back to the standalone lambertian_sphere_brightness.py next to this file.
 
 Benchmark references (all independent of the model code)
 ---------------------------------------------------------
 * Analytic Lambertian-sphere photometry (McCue et al. 1971; the same
-  closed form the retired ssapy_toolkit calc_M_v sphere term used),
+  closed form the retired ssatk calc_M_v sphere term used),
   re-implemented inline in this file:
       F/F_sun = A * (R/d)^2 * (2/3pi) [sin a + (pi - a) cos a]
       m_V     = M_sun + 5 log10(r_sun_sat / 10 pc) - 2.5 log10(F/F_sun)
@@ -43,17 +43,17 @@ import ssapy
 
 
 # ----------------------------------------------------------------------
-# Import the model: prefer ssapy_toolkit.compute, fall back to local file
+# Import the model: prefer ssatk.compute, fall back to local file
 # ----------------------------------------------------------------------
 def _import_model():
     """Locate `lambertian_sphere_brightness` and return its *defining*
     module (via inspect.getmodule), so private helpers and constants are
     available even when only the public functions are re-exported from
-    ssapy_toolkit.compute's __init__."""
+    ssatk.compute's __init__."""
     import inspect
     for name in (
-        "ssapy_toolkit.compute.lambertian_sphere_brightness",
-        "ssapy_toolkit.compute",
+        "ssatk.compute.lambertian_sphere_brightness",
+        "ssatk.compute",
         "lambertian_sphere_brightness",
     ):
         try:
@@ -65,7 +65,7 @@ def _import_model():
             defining = inspect.getmodule(fn)
             return defining if defining is not None else mod
     raise ImportError(
-        "lambertian_sphere_brightness not found in ssapy_toolkit.compute "
+        "lambertian_sphere_brightness not found in ssatk.compute "
         "or as a local module."
     )
 
@@ -274,7 +274,7 @@ def _demo_figures():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from ssapy_toolkit.plots import figsave
+    from ssatk.plots import figsave
 
     os.makedirs("tests", exist_ok=True)
     b = _ours_vs_analytic(n=181)
@@ -288,7 +288,7 @@ def _demo_figures():
     ax1.plot(b["phase_deg"], b["ref_mag"], "k-", lw=3, alpha=0.35,
              label="analytic Lambertian sphere (McCue 1971, M_sun=4.80)")
     ax1.plot(b["phase_deg"][lit], b["ours_mag"][lit], "C0.", ms=4,
-             label="ssapy_toolkit lambertian_sphere_brightness (sunlit)")
+             label="ssatk lambertian_sphere_brightness (sunlit)")
     if shadow.any():
         ax1.axvspan(b["phase_deg"][shadow].min(),
                     b["phase_deg"][shadow].max(), color="0.85",

@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from ssapy_toolkit import asteroids
+from ssatk import asteroids
 
 
 def test_asteroid_size_magnitude_and_filter_conversions():

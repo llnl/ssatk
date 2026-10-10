@@ -1,15 +1,15 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import (
+from ssatk.constants import (
     AU,
     EARTH_DIPOLE_EQUATOR_FIELD,
     EARTH_GEOMAGNETIC_REFERENCE_RADIUS,
     EARTH_RADIUS,
     MOON_RADIUS,
 )
-from ssapy_toolkit.propagators_6dof import Spacecraft
-from ssapy_toolkit.environment import (
+from ssatk.propagators_6dof import Spacecraft
+from ssatk.environment import (
     SpaceEnvironment,
     cylindrical_eclipse_fraction,
     earth_dipole_magnetic_field,
@@ -17,7 +17,7 @@ from ssapy_toolkit.environment import (
     solar_disk_visible_fraction,
     solar_occultation_fraction,
 )
-from ssapy_toolkit.satellites import Facet, SpacecraftBody
+from ssatk.satellites import Facet, SpacecraftBody
 
 
 def test_eclipse_models_return_full_partial_and_zero_sun_fraction():

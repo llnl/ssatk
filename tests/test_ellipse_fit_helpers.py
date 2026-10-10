@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import ssapy
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.ellipse_fit import ellipse_fit
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
 
 P1 = np.array([7000e3, 0.0, 0.0])
 P2 = np.array([0.0, 8000e3, 0.0])

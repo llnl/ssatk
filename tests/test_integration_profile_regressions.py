@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.propagators_orbit.int_utils import build_profile
+from ssatk.propagators_orbit.int_utils import build_profile
 
 
 class ProfileTests(unittest.TestCase):

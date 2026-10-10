@@ -1,7 +1,7 @@
 import numpy as np
 
-from ssapy_toolkit.accelerations_orbit.accel_uniform_earth import accel_uniform_earth
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.accelerations_orbit.accel_uniform_earth import accel_uniform_earth
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
 
 
 def test_uniform_earth_gravity_inside_and_outside():

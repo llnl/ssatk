@@ -4,13 +4,13 @@ import importlib.util
 from pathlib import Path
 
 
-_MODULE_PATH = Path(__file__).parents[1] / "ssapy_toolkit" / "plots" / "moon_webgl.py"
+_MODULE_PATH = Path(__file__).parents[1] / "ssatk" / "plots" / "moon_webgl.py"
 _SPEC = importlib.util.spec_from_file_location("moon_webgl_test_module", _MODULE_PATH)
 MODULE = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None
 _SPEC.loader.exec_module(MODULE)
 
-_BAKER_PATH = Path(__file__).parents[1] / "ssapy_toolkit" / "io" / "moon_maps.py"
+_BAKER_PATH = Path(__file__).parents[1] / "ssatk" / "io" / "moon_maps.py"
 _BAKER_SPEC = importlib.util.spec_from_file_location("moon_maps_test_module", _BAKER_PATH)
 BAKER = importlib.util.module_from_spec(_BAKER_SPEC)
 assert _BAKER_SPEC.loader is not None
@@ -67,7 +67,7 @@ def test_lunar_body_frame_keeps_earth_near_zero_longitude():
     # R2: SSAPy MoonOrientation (DE440 principal axes) puts the sub-Earth point
     # within the libration bounds of 0 deg longitude over a month.
     import numpy as np
-    from ssapy_toolkit.coordinates import gcrf_to_lunar_body
+    from ssatk.coordinates import gcrf_to_lunar_body
 
     times = _frame_epoch_gps() + np.linspace(0.0, 27.32 * 86400.0, 12)
     lon, lat = _lon_lat_deg(gcrf_to_lunar_body(np.zeros((len(times), 3)), times))
@@ -99,7 +99,7 @@ def test_moon_webgl_stars_share_the_textured_moon_frame(monkeypatch):
     # same body frame as the textured Moon.
     import numpy as np
     import ssapy
-    from ssapy_toolkit.plots import starfield
+    from ssatk.plots import starfield
 
     t = _frame_epoch_gps()
     moon = ssapy.get_body("moon")

@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.navigation import (
+from ssatk.navigation import (
     BatchOrbitFitResult,
     GroundStation,
     StationObservation,
     StationPrediction,
     solve_batch_orbit,
 )
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state_with_stm
+from ssatk.propagators_orbit import propagate_orbit_state_with_stm
 
 
 @pytest.fixture

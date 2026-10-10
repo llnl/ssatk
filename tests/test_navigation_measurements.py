@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.navigation import GroundStation
+from ssatk.navigation import GroundStation
 
 
 @pytest.fixture

@@ -4,12 +4,12 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.coordinates.attitude import rotate_vector
-from ssapy_toolkit.propagators_6dof.sixdof import (
+from ssatk.coordinates.attitude import rotate_vector
+from ssatk.propagators_6dof.sixdof import (
     Spacecraft, propagate_6dof,
 )
-from ssapy_toolkit.propagators_6dof.variational import propagate_6dof_variational
-from ssapy_toolkit.satellites import SpacecraftBody, Tank
+from ssatk.propagators_6dof.variational import propagate_6dof_variational
+from ssatk.satellites import SpacecraftBody, Tank
 
 
 class VariableInertiaTests(unittest.TestCase):

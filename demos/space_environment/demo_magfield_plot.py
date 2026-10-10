@@ -16,8 +16,8 @@ GALLERY_CATEGORY = "space_environment"
 import sys
 import os
 
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.magfield_plot_3d import plot_magfield_3d
+from ssatk.plots.figpath import figpath
+from ssatk.plots.magfield_plot_3d import plot_magfield_3d
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

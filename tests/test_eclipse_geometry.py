@@ -6,7 +6,7 @@ from astropy.time import Time
 
 def test_2024_solar_eclipse_track_reaches_central_texas():
     """NASA/GSFC's 2024-04-08 totality path crosses central Texas near 18:39 UTC."""
-    from ssapy_toolkit.plots.eclipse_space_view_plotly import (
+    from ssatk.plots.eclipse_space_view_plotly import (
         RE_KM,
         _eci_surface_to_latlon,
         _great_circle_distance_km,
@@ -40,7 +40,7 @@ def test_2024_solar_eclipse_track_reaches_central_texas():
 
 
 def test_eclipse_surface_latlon_round_trips_with_earth_rotation():
-    from ssapy_toolkit.plots.eclipse_space_view_plotly import (
+    from ssatk.plots.eclipse_space_view_plotly import (
         _eci_surface_to_latlon,
         _latlon_to_eci_surface,
     )

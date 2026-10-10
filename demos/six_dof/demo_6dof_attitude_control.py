@@ -11,9 +11,9 @@ from demos.six_dof._common import (
     quaternion_angle_deg,
     save_demo_figure,
 )
-from ssapy_toolkit.accelerations_6dof import SpacecraftAttitudePD
-from ssapy_toolkit.propagators_6dof import Spacecraft, normalize_quaternion
-from ssapy_toolkit.satellites import SpacecraftBody
+from ssatk.accelerations_6dof import SpacecraftAttitudePD
+from ssatk.propagators_6dof import Spacecraft, normalize_quaternion
+from ssatk.satellites import SpacecraftBody
 
 TITLE = "6-DoF Attitude Control"
 DESCRIPTION = "Propagates one spacecraft with and without a body-frame quaternion PD attitude controller."

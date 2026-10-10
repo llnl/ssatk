@@ -6,8 +6,8 @@ import numpy as np
 from astropy.time import Time
 from ssapy import Orbit, rv
 
-from ssapy_toolkit.constants import EARTH_RADIUS
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
+from ssatk.constants import EARTH_RADIUS
+from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "orbit_visualization"

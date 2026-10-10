@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from demos.benchmarks.demo_orekit_benchmark import _eigen_6s_file, _run_orekit_j2
-from ssapy_toolkit.accelerations_6dof import SpacecraftAccelJ2
-from ssapy_toolkit.propagators_6dof import propagate_6dof_high_accuracy
+from ssatk.accelerations_6dof import SpacecraftAccelJ2
+from ssatk.propagators_6dof import propagate_6dof_high_accuracy
 
 
 def test_orekit_eigen_6s_degree_2_order_0_matches_ssatk_j2():

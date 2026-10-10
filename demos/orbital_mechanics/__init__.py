@@ -1,2 +1,2 @@
-"""Orbital mechanics SSAPy-Toolkit demos."""
+"""Orbital mechanics SSATK demos."""
 

@@ -2,14 +2,14 @@ import numpy as np
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.time_functions import (
+from ssatk.time_functions import (
     dd_to_dms,
     dd_to_hms,
     dms_to_dd,
     hms_to_dd,
     to_gps,
 )
-from ssapy_toolkit.time_functions.convert_gps_to_TT import _gpsToTT
+from ssatk.time_functions.convert_gps_to_TT import _gpsToTT
 
 
 def test_dms_and_hms_decimal_conversions_round_trip_common_values():
@@ -69,7 +69,7 @@ def test_julian_date_matches_meeus_and_astropy():
     # Both to 1e-6 s.
     from datetime import datetime, timedelta
 
-    from ssapy_toolkit.time_functions import julian_date
+    from ssatk.time_functions import julian_date
 
     sputnik = datetime(1957, 10, 4) + timedelta(days=0.81)
     assert julian_date(sputnik) == pytest.approx(2436116.31, abs=1e-6 / 86400.0)
@@ -87,7 +87,7 @@ def test_julian_date_matches_meeus_and_astropy():
 def test_negative_sub_degree_dms_angles_keep_their_sign():
     # R3 (sexagesimal definition): the sign applies to the whole angle, so a
     # declination of -00:30:00 is -0.5 deg and must not come back as +0.5 deg.
-    from ssapy_toolkit.time_functions.convert_dd_and_dms import dd_to_dms, dms_to_dd
+    from ssatk.time_functions.convert_dd_and_dms import dd_to_dms, dms_to_dd
 
     cases = {"-00:30:00": -0.5, "-0:00:36": -0.01, "-10:30:36": -10.51, "10:30:36": 10.51, "+00:30:00": 0.5}
     for text, degrees in cases.items():

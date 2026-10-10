@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.plots.figpath import figpath
+from ssatk.plots.figpath import figpath
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

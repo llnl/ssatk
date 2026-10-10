@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Beginner plotting quickstart for SSAPy-Toolkit.
+Beginner plotting quickstart for SSATK.
 
 This file is intentionally written top-to-bottom.  Each section makes one
 important kind of plot from the same simple SSAPy orbit so a new user can copy a
@@ -22,22 +22,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.time import Time
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.plots.divergence_gif import divergence_gif
-from ssapy_toolkit.plots.divergence_plot import divergence_plot
-from ssapy_toolkit.plots.earth_sun_plot import DEFAULT_CFG as EARTH_SUN_CFG
-from ssapy_toolkit.plots.earth_sun_plot import build_static_figure as build_earth_sun_static
-from ssapy_toolkit.plots.figpath import figpath, ssatk_path
-from ssapy_toolkit.plots.globe_plot import globe_plot
-from ssapy_toolkit.plots.groundtrack_plot import groundtrack_plot
-from ssapy_toolkit.plots.magfield_plot_3d import plot_magfield_3d
-from ssapy_toolkit.plots.moon_plot_3d import moon_plot_3d
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.plots.sensor_fov_plot import DEFAULT_CFG as SENSOR_FOV_CFG
-from ssapy_toolkit.plots.sensor_fov_plot import plot_sensor_fov
-from ssapy_toolkit.plots.solar_view_plot import DEFAULT_CFG as SOLAR_VIEW_CFG
-from ssapy_toolkit.plots.solar_view_plot import build_figure as build_solar_view
-from ssapy_toolkit.plots.van_allen_plot_3d import plot_van_allen_3d
+import ssatk
+from ssatk.plots.divergence_gif import divergence_gif
+from ssatk.plots.divergence_plot import divergence_plot
+from ssatk.plots.earth_sun_plot import DEFAULT_CFG as EARTH_SUN_CFG
+from ssatk.plots.earth_sun_plot import build_static_figure as build_earth_sun_static
+from ssatk.plots.figpath import figpath, ssatk_path
+from ssatk.plots.globe_plot import globe_plot
+from ssatk.plots.groundtrack_plot import groundtrack_plot
+from ssatk.plots.magfield_plot_3d import plot_magfield_3d
+from ssatk.plots.moon_plot_3d import moon_plot_3d
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.plots.sensor_fov_plot import DEFAULT_CFG as SENSOR_FOV_CFG
+from ssatk.plots.sensor_fov_plot import plot_sensor_fov
+from ssatk.plots.solar_view_plot import DEFAULT_CFG as SOLAR_VIEW_CFG
+from ssatk.plots.solar_view_plot import build_figure as build_solar_view
+from ssatk.plots.van_allen_plot_3d import plot_van_allen_3d
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 FIGDIR = "figures"

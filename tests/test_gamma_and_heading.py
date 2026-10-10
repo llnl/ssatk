@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.gamma_and_heading import (
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.gamma_and_heading import (
     calc_gamma_and_heading,
     calc_gamma_and_heading_itrf,
     calc_heading_itrf,

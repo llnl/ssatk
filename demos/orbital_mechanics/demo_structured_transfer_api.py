@@ -1,4 +1,4 @@
-"""Readable transfer_optimal API walkthrough for SSAPy-Toolkit.
+"""Readable transfer_optimal API walkthrough for SSATK.
 
 This demo is intentionally written like a help document.  The important
 ``transfer_optimal(...)`` calls are spelled out directly in ``main`` from top to
@@ -35,10 +35,10 @@ import numpy as np
 from ssapy import Orbit, rv
 from ssapy.propagator import KeplerianPropagator
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.transfer_optimal_function import transfer_optimal
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.transfer_optimal_function import transfer_optimal
+from ssatk.plots.figpath import figpath
+from ssatk.plots.plotutils import figsave
 
 
 TITLE = "Structured Transfer API"

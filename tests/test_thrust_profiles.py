@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.accelerations_6dof.thrust import (
+from ssatk.accelerations_6dof.thrust import (
     ThrustCurve,
     integrated_thrust_impulse,
     load_packaged_thrust_curve,

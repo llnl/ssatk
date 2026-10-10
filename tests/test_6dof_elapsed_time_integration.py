@@ -11,10 +11,10 @@ keeping every callback and every returned epoch absolute.
 import numpy as np
 import pytest
 
-from ssapy_toolkit.accelerations_6dof.thrust import SpacecraftManeuverAccel
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof.sixdof import Spacecraft, propagate_6dof
-from ssapy_toolkit.satellites import SpacecraftBody, Tank
+from ssatk.accelerations_6dof.thrust import SpacecraftManeuverAccel
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof.sixdof import Spacecraft, propagate_6dof
+from ssatk.satellites import SpacecraftBody, Tank
 
 # GPS seconds. 1.4e9 is 2024-05-13; 3.8e9 is 2100-06-20.
 EPOCHS = pytest.mark.parametrize(

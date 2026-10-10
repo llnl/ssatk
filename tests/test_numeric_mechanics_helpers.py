@@ -1,11 +1,11 @@
 
 import numpy as np
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.coordinates import equatorial_ecliptic
-from ssapy_toolkit.coordinates.cartesian import cart2sph_deg, cart_to_cyl
-from ssapy_toolkit.coordinates.satellite_frames import gcrf_to_ntw, ntw_to_gcrf, ntw_to_gcrf_matrix
-from ssapy_toolkit.coordinates.angle_units import (
+from ssatk.constants import EARTH_MU
+from ssatk.coordinates import equatorial_ecliptic
+from ssatk.coordinates.cartesian import cart2sph_deg, cart_to_cyl
+from ssatk.coordinates.satellite_frames import gcrf_to_ntw, ntw_to_gcrf, ntw_to_gcrf_matrix
+from ssatk.coordinates.angle_units import (
     deg0to360,
     deg0to360array,
     deg90to90,
@@ -14,7 +14,7 @@ from ssapy_toolkit.coordinates.angle_units import (
     dms_to_rad,
     rad0to2pi,
 )
-from ssapy_toolkit.orbital_mechanics import misc
+from ssatk.orbital_mechanics import misc
 
 eqecl = equatorial_ecliptic
 

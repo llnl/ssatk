@@ -12,14 +12,14 @@ GALLERY_CATEGORY = "eclipse"
 import os
 import sys
 
-from ssapy_toolkit.plots.eclipse_appearance_strip import make_strip
-from ssapy_toolkit.plots.eclipse_space_view_plotly import (
+from ssatk.plots.eclipse_appearance_strip import make_strip
+from ssatk.plots.eclipse_space_view_plotly import (
     find_and_plot_eclipse,
     plot_2024_solar_eclipse_animated,
     plot_space_view_animated,
     plot_space_view_plotly,
 )
-from ssapy_toolkit.plots.figpath import figpath
+from ssatk.plots.figpath import figpath
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.environment import SpaceEnvironment
-from ssapy_toolkit.plots.sun_mpl import get_sun_position
+from ssatk.environment import SpaceEnvironment
+from ssatk.plots.sun_mpl import get_sun_position
 
 EPOCH = Time("2026-10-08T00:00:00", scale="utc")
 

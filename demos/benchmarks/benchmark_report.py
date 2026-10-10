@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit._paths import output_root
-from ssapy_toolkit.plots.figpath import document_path
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk._paths import output_root
+from ssatk.plots.figpath import document_path
 
 PLOT_ORDER = (
     "artemis_benchmark_cislunar_context.png",

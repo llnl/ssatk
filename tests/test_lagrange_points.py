@@ -5,8 +5,8 @@ import pytest
 import ssapy
 from astropy.time import Time
 
-from ssapy_toolkit.constants import EARTH_MU, MOON_MU
-from ssapy_toolkit.orbital_mechanics import lagrange_points as lp
+from ssatk.constants import EARTH_MU, MOON_MU
+from ssatk.orbital_mechanics import lagrange_points as lp
 
 EPOCHS = Time(["2025-01-01T00:00:00", "2025-03-20T12:00:00", "2026-10-08T00:00:00"], scale="utc").gps
 

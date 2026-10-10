@@ -23,6 +23,7 @@ stages:
       else
         pip install .
       fi
+    - pip install --no-deps ./packaging/ssapy-toolkit-compat
     - pip install pytest pytest-cov
   script:
     - mkdir -p reports

@@ -1,15 +1,15 @@
-# Contributing to SSAPy Toolkit
+# Contributing to Space Situational Awareness Toolkit (SSATK)
 
-All contributions to SSAPy Toolkit must be made under the BSD 3-Clause License.
+All contributions to SSATK must be made under the BSD 3-Clause License.
 
 Contributions are welcome via pull request targeting the `main` branch of the
-[SSAPy Toolkit](https://github.com/llnl/SSAPy-Toolkit) repository. Pull requests
+[SSATK](https://github.com/LLNL/ssatk) repository. Pull requests
 are reviewed by the project maintainers and must pass the repository's CI checks
 (tests and linting) before they can be merged.
 
 Work that primarily concerns the core propagation and modeling engine should be
 contributed to the [SSAPy](https://github.com/llnl/SSAPy) repository instead;
-SSAPy Toolkit is for higher-level, analysis-ready utilities and workflows built
+SSATK is for higher-level, analysis-ready utilities and workflows built
 on top of SSAPy.
 
 By contributing, you agree to abide by the project's
@@ -17,7 +17,7 @@ By contributing, you agree to abide by the project's
 
 ## Repository scope and file layout
 
-SSAPy Toolkit is a source-code repository. Keep generated artifacts, analysis
+SSATK is a source-code repository. Keep generated artifacts, analysis
 outputs, downloaded data products, figures, screenshots, animations, notebooks
 with embedded outputs, and other binary media out of the repository. If a change
 requires persistent data, put that data in
@@ -28,7 +28,7 @@ Use the existing top-level structure for new work:
 
 | Path | Purpose |
 | --- | --- |
-| `ssapy_toolkit/` | Importable package code. |
+| `ssatk/` | Importable package code. |
 | `tests/` | Automated regression and behavior tests. |
 | `demos/` | Categorized, runnable demonstrations of user-facing workflows. |
 | `docs/` | Narrative documentation and API documentation. |
@@ -59,9 +59,9 @@ Before requesting review, run the focused checks that match the change:
 
 ```bash
 python -m pip install -e .[dev]
-node --check ssapy_toolkit/plots/satellite_viewer_scene.js  # requires Node.js 20+
+node --check ssatk/plots/satellite_viewer_scene.js  # requires Node.js 20+
 pytest tests
-python -m ssapy_toolkit.run_all_demos
+python -m ssatk.run_all_demos
 python scripts/check_repository_policy.py
 ```
 

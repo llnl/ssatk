@@ -40,6 +40,16 @@ jobs:
           PY
           )"
           test "$RELEASE_TAG" = "v$project_version"
+          # The transitional ssapy-toolkit package must ship the same version
+          # and pin exactly that ssatk release.
+          python - "$project_version" <<'PY'
+          import sys, tomllib
+          from pathlib import Path
+
+          compat = tomllib.loads(Path("packaging/ssapy-toolkit-compat/pyproject.toml").read_text())["project"]
+          assert compat["version"] == sys.argv[1], (compat["version"], sys.argv[1])
+          assert compat["dependencies"] == [f"ssatk=={sys.argv[1]}"], compat["dependencies"]
+          PY
 
       - name: Run tests
         run: python -m pytest -q
@@ -59,7 +69,7 @@ jobs:
         run: python scripts/check_repository_policy.py --base-ref "$(git merge-base origin/main HEAD)" --head-ref HEAD
 
       - name: Run analytical validation profile
-        run: python -m ssapy_toolkit.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
+        run: python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
 
       - name: Upload analytical validation results
         if: always()
@@ -74,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/ssapy-toolkit
+      url: https://pypi.org/p/ssatk
     permissions:
       id-token: write
 
@@ -91,7 +101,10 @@ jobs:
           pip install build twine
 
       - name: Build distributions
-        run: python -m build
+        run: |
+          python -m build
+          # Transitional ssapy-toolkit -> ssatk package, uploaded alongside.
+          python -m build packaging/ssapy-toolkit-compat --outdir dist
 
       - name: Check distributions
         run: python -m twine check dist/*
@@ -100,19 +113,19 @@ jobs:
         run: |
           # Install the wheel with its declared dependencies, exactly as a user
           # would, so a missing or misnamed ssatk-data-* package fails here.
-          pip install dist/*.whl
+          pip install dist/ssatk-*.whl
           python -I - <<'PY'
           from importlib.metadata import entry_points, version
           from importlib.util import find_spec
 
-          import ssapy_toolkit
-          from ssapy_toolkit.data import data_resource, resource_package
-          from ssapy_toolkit.plots._textures import earth_texture_path
-          from ssapy_toolkit.plots.starfield import find_data_file
+          import ssatk
+          from ssatk.data import data_resource, resource_package
+          from ssatk.plots._textures import earth_texture_path
+          from ssatk.plots.starfield import find_data_file
 
           # The retired single-wheel archive must not be what makes this pass.
           assert find_spec("ssapy_data") is None, "llnl-ssapy-data leaked into the release env"
-          assert ssapy_toolkit.__version__ == version("ssapy-toolkit")
+          assert ssatk.__version__ == version("ssatk")
           for name in ("environment/eop/finals2000A.all",
                        "environment/space_weather/SW-All.csv",
                        "earth_map.npz", "bright_stars.csv"):
@@ -121,7 +134,21 @@ jobs:
           assert find_data_file("bright_stars.csv") is not None
           assert earth_texture_path().is_file()
           scripts = {entry.name for entry in entry_points(group="console_scripts")}
-          assert {"ssapy-demo-gallery", "ssatk-benchmark", "ssapy-magnetosphere"} <= scripts
+          assert {"ssatk-demo-gallery", "ssatk-benchmark", "ssatk-magnetosphere"} <= scripts
+          assert find_spec("ssapy_toolkit") is None, "the ssatk wheel must not ship the legacy alias"
+          PY
+          # Transitional package: installs the alias and resolves to ssatk.
+          pip install --no-deps dist/ssapy_toolkit-*.whl
+          python -I - <<'PY'
+          import warnings
+          import ssatk
+          with warnings.catch_warnings(record=True) as caught:
+              warnings.simplefilter("always")
+              import ssapy_toolkit
+          assert any(issubclass(w.category, FutureWarning) for w in caught), "alias must warn"
+          from ssapy_toolkit.coordinates.frames import eci_to_ecf_matrix
+          assert ssapy_toolkit.__version__ == ssatk.__version__
+          assert eci_to_ecf_matrix is ssatk.coordinates.frames.eci_to_ecf_matrix
           PY
 
       - name: Publish to PyPI

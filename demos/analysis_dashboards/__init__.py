@@ -1,1 +1,1 @@
-"""Analysis dashboard SSAPy-Toolkit demos."""
+"""Analysis dashboard SSATK demos."""

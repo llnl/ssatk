@@ -3,8 +3,8 @@ import pytest
 from astropy.time import Time
 from ssapy import get_body
 
-from ssapy_toolkit.orbit_initializer import OrbitInitialize
-from ssapy_toolkit.orbital_mechanics.lagrange_points import lunar_lagrange_points
+from ssatk.orbit_initializer import OrbitInitialize
+from ssatk.orbital_mechanics.lagrange_points import lunar_lagrange_points
 
 
 @pytest.mark.parametrize("utc", ["2025-03-20T12:00:00", "2026-10-08T00:00:00"])

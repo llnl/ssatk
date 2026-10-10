@@ -18,10 +18,10 @@ from pathlib import Path
 import numpy as np
 import plotly.graph_objects as go
 
-from ssapy_toolkit.constants import EARTH_MU, RGEO
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.layers import _footprint_on_earth
-from ssapy_toolkit.plots.sensor_fov_plot import (
+from ssatk.constants import EARTH_MU, RGEO
+from ssatk.plots.figpath import figpath
+from ssatk.plots.layers import _footprint_on_earth
+from ssatk.plots.sensor_fov_plot import (
     DEFAULT_CFG,
     add_sensor_fov_to_figure,
     build_figure,

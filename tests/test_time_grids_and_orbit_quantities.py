@@ -3,9 +3,9 @@ import pytest
 import ssapy
 from astropy.time import Time
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics import all_orbital_quantities
-from ssapy_toolkit.time_functions import get_times
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics import all_orbital_quantities
+from ssatk.time_functions import get_times
 
 
 def test_time_grid_spans_the_2016_leap_second_in_si_seconds():

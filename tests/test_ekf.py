@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.navigation import (
+from ssatk.navigation import (
     CartesianMeasurement,
     CartesianOrbitEKF,
     EKFState,

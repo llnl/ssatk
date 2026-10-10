@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ssapy-toolkit"
-version = "1.0.7"
-description = "SSAPy Toolkit: extensions for orbital mechanics, plotting, and data IO"
+name = "ssatk"
+version = "1.1.0"
+description = "Space Situational Awareness Toolkit (SSATK): orbital mechanics, plotting, and data IO built on SSAPy"
 authors = [
   { name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }
 ]
@@ -121,18 +121,18 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/llnl/SSAPy-Toolkit"
-Repository = "https://github.com/llnl/SSAPy-Toolkit"
-Issues = "https://github.com/llnl/SSAPy-Toolkit/issues"
+Homepage = "https://github.com/LLNL/ssatk"
+Repository = "https://github.com/LLNL/ssatk"
+Issues = "https://github.com/LLNL/ssatk/issues"
 Documentation = "https://ssapy-toolkit.readthedocs.io/"
 
 [tool.setuptools]
-packages = { find = { where = ["."], include = ["ssapy_toolkit*", "demos*"] } }
+packages = { find = { where = ["."], include = ["ssatk*", "demos*"] } }
 
 [tool.setuptools.package-data]
 demos = ["README.md"]
 "demos.benchmarks" = ["README.md", "orekit/*.java", "orekit/*.xml"]
-"ssapy_toolkit.plots" = ["*.js"]
+"ssatk.plots" = ["*.js"]
 
 [tool.pytest.ini_options]
 markers = [
@@ -144,7 +144,11 @@ filterwarnings = [
 ]
 
 [project.scripts]
-ssapy-demo-gallery = "ssapy_toolkit.run_all_demos:main"
-ssatk-benchmark = "ssapy_toolkit.benchmark:main"
-ssapy-magnetosphere = "ssapy_toolkit.plots.magfield_plot_3d:main"
-ssapy-bake-moon = "ssapy_toolkit.io.moon_maps:main"
+ssatk-demo-gallery = "ssatk.run_all_demos:main"
+ssatk-benchmark = "ssatk.benchmark:main"
+ssatk-magnetosphere = "ssatk.plots.magfield_plot_3d:main"
+ssatk-bake-moon = "ssatk.io.moon_maps:main"
+# Pre-rename command names, kept so existing scripts keep working.
+ssapy-demo-gallery = "ssatk.run_all_demos:main"
+ssapy-magnetosphere = "ssatk.plots.magfield_plot_3d:main"
+ssapy-bake-moon = "ssatk.io.moon_maps:main"

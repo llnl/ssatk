@@ -6,8 +6,8 @@ import sys
 import numpy as np
 from astropy.time import Time
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
+import ssatk
+from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 FIGDIR = "figures"

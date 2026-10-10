@@ -1,7 +1,7 @@
-# SSAPy Toolkit
+# Space Situational Awareness Toolkit (SSATK)
 
-**SSAPy Toolkit** (Python package: `ssapy_toolkit`, sometimes abbreviated
-*SSATK*) is a collection of higher-level, analysis-ready extensions for the
+The **Space Situational Awareness Toolkit (SSATK)** — `pip install ssatk`,
+`import ssatk` — is a collection of higher-level, analysis-ready extensions for the
 [SSAPy](https://github.com/llnl/SSAPy) orbital-modeling ecosystem. Where SSAPy
 provides the core high-fidelity propagation and modeling engine, the Toolkit
 adds astrodynamics utilities, orbital-transfer design, coordinate/time
@@ -74,7 +74,15 @@ GMAT, Orekit, STK, or FreeFlyer:
 
 ## Installation
 
-SSAPy Toolkit is a standard Python package.
+SSATK is a standard Python package, published on PyPI as `ssatk`.
+
+> **Renamed in 1.1.0.** SSATK was published as `ssapy-toolkit` and imported as
+> `ssapy_toolkit` through 1.0.7. Existing installs can run
+> `python -m pip install -U ssapy-toolkit`: that release is a thin package that
+> pulls in `ssatk` and keeps `import ssapy_toolkit` working (it forwards to
+> `ssatk` and emits a `FutureWarning`). New installs should use
+> `python -m pip install ssatk`. The `ssapy-*` command names remain as aliases
+> of the `ssatk-*` commands.
 
 ```
 python -m venv .venv
@@ -87,17 +95,17 @@ This installs the package in editable mode along with development dependencies
 (testing, linting, docs tools, JavaScript validation helpers, etc.). Runtime
 plotting dependencies support HTML, image, and GIF output through Plotly,
 Matplotlib, Pillow, imageio, and split SSATK data assets. Install
-`ssapy-toolkit[static]` for Plotly static-image export through Kaleido,
-`ssapy-toolkit[pdf]` for appending pages to existing PDF plots,
-`ssapy-toolkit[notebook]` for IPython display and ipyvolume Earth/Moon meshes,
-`ssapy-toolkit[video]` for OpenCV MP4 output and a bundled FFmpeg fallback, and
-`ssapy-toolkit[browser]` for Selenium browser capture. Node.js 20+ is used only to validate the
+`ssatk[static]` for Plotly static-image export through Kaleido,
+`ssatk[pdf]` for appending pages to existing PDF plots,
+`ssatk[notebook]` for IPython display and ipyvolume Earth/Moon meshes,
+`ssatk[video]` for OpenCV MP4 output and a bundled FFmpeg fallback, and
+`ssatk[browser]` for Selenium browser capture. Node.js 20+ is used only to validate the
 self-contained JavaScript viewer sources; GitHub Actions installs it with
 `actions/setup-node`, and local developers can use system Node.js or `nodeenv`.
-Install `ssapy-toolkit[monitoring]` to enable the optional current-process RSS
+Install `ssatk[monitoring]` to enable the optional current-process RSS
 memory helper.
 
-SSAPy Toolkit builds on SSAPy; see the
+SSATK builds on SSAPy; see the
 [SSAPy](https://github.com/llnl/SSAPy) repository for its installation details.
 
 ---
@@ -109,7 +117,7 @@ constants are available through the Toolkit, so users do not need to know
 whether a constant originates in base SSAPy or Toolkit-specific helpers:
 
 ```
-import ssapy_toolkit as ssatk
+import ssatk
 
 print(ssatk.EARTH_MU)
 print(ssatk.constants.RGEO)
@@ -127,20 +135,20 @@ r, v = ssatk.rv(orbit, time=[0.0, 60.0])
 ```
 
 Base SSAPy core objects such as `Orbit`, `rv`, `groundTrack`, and `AccelKepler`
-are lazily available through `ssapy_toolkit`. Toolkit duplicate helpers take
-precedence at the top level, so names such as `ssapy_toolkit.norm`,
-`ssapy_toolkit.deg0to360`, and `ssapy_toolkit.period` resolve to Toolkit
+are lazily available through `ssatk`. Toolkit duplicate helpers take
+precedence at the top level, so names such as `ssatk.norm`,
+`ssatk.deg0to360`, and `ssatk.period` resolve to Toolkit
 implementations. Toolkit submodules also win on collisions such as
-`ssapy_toolkit.io` and `ssapy_toolkit.utils`; the base package remains available
-as `ssapy_toolkit.ssapy` when direct SSAPy module access is needed.
+`ssatk.io` and `ssatk.utils`; the base package remains available
+as `ssatk.ssapy` when direct SSAPy module access is needed.
 Earth/Moon helpers formerly provided by `ssapy.plotUtils` are available as
-`ssapy_toolkit.draw_earth`, `draw_moon`, `load_earth_file`, and
+`ssatk.draw_earth`, `draw_moon`, `load_earth_file`, and
 `load_moon_file`.
 
 CCSDS Conjunction Data Message (CDM) KVN 1.0 files use SI values in memory:
 
 ```python
-from ssapy_toolkit.io.ccsds_cdm import read_cdm, write_cdm
+from ssatk.io.ccsds_cdm import read_cdm, write_cdm
 
 cdm = read_cdm("conjunction.cdm")
 object1_gcrf = cdm.object1.state_gcrf()
@@ -155,11 +163,11 @@ thrust rows. Later alternate-covariance extensions are rejected explicitly.
 For workflow functions, import the specific Toolkit module you need:
 
 ```
-from ssapy_toolkit.orbital_mechanics import keplerian
-from ssapy_toolkit.orbital_mechanics import transfer_hohmann
-from ssapy_toolkit.orbital_mechanics import transfer_bielliptic
-from ssapy_toolkit.coordinates import gcrf_to_itrf
-from ssapy_toolkit.plots import orbit_plot
+from ssatk.orbital_mechanics import keplerian
+from ssatk.orbital_mechanics import transfer_hohmann
+from ssatk.orbital_mechanics import transfer_bielliptic
+from ssatk.coordinates import gcrf_to_itrf
+from ssatk.plots import orbit_plot
 ```
 
 For high-accuracy translational propagation, use the adaptive DOP853 wrapper in
@@ -167,8 +175,8 @@ For high-accuracy translational propagation, use the adaptive DOP853 wrapper in
 
 ```
 import numpy as np
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_orbit import propagate_orbit_state
 
 radius = 7_000_000.0
 speed = np.sqrt(EARTH_MU / radius)
@@ -187,9 +195,9 @@ and `propagate_6dof` directly for lower-level numerical propagation.
 
 ```
 import numpy as np
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.accelerations_6dof import SpacecraftAccelJ2, constant_body_thrust
-from ssapy_toolkit.plots import orbit_plot
+import ssatk
+from ssatk.accelerations_6dof import SpacecraftAccelJ2, constant_body_thrust
+from ssatk.plots import orbit_plot
 
 sat = ssatk.Spacecraft(
     r=[7_000_000.0, 0.0, 0.0],
@@ -210,7 +218,7 @@ traj = sat.propagate(
 orbit_plot(traj.r, traj.t, view="3d")
 ```
 
-Reusable 6-DoF acceleration models live in ``ssapy_toolkit.accelerations_6dof`` and
+Reusable 6-DoF acceleration models live in ``ssatk.accelerations_6dof`` and
 include SSAPy-like classes for Kepler gravity, J2, third-body gravity,
 cannonball drag, cannonball solar radiation pressure, constant inertial/NTW/body
 accelerations, summed acceleration/torque models, and attitude-dependent
@@ -249,12 +257,12 @@ exponential, pulsed, callable, or loaded from CSV with ``ThrustCurve``; citable
 engine data belongs in the appropriate split SSATK data repository rather than this source repository and can be
 loaded with ``load_thrust_curve_data(...)`` once packaged.
 
-Preset spacecraft bodies live in `ssapy_toolkit.satellites`. Use
+Preset spacecraft bodies live in `ssatk.satellites`. Use
 `satellite_design(...)` to start from a common bus, override dimensions or
 mass, then add components, tanks, facets, or thrusters as needed:
 
 ```
-from ssapy_toolkit.accelerations_6dof import (
+from ssatk.accelerations_6dof import (
     SpacecraftFacetDrag,
     SpacecraftFacetSolRad,
     SpacecraftManeuverAccel,
@@ -318,7 +326,7 @@ For larger design trades, `transfer_optimal` also accepts a structured
 route, and solver controls in one call:
 
 ```
-from ssapy_toolkit.orbital_mechanics import transfer_optimal
+from ssatk.orbital_mechanics import transfer_optimal
 
 result = transfer_optimal(
     problem={
@@ -401,7 +409,7 @@ demo gallery runner searches those subfolders recursively. To render the full
 demo gallery as a visualization document:
 
 ```
-ssapy-demo-gallery
+ssatk-demo-gallery
 ```
 
 The command can be run from any directory after installation. It writes the
@@ -479,7 +487,7 @@ primarily concerns the core propagation/modeling engine should target the
 
 ## License
 
-SSAPy Toolkit is distributed under the terms of the BSD 3-Clause license. All
+SSATK is distributed under the terms of the BSD 3-Clause license. All
 new contributions must be made under the same license. See the
 [LICENSE](LICENSE) file for details.
 

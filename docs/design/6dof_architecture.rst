@@ -5,7 +5,7 @@ Purpose
 -------
 
 This document records the design rationale for six-degree-of-freedom (6-DoF)
-spacecraft dynamics in SSAPy Toolkit (SSATK). It is a trade study, not a
+spacecraft dynamics in Space Situational Awareness Toolkit (SSATK). It is a trade study, not a
 benchmark, endorsement, or complete review of every flight-dynamics package.
 The external tools listed here were reviewed to identify common modeling
 patterns, API boundaries, and non-goals for SSATK.
@@ -335,20 +335,20 @@ Current SSATK State
 The current SSATK 6-DoF implementation already has the correct minimal
 numerical backbone:
 
-* ``ssapy_toolkit.propagators_6dof.Spacecraft`` stores inertial position, inertial
+* ``ssatk.propagators_6dof.Spacecraft`` stores inertial position, inertial
   velocity, quaternion attitude, angular rate, inertia, mass, area, drag
   coefficient, reflectivity coefficient, and center of pressure.
-* ``ssapy_toolkit.propagators_6dof.propagate_6dof`` propagates position, velocity,
+* ``ssatk.propagators_6dof.propagate_6dof`` propagates position, velocity,
   quaternion, angular rate, and solver diagnostics with user-provided
   acceleration and torque models.
-* ``ssapy_toolkit.propagators_6dof.propagate_6dof`` forwards SciPy ``solve_ivp`` events
+* ``ssatk.propagators_6dof.propagate_6dof`` forwards SciPy ``solve_ivp`` events
   and dense output for event-driven propagation segments without adding an
   SSATK-specific event framework.
-* ``ssapy_toolkit.propagators_6dof.radius_crossing_event``,
+* ``ssatk.propagators_6dof.radius_crossing_event``,
   ``altitude_crossing_event``, ``mass_floor_event``, and
   ``propellant_empty_event`` provide small reusable physical event helpers for
   altitude/radius crossings and burn mass limits.
-* ``ssapy_toolkit.accelerations_6dof`` contains point-mass gravity, J2,
+* ``ssatk.accelerations_6dof`` contains point-mass gravity, J2,
   third-body gravity, cannonball drag, cannonball solar-radiation pressure,
   constant inertial/NTW/body acceleration, summed force/torque helpers, and
   flat-plate/facet drag/SRP, thruster, gravity-gradient, magnetic-dipole,
@@ -357,15 +357,15 @@ numerical backbone:
   angular rate and accept explicit atmosphere velocity inputs, so force and
   torque change when exposed surfaces spin relative to winds or rigid
   co-rotation.
-* ``ssapy_toolkit.accelerations_6dof.SpacecraftManeuverAccel`` adds finite
+* ``ssatk.accelerations_6dof.SpacecraftManeuverAccel`` adds finite
   maneuver acceleration with explicit ``frame`` selection and scalar, callable,
   analytical, or CSV-loaded thrust curves.
-* ``ssapy_toolkit.accelerations_6dof.SpacecraftAccelSSAPy`` adapts SSAPy
+* ``ssatk.accelerations_6dof.SpacecraftAccelSSAPy`` adapts SSAPy
   translational accelerations into the SSATK 6-DoF force-model interface. This
   allows SSATK to reuse SSAPy's mature Earth harmonics, third-body gravity,
   Harris-Priester drag, solar radiation, and Earth radiation models without
   forcing all spacecraft body physics into SSAPy.
-* ``ssapy_toolkit.propagators_6dof.propagate_6dof`` can optionally propagate spacecraft
+* ``ssatk.propagators_6dof.propagate_6dof`` can optionally propagate spacecraft
   mass as a 14th state when a mass-flow model is supplied. Thruster force models
   therefore see the current propagated mass instead of a fixed initial mass.
   When a ``SpacecraftBody`` has tanks, propagated mass updates tank propellant
@@ -377,29 +377,29 @@ numerical backbone:
   ``mass_floor_event`` explicitly.
   ``SpacecraftManeuverAccel(tank_name=...)`` can instead feed one named tank
   and stops that maneuver when the selected tank is empty.
-* ``ssapy_toolkit.propagators_6dof.propagate_spacecraft_high_accuracy`` provides
+* ``ssatk.propagators_6dof.propagate_spacecraft_high_accuracy`` provides
   the current analyst-facing high-accuracy entry point for combining SSATK
   body/torque/thrust models with optional SSAPy translational perturbations.
-* ``ssapy_toolkit.propagators_6dof.propagate_spacecraft_segments`` chains
+* ``ssatk.propagators_6dof.propagate_spacecraft_segments`` chains
   consecutive coast/burn/environment segments while preserving state, propagated
   mass, event diagnostics, and solver evaluation counts. Its
   ``ImpulseManeuver`` state reset supports inertial, body, NTW, RTN, and VNB
   delta-v components plus optional mass, quaternion, and angular-rate updates.
-* ``ssapy_toolkit.propagators_6dof.solve_6dof_multi_segment_target`` performs
+* ``ssatk.propagators_6dof.solve_6dof_multi_segment_target`` performs
   bounded single shooting over those segments and accepts normalized constraint
   and residual hooks.
-* ``ssapy_toolkit.propagators_6dof.propagate_6dof_variational`` propagates a
+* ``ssatk.propagators_6dof.propagate_6dof_variational`` propagates a
   coupled local-coordinate STM through the same rigid-body RHS, while
   ``propagate_6dof_covariance`` maps initial covariance and process-noise
   contributions through it. Covariances may use either the raw quaternion
   coordinates or the three-parameter local attitude-error coordinates.
-* ``ssapy_toolkit.propagators_6dof.propagate_6dof_extended`` propagates one or
+* ``ssatk.propagators_6dof.propagate_6dof_extended`` propagates one or
   more linearized hinged-appendage, flexible-mode, and propellant-slosh
   coordinates with reduced-order body force/torque coupling.
-* ``ssapy_toolkit.propagators_6dof.propagate_6dof_extended_variational``
+* ``ssatk.propagators_6dof.propagate_6dof_extended_variational``
   propagates the same reduced-order states with a full finite-difference STM
   for sensitivity and covariance workflows.
-* ``ssapy_toolkit.environment.SpaceEnvironment`` centralizes epoch-aware
+* ``ssatk.environment.SpaceEnvironment`` centralizes epoch-aware
   Sun/Moon position, atmosphere density/velocity, magnetic-field,
   eclipse-fraction, and environment-backed SSATK force-model construction,
   including named third-body perturbations. The conical eclipse model applies
@@ -408,19 +408,19 @@ numerical backbone:
   default atmosphere velocity is rigid Earth co-rotation; the default magnetic
   field is a dependency-light centered Earth dipole; ``magnetic_field_model="igrf"``
   uses optional ``ppigrf`` for epoch-dependent internal-field synthesis.
-* ``ssapy_toolkit.environment_eop.load_packaged_eop`` loads the frozen IERS
+* ``ssatk.environment_eop.load_packaged_eop`` loads the frozen IERS
   Finals2000A daily Earth-orientation snapshot from ``ssatk-data-core``. Its
   ``EarthOrientationTable`` preserves observed/predicted status and refuses
   predicted records unless the caller opts in. The explicit
   ``gcrf_to_itrf_eop`` and ``itrf_to_gcrf_eop`` transforms use UT1 and polar
   motion without depending on a live network table.
-* ``ssapy_toolkit.environment_space_weather.load_packaged_space_weather``
+* ``ssatk.environment_space_weather.load_packaged_space_weather``
   loads the frozen CelesTrak F10.7 and Ap series. Setting
   ``SpaceEnvironment(atmosphere_density_model="nrlmsise00")`` activates the
   optional ``pymsis`` NRLMSISE-00 model using those drivers and the packaged
   Earth-orientation table; predicted solar/geomagnetic records require an
   explicit opt-in.
-* ``ssapy_toolkit.coordinates.attitude_quaternion_from_frame`` converts existing
+* ``ssatk.coordinates.attitude_quaternion_from_frame`` converts existing
   SSATK satellite-operation frame definitions, such as ``ntw``, ``vnb``, and
   ``nadir_velocity``, into body-to-GCRF target quaternions for attitude-control
   studies.
@@ -434,35 +434,35 @@ numerical backbone:
 
 The package boundary for new 6-DoF work is:
 
-* ``ssapy_toolkit.coordinates`` owns coordinate-frame and quaternion attitude
+* ``ssatk.coordinates`` owns coordinate-frame and quaternion attitude
   transforms.
-* ``ssapy_toolkit.propagators_6dof`` owns spacecraft state containers, rigid-body
+* ``ssatk.propagators_6dof`` owns spacecraft state containers, rigid-body
   equations of motion, and the low-level right-hand side.
-* ``ssapy_toolkit.accelerations_6dof`` owns 6-DoF force, acceleration, torque,
+* ``ssatk.accelerations_6dof`` owns 6-DoF force, acceleration, torque,
   thrust-curve, and mass-flow models. Do not move state propagation into this
   namespace; doing so would mix equations of motion with force models.
   Facet drag/SRP models support callable ``facet_transform`` hooks for
   prescribed articulated panels without adding extra propagated states.
-* ``ssapy_toolkit.propagators_6dof`` owns analyst-facing integration wrappers
+* ``ssatk.propagators_6dof`` owns analyst-facing integration wrappers
   and segmented propagation.
-* ``ssapy_toolkit.accelerations_orbit`` and
-  ``ssapy_toolkit.propagators_orbit`` are the canonical names for translational
+* ``ssatk.accelerations_orbit`` and
+  ``ssatk.propagators_orbit`` are the canonical names for translational
   orbit-only acceleration callbacks and propagators. The optional
   ``propagate_orbit_state_with_stm`` path integrates a 6x6 state transition
   matrix for covariance and sensitivity workflows while reusing those force
   callbacks.
-* ``ssapy_toolkit.engines`` owns propulsion catalogs, thrust profiles,
+* ``ssatk.engines`` owns propulsion catalogs, thrust profiles,
   propellant estimates, and stationkeeping/maneuver engine helpers.
-* ``ssapy_toolkit.launch`` owns launch-vehicle and launch-to-orbit utilities.
+* ``ssatk.launch`` owns launch-vehicle and launch-to-orbit utilities.
   It is intentionally small until launch-ascent modeling is implemented.
-* ``ssapy_toolkit.compute`` should stay as a lightweight numerical-helper
+* ``ssatk.compute`` should stay as a lightweight numerical-helper
   namespace for now. If it grows, split by function rather than moving all at
   once: photometry to a photometry namespace, geometry helpers to geometry,
   time-series tools to numerics/signal, and chaos metrics to dynamics analysis.
 
 Propagation speed is a first-class development goal. New force, torque,
 environment, and propagator work should add representative cases to
-``ssapy_toolkit.benchmark`` before broad optimization. The initial benchmark
+``ssatk.benchmark`` before broad optimization. The initial benchmark
 coverage includes point-mass 6-DoF propagation, thruster propagation with
 mass depletion, environment-backed facet drag/SRP propagation, and a prescribed
 articulated-facet SRP case. Optimization work should preserve the public API,
@@ -499,7 +499,7 @@ The public workflow should remain:
 .. code-block:: python
 
    import numpy as np
-   import ssapy_toolkit as ssatk
+   import ssatk
 
    spacecraft = ssatk.Spacecraft(
        r=[7_000_000.0, 0.0, 0.0],

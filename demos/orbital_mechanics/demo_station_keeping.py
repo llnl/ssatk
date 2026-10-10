@@ -25,10 +25,10 @@ from ssapy.propagator import KeplerianPropagator, SciPyPropagator
 from ssapy.accel import AccelKepler, AccelSolRad, AccelDrag, AccelEarthRad
 from ssapy.gravity import AccelHarmonic, AccelThirdBody
 from ssapy.body import get_body
-from ssapy_toolkit.plots._textures import earth_texture_path
+from ssatk.plots._textures import earth_texture_path
 import ssapy.compute as compute
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS, RGEO
+from ssatk.constants import EARTH_MU, EARTH_RADIUS, RGEO
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -71,7 +71,7 @@ def main(make_figures=None, fast=None, output_dir=None):
     if fast is None:
         fast = UNDER_PYTEST
     if output_dir is None:
-        from ssapy_toolkit.plots.figpath import figpath
+        from ssatk.plots.figpath import figpath
         output_dir = figpath("tests")
 
     # ── Configuration ─────────────────────────────────────────────────────────

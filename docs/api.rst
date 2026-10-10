@@ -4,7 +4,7 @@ API Reference
 Package
 -------
 
-.. automodule:: ssapy_toolkit
+.. automodule:: ssatk
    :members:
    :show-inheritance:
 

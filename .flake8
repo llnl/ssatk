@@ -1,5 +1,5 @@
 # -*- conf -*-
-# flake8 settings for ssapy_toolkit.
+# flake8 settings for ssatk.
 #
 [flake8]
 ignore = E129,W503,E501

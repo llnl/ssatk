@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from ssapy_toolkit.navigation import CartesianSensor, GroundStation, GroundStationSensor
+from ssatk.navigation import CartesianSensor, GroundStation, GroundStationSensor
 
 
 def test_cartesian_sensor_noise_bias_and_dropout_statistics():
@@ -34,7 +34,7 @@ def test_ground_station_range_noise_and_elevation_mask():
     station = GroundStation(lon_deg=0.0, lat_deg=0.0, elevation_m=0.0)
     sensor = GroundStationSensor(station, [[25.0]], measurement="range", bias=3.0, rng=np.random.default_rng(5))
     t = 1.4e9
-    from ssapy_toolkit.coordinates.geodetic import llh_to_gcrf
+    from ssatk.coordinates.geodetic import llh_to_gcrf
     from astropy.time import Time
 
     r_site, _ = llh_to_gcrf(0.0, 0.0, Time(t, format="gps"), height=0.0)

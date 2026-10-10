@@ -6,11 +6,11 @@ from numpy.polynomial import legendre
 from ssapy.gravity import HarmonicCoefficients
 from ssapy.utils import find_file
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
 
-import ssapy_toolkit.accelerations_orbit  # noqa: F401  (registers the submodule)
+import ssatk.accelerations_orbit  # noqa: F401  (registers the submodule)
 
-zonal = sys.modules["ssapy_toolkit.accelerations_orbit.accel_earth_harmonics"]
+zonal = sys.modules["ssatk.accelerations_orbit.accel_earth_harmonics"]
 
 POSITIONS_M = [
     np.array([4200e3, -3100e3, 4800e3]),   # mid-latitude LEO, |r| = 7092 km

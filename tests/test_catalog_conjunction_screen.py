@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.ssa.conjunction import catalog_conjunction_screen
+from ssatk.constants import EARTH_MU
+from ssatk.ssa.conjunction import catalog_conjunction_screen
 
 T_CROSS = 1000.0
 

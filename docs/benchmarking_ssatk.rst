@@ -4,7 +4,7 @@ Benchmarking SSATK
 Purpose
 -------
 
-This document reviews SSAPy Toolkit (SSATK) against adjacent astrodynamics,
+This document reviews Space Situational Awareness Toolkit (SSATK) against adjacent astrodynamics,
 spacecraft-dynamics, mission-design, and flight-dynamics software. It is meant
 to answer two practical questions:
 
@@ -1042,7 +1042,7 @@ versions.
 
 Continuous integration and release publishing run the reproducible gate as::
 
-   python -m ssapy_toolkit.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
+   python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
 
 The resulting ``benchmark_results.json`` is retained as a workflow artifact.
 
@@ -1119,7 +1119,7 @@ References
 Primary public references reviewed:
 
 * SSAPy: https://github.com/llnl/SSAPy
-* SSAPy Toolkit: https://github.com/llnl/SSAPy-Toolkit
+* SSATK: https://github.com/LLNL/ssatk
 * NASA 42: https://github.com/ericstoneking/42
 * Basilisk: https://github.com/AVSLab/basilisk
 * TudatPy: https://github.com/tudat-team/tudatpy

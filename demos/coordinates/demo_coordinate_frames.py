@@ -8,11 +8,11 @@ import numpy as np
 from astropy.time import Time
 from ssapy import Orbit, rv
 
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.coordinates.earth_fixed import gcrf_to_itrf, itrf_to_gcrf
-from ssapy_toolkit.coordinates.geodetic import gcrf_to_lonlat
-from ssapy_toolkit.coordinates.satellite_frames import gcrf_to_ntw, ntw_to_gcrf
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import RGEO
+from ssatk.coordinates.earth_fixed import gcrf_to_itrf, itrf_to_gcrf
+from ssatk.coordinates.geodetic import gcrf_to_lonlat
+from ssatk.coordinates.satellite_frames import gcrf_to_ntw, ntw_to_gcrf
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 FIGDIR = "figures"

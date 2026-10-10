@@ -4,9 +4,9 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.coordinates.attitude import rotate_vector
-from ssapy_toolkit.propagators_6dof.sixdof import propagate_6dof
-from ssapy_toolkit.propagators_6dof.variational import propagate_6dof_variational
+from ssatk.coordinates.attitude import rotate_vector
+from ssatk.propagators_6dof.sixdof import propagate_6dof
+from ssatk.propagators_6dof.variational import propagate_6dof_variational
 
 
 class WheelConstraintTests(unittest.TestCase):

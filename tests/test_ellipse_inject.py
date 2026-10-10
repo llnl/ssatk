@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import ssapy
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.ellipse_inject import (
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.ellipse_inject import (
     ellipse_inject,
     ellipse_insertion,
     ellipse_intercept,

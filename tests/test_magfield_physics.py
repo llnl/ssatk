@@ -1,5 +1,5 @@
 """
-test_magfield_physics.py — physics regression suite for the SSAPy-Toolkit
+test_magfield_physics.py — physics regression suite for the SSATK
 magnetosphere plots.
 
 Every check here corresponds to a property that was verified by hand during
@@ -36,17 +36,17 @@ warnings.filterwarnings("ignore")
 
 # Package imports. These were bare flat imports (`import magfield_plot_3d`),
 # which only resolved when the interpreter happened to be started from inside
-# ssapy_toolkit/plots/ -- so `pytest tests/test_magfield_physics.py` from the
+# ssatk/plots/ -- so `pytest tests/test_magfield_physics.py` from the
 # repo root failed at collection with ModuleNotFoundError. The fallback keeps
 # the "run this file directly" mode advertised in the docstring working.
 try:
-    from ssapy_toolkit.plots import magfield_plot_3d as mf
-    from ssapy_toolkit.plots import magnetosphere_core as core
-    from ssapy_toolkit.plots import starfield as sf
+    from ssatk.plots import magfield_plot_3d as mf
+    from ssatk.plots import magnetosphere_core as core
+    from ssatk.plots import starfield as sf
 except ImportError:
     import magfield_plot_3d as mf
     try:
-        from ssapy_toolkit.plots import magnetosphere_core as core
+        from ssatk.plots import magnetosphere_core as core
     except ImportError:
         import magnetosphere_core as core
     import starfield as sf

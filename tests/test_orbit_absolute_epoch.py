@@ -12,8 +12,8 @@ import importlib
 import numpy as np
 import pytest
 
-from ssapy_toolkit.propagators_orbit.leap_frog import leapfrog
-from ssapy_toolkit.propagators_orbit.rk4 import rk4
+from ssatk.propagators_orbit.leap_frog import leapfrog
+from ssatk.propagators_orbit.rk4 import rk4
 
 # 2024-05-13T16:53:02 UTC. Any epoch far from the GPS origin exposes the bug.
 GPS_EPOCH = 1_400_000_000.0
@@ -23,7 +23,7 @@ V0 = [0.0, 7.5e3, 0.0]
 
 
 def test_rk4_passes_absolute_epoch_to_third_body_models(monkeypatch):
-    module = importlib.import_module("ssapy_toolkit.propagators_orbit.rk4")
+    module = importlib.import_module("ssatk.propagators_orbit.rk4")
     moon_epochs: list[float] = []
     sun_epochs: list[float] = []
 

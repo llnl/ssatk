@@ -9,8 +9,8 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_orbit.high_accuracy import (
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_orbit.high_accuracy import (
     propagate_orbit_state,
     propagate_orbit_state_with_stm,
 )

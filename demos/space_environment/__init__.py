@@ -1,1 +1,1 @@
-"""Space environment SSAPy-Toolkit demos."""
+"""Space environment SSATK demos."""

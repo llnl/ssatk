@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.propagators_orbit.high_accuracy import propagate_orbit_state
+from ssatk.propagators_orbit.high_accuracy import propagate_orbit_state
 
 
 class CallbackTests(unittest.TestCase):

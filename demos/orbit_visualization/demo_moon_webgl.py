@@ -16,9 +16,9 @@ import numpy as np
 from astropy.time import Time
 from ssapy import Orbit, rv
 
-from ssapy_toolkit.constants import MOON_MU, MOON_RADIUS
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.moon_webgl import moon_webgl
+from ssatk.constants import MOON_MU, MOON_RADIUS
+from ssatk.plots.figpath import figpath
+from ssatk.plots.moon_webgl import moon_webgl
 
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None

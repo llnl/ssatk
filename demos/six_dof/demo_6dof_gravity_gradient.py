@@ -15,9 +15,9 @@ from demos.six_dof._common import (
     set_equal_3d,
     vector_angle_deg,
 )
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof import Spacecraft, normalize_quaternion
-from ssapy_toolkit.satellites import SpacecraftBody
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof import Spacecraft, normalize_quaternion
+from ssatk.satellites import SpacecraftBody
 
 TITLE = "6-DoF Gravity-Gradient Torque"
 DESCRIPTION = "Compares torque-free and gravity-gradient attitude propagation for an elongated spacecraft."

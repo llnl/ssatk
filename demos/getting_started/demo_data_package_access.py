@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ssapy_toolkit.data import (
+from ssatk.data import (
     DataPackageNotFoundError,
     data_package_available,
     data_path,

@@ -3,7 +3,7 @@ import pytest
 from astropy.time import Time
 from ssapy import get_body
 
-from ssapy_toolkit.plots.plotutils import _moon_texture_rotation_rad
+from ssatk.plots.plotutils import _moon_texture_rotation_rad
 
 
 @pytest.mark.parametrize("utc", ["2025-01-01T00:00:00", "2026-10-08T00:00:00", "2027-05-15T12:00:00"])

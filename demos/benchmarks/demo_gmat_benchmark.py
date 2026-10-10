@@ -13,10 +13,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state
+from ssatk.constants import EARTH_MU
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk.plots.figpath import figpath
+from ssatk.propagators_orbit import propagate_orbit_state
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "benchmarks"

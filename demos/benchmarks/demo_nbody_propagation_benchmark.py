@@ -18,9 +18,9 @@ from ssapy.gravity import AccelThirdBody
 
 from demos.benchmarks import demo_gmat_benchmark, demo_orekit_benchmark
 from demos.benchmarks.benchmark_report import write_benchmark_report
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk.plots.figpath import figpath
+from ssatk.propagators_orbit import propagate_orbit_state
 
 UNDER_PYTEST = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
 EPOCH_UTC = "2026-01-01T12:00:00"

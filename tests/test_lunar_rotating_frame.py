@@ -2,7 +2,7 @@ import numpy as np
 from astropy.time import Time
 from ssapy import get_body
 
-from ssapy_toolkit.coordinates.lunar import gcrf_to_lunar_fixed
+from ssatk.coordinates.lunar import gcrf_to_lunar_fixed
 
 
 def test_earth_moon_rotating_frame_axes():

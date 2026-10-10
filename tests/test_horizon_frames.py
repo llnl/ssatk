@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.coordinates import local_equatorial as le
+from ssatk.coordinates import local_equatorial as le
 
 LATITUDE_DEG = 37.68  # Livermore
 

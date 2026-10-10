@@ -12,7 +12,7 @@ def test_low_precision_moon_meets_its_stated_accuracy():
     import astropy.units as u
     from astropy.coordinates import GeocentricMeanEcliptic, get_body
 
-    from ssapy_toolkit.plots.solar_bodies import moon_geocentric_ecliptic
+    from ssatk.plots.solar_bodies import moon_geocentric_ecliptic
 
     worst_lon = worst_lat = worst_dist = 0.0
     for jd in np.linspace(Time("2000-01-01", scale="tt").jd, Time("2040-01-01", scale="tt").jd, 200):

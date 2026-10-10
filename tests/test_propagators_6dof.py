@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.accelerations_6dof import (
+from ssatk.accelerations_6dof import (
     SpacecraftAttitudePD,
     SpacecraftMagneticTorque,
     SpacecraftManeuverAccel,
@@ -24,7 +24,7 @@ from ssapy_toolkit.accelerations_6dof import (
     thrust_profile_constant,
     wrap_ssapy_acceleration,
 )
-from ssapy_toolkit.constants import (
+from ssatk.constants import (
     AU,
     EARTH_MU,
     EARTH_RADIUS,
@@ -34,7 +34,7 @@ from ssapy_toolkit.constants import (
     J2_wgs,
     c,
 )
-from ssapy_toolkit.propagators_6dof import (
+from ssatk.propagators_6dof import (
     Spacecraft,
     altitude_crossing_event,
     gravity_gradient_torque,
@@ -46,11 +46,11 @@ from ssapy_toolkit.propagators_6dof import (
     rotate_vector,
     sixdof_rhs,
 )
-from ssapy_toolkit.propagators_6dof.high_accuracy import (
+from ssatk.propagators_6dof.high_accuracy import (
     ImpulseManeuver,
     propagate_spacecraft_segments,
 )
-from ssapy_toolkit.satellites import (
+from ssatk.satellites import (
     Component,
     Facet,
     MagneticDipole,
@@ -179,7 +179,7 @@ def test_quaternion_helpers_rotate_body_to_inertial():
 
 
 def test_segment_impulse_applies_body_frame_delta_v_at_exact_epoch(gps_epoch):
-    import ssapy_toolkit as ssatk
+    import ssatk
 
     assert ssatk.ImpulseManeuver is ImpulseManeuver
     spacecraft = Spacecraft(

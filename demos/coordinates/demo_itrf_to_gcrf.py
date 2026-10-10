@@ -9,11 +9,11 @@ if str(ROOT) not in sys.path:
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.coordinates.earth_fixed import gcrf_to_itrf, itrf_to_gcrf
-from ssapy_toolkit.time_functions.get_times import get_times
-from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.coordinates.earth_fixed import gcrf_to_itrf, itrf_to_gcrf
+from ssatk.time_functions.get_times import get_times
+from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+from ssatk.constants import RGEO
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

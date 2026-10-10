@@ -2,12 +2,12 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.propagators_6dof.high_accuracy import (
+from ssatk.propagators_6dof.high_accuracy import (
     _propagate_spacecraft_segment,
     propagate_spacecraft_segments,
 )
-from ssapy_toolkit.propagators_6dof.sixdof import Spacecraft
-from ssapy_toolkit.satellites import SpacecraftBody, Tank
+from ssatk.propagators_6dof.sixdof import Spacecraft
+from ssatk.satellites import SpacecraftBody, Tank
 
 
 class StateContinuityTests(unittest.TestCase):

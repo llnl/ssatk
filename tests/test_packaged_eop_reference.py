@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.environment_eop import load_packaged_eop
+from ssatk.environment_eop import load_packaged_eop
 
 iers = pytest.importorskip("astropy.utils.iers")
 

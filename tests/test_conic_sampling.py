@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 import ssapy
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.ellipse_from_rv import ellipse_from_rv
-from ssapy_toolkit.orbital_mechanics.rv_to_ellipse import rv_to_ellipse
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.ellipse_from_rv import ellipse_from_rv
+from ssatk.orbital_mechanics.rv_to_ellipse import rv_to_ellipse
 
 EPOCH = 1.4e9
 ORBITS = {  # (a [m], e, i, pa, raan, nu) in degrees

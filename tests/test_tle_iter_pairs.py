@@ -1,6 +1,6 @@
 import pytest
 
-from ssapy_toolkit.io.tle_iter_pairs import tle_iter_pairs
+from ssatk.io.tle_iter_pairs import tle_iter_pairs
 
 # R3: the ISS (ZARYA) element set from the TLE format documentation
 # (Space-Track / Wikipedia example, epoch 2008-264.51782528), checksums 7 and 7.

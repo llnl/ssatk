@@ -1,11 +1,11 @@
 import numpy as np
 from astropy.time import Time
 
-from ssapy_toolkit.coordinates.earth_fixed import (
+from ssatk.coordinates.earth_fixed import (
     gcrf_to_itrf_eop,
     itrf_to_gcrf_eop,
 )
-from ssapy_toolkit.environment_eop import (
+from ssatk.environment_eop import (
     EarthOrientationRecord,
     EarthOrientationTable,
 )

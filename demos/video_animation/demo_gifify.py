@@ -68,8 +68,8 @@ def main(make_artifacts=None, fast=None, verbose=None):
         plt.grid(True)
 
     if make_artifacts:
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
 
         out1 = gifify(
             plot_simple,
@@ -101,8 +101,8 @@ def main(make_artifacts=None, fast=None, verbose=None):
         return ax
 
     if make_artifacts:
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
 
         out2 = gifify(
             plot_returns_axes,
@@ -130,8 +130,8 @@ def main(make_artifacts=None, fast=None, verbose=None):
         ax.grid(True)
 
     if make_artifacts:
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
 
         out3 = gifify(
             plot_with_ax,
@@ -160,11 +160,11 @@ def main(make_artifacts=None, fast=None, verbose=None):
     # Fast non-artifact tests skip this because groundtrack_dashboard has its
     # own focused tests and rendering a dashboard dominates this smoke test.
     if make_artifacts:
-        from ssapy_toolkit.constants import RGEO
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
-        from ssapy_toolkit.plots.groundtrack_dashboard import groundtrack_dashboard
-        from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+        from ssatk.constants import RGEO
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
+        from ssatk.plots.groundtrack_dashboard import groundtrack_dashboard
+        from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
 
         r, _v, t = ssapy_orbit(a=RGEO, e=0.2)
 
@@ -194,9 +194,9 @@ def main(make_artifacts=None, fast=None, verbose=None):
         print(f"Test 4 OK: {out4['path']} with {n4} frames")
         outputs["groundtrack"] = out4
     elif not fast:
-        from ssapy_toolkit.constants import RGEO
-        from ssapy_toolkit.plots.groundtrack_dashboard import groundtrack_dashboard
-        from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+        from ssatk.constants import RGEO
+        from ssatk.plots.groundtrack_dashboard import groundtrack_dashboard
+        from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
 
         r, _v, t = ssapy_orbit(a=RGEO, e=0.2)
         r_use = r

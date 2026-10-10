@@ -12,8 +12,8 @@ import os
 import sys
 from pathlib import Path
 
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.solar_view_plot import DEFAULT_CFG, build_figure
+from ssatk.plots.figpath import figpath
+from ssatk.plots.solar_view_plot import DEFAULT_CFG, build_figure
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

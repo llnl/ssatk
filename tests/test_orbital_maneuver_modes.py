@@ -20,13 +20,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.misc import bi_elliptic_transfer_delta_v, hohmann_transfer_delta_v
-from ssapy_toolkit.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
-from ssapy_toolkit.orbital_mechanics.transfer_hohmann import transfer_hohmann
-from ssapy_toolkit.orbital_mechanics.transfer_inclination_continuous import transfer_inclination_continuous
-from ssapy_toolkit.orbital_mechanics.transfer_ssapy_function import transfer_ssapy
-from ssapy_toolkit.orbital_mechanics.transfer_velocity_continuous import transfer_velocity_continuous
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.misc import bi_elliptic_transfer_delta_v, hohmann_transfer_delta_v
+from ssatk.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
+from ssatk.orbital_mechanics.transfer_hohmann import transfer_hohmann
+from ssatk.orbital_mechanics.transfer_inclination_continuous import transfer_inclination_continuous
+from ssatk.orbital_mechanics.transfer_ssapy_function import transfer_ssapy
+from ssatk.orbital_mechanics.transfer_velocity_continuous import transfer_velocity_continuous
 
 
 def _state(radius=7000e3, theta=0.0, inclination=0.0, t=0.0):

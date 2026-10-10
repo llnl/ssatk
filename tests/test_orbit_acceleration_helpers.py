@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.accelerations_orbit import (
+from ssatk.accelerations_orbit import (
     accel_equatorial,
     accel_inclination,
     accel_plane,
@@ -16,7 +16,7 @@ from ssapy_toolkit.accelerations_orbit import (
     accel_velocity,
     reset_orbit_status,
 )
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
 
 EPOCH_GPS_S = Time("2026-10-08T00:00:00", scale="utc").gps
 POSITIONS_M = [

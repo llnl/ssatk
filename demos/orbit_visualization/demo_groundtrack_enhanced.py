@@ -1,5 +1,5 @@
 """
-Demo script for ssapy_toolkit groundtrack_enhanced.
+Demo script for ssatk groundtrack_enhanced.
 
 This is the instrumented ground track: unlike the plain groundtrack_plot demo,
 which draws tracks and nothing else, this one answers an operational question --
@@ -18,7 +18,7 @@ It adds, on top of the track:
 
 Change site_lat/site_lon to move the ground station, or swap in your own
 ephemeris. To drive it from live TLEs instead of the synthetic orbit below,
-see ssapy_toolkit/plots/tle_updater.py; that path needs Space-Track
+see ssatk/plots/tle_updater.py; that path needs Space-Track
 credentials and network access, so this demo stays self-contained.
 
 Pytest-safe mode:
@@ -35,8 +35,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.time import Time
 
-from ssapy_toolkit.plots.groundtrack_enhanced import plot_enhanced_groundtrack
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.plots.groundtrack_enhanced import plot_enhanced_groundtrack
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

@@ -1,12 +1,12 @@
 {
     "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
     "@type": "SoftwareSourceCode",
-    "name": "SSAPy-Toolkit",
-    "description": "SSAPy-Toolkit provides higher-level orbital mechanics, plotting, data I/O, coordinate/time conversion, transfer-design, and workflow utilities built on LLNL SSAPy.",
-    "codeRepository": "https://github.com/llnl/SSAPy-Toolkit",
-    "url": "https://github.com/llnl/SSAPy-Toolkit",
+    "name": "Space Situational Awareness Toolkit (SSATK)",
+    "description": "SSATK provides higher-level orbital mechanics, plotting, data I/O, coordinate/time conversion, transfer-design, and workflow utilities built on LLNL SSAPy.",
+    "codeRepository": "https://github.com/LLNL/ssatk",
+    "url": "https://github.com/LLNL/ssatk",
     "license": "https://spdx.org/licenses/BSD-3-Clause",
-    "version": "1.0.7",
+    "version": "1.1.0",
     "programmingLanguage": "Python",
     "creator": {
         "@type": "Person",

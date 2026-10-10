@@ -2,8 +2,8 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.propagators_6dof.high_accuracy import propagate_spacecraft_segments
-from ssapy_toolkit.propagators_6dof.sixdof import (
+from ssatk.propagators_6dof.high_accuracy import propagate_spacecraft_segments
+from ssatk.propagators_6dof.sixdof import (
     Spacecraft,
     _piecewise_solution_sequence,
 )

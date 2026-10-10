@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.propagators_6dof import propagate_6dof
+from ssatk.propagators_6dof import propagate_6dof
 
 BASE = {
     "r0": [7.0e6, 0.0, 0.0],

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.coordinates.satellite_frames import (
+from ssatk.coordinates.satellite_frames import (
     body_to_gcrf_matrix,
     ecef_to_enu_matrix,
     ecef_to_ned_matrix,

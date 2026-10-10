@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import numpy as np
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.propagators_6dof import (
+import ssatk
+from ssatk.propagators_6dof import (
     FlexibleMode,
     HingedAppendage,
     SloshMode,

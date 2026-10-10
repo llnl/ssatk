@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
-from ssapy_toolkit.coordinates.geodetic import lonlat_distance
-from ssapy_toolkit.orbital_mechanics import keplerian, vis_viva
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.coordinates.geodetic import lonlat_distance
+from ssatk.orbital_mechanics import keplerian, vis_viva
 
 
 @pytest.mark.parametrize("e", [0.0, 0.3, 0.7])

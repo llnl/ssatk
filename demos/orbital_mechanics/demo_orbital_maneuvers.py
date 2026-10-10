@@ -1,4 +1,4 @@
-"""All-in-one orbital maneuver demo for SSAPy-Toolkit.
+"""All-in-one orbital maneuver demo for SSATK.
 
 This gallery demo consolidates the previous small transfer, burn-conversion,
 and rendezvous maneuver demos into one user-facing workflow.  It compares
@@ -18,19 +18,19 @@ import numpy as np
 from ssapy import Orbit
 from ssapy.compute import rv
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
-from ssapy_toolkit.orbital_mechanics.burn_to_deltav import burn_to_deltav
-from ssapy_toolkit.orbital_mechanics.deltav_to_burn import deltav_to_burn
-from ssapy_toolkit.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
-from ssapy_toolkit.orbital_mechanics.transfer_hohmann import transfer_hohmann
-from ssapy_toolkit.orbital_mechanics.transfer_inclination_continuous import transfer_inclination_continuous
-from ssapy_toolkit.orbital_mechanics.transfer_optimal_function import transfer_optimal
-from ssapy_toolkit.orbital_mechanics.transfer_ssapy_function import transfer_ssapy
-from ssapy_toolkit.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.orbital_mechanics.burn_to_deltav import burn_to_deltav
+from ssatk.orbital_mechanics.deltav_to_burn import deltav_to_burn
+from ssatk.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
+from ssatk.orbital_mechanics.transfer_hohmann import transfer_hohmann
+from ssatk.orbital_mechanics.transfer_inclination_continuous import transfer_inclination_continuous
+from ssatk.orbital_mechanics.transfer_optimal_function import transfer_optimal
+from ssatk.orbital_mechanics.transfer_ssapy_function import transfer_ssapy
+from ssatk.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
     transfer_velocity_and_inclination_continuous,
 )
-from ssapy_toolkit.orbital_mechanics.transfer_velocity_continuous import transfer_velocity_continuous
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.orbital_mechanics.transfer_velocity_continuous import transfer_velocity_continuous
+from ssatk.plots.plotutils import figsave
 
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -1118,7 +1118,7 @@ def _make_summary_figure(results):
     )
 
     fig.suptitle(
-        "SSAPy-Toolkit orbital maneuver overview\n"
+        "SSATK orbital maneuver overview\n"
         "Earth is rendered to scale at the origin; blue is the starting orbit, green is the target/final orbit, and red is the maneuver path.",
         fontsize=16,
     )

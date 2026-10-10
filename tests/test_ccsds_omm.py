@@ -9,7 +9,7 @@ from ssapy.compute import rv
 from ssapy.propagator import SGP4Propagator
 from ssapy.utils import teme_to_gcrf
 
-from ssapy_toolkit.io.ccsds_omm import format_omm_xml, read_omm_xml
+from ssatk.io.ccsds_omm import format_omm_xml, read_omm_xml
 
 TERRA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <ndm>

@@ -18,10 +18,10 @@ from astropy.time import Time
 from ssapy import Orbit, rv
 from ssapy.propagator import KeplerianPropagator
 
-from ssapy_toolkit.constants import WGS84_A_KM
-from ssapy_toolkit.plots.build_satellite_viewer import build
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.globe_plot import globe_plot
+from ssatk.constants import WGS84_A_KM
+from ssatk.plots.build_satellite_viewer import build
+from ssatk.plots.figpath import figpath
+from ssatk.plots.globe_plot import globe_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

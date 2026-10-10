@@ -5,9 +5,9 @@ import numpy as np
 from ssapy import Orbit, rv
 from astropy.time import Time
 
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
+from ssatk.plots.figpath import figpath
+from ssatk.constants import RGEO
+from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

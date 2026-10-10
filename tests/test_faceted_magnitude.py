@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.compute.faceted_magnitude import (
+from ssatk.compute.faceted_magnitude import (
     facet_scattering_area,
     faceted_reflection,
     line_of_sight_blocked,

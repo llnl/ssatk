@@ -9,9 +9,9 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ssapy_toolkit.orbital_mechanics.synthetic_orbit_population import synthetic_orbit_population
-from ssapy_toolkit.orbital_mechanics.orbital_comparison_stats import orbit_stats_dashboard
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.orbital_mechanics.synthetic_orbit_population import synthetic_orbit_population
+from ssatk.orbital_mechanics.orbital_comparison_stats import orbit_stats_dashboard
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

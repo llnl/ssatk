@@ -12,7 +12,7 @@ from astropy.time import Time
 
 
 def test_equatorial_ecliptic_round_trips_radians_and_degrees():
-    from ssapy_toolkit.coordinates import equatorial_ecliptic as eqecl
+    from ssatk.coordinates import equatorial_ecliptic as eqecl
 
     ra_rad = np.deg2rad(132.5)
     dec_rad = np.deg2rad(-18.25)
@@ -36,7 +36,7 @@ def test_equatorial_ecliptic_round_trips_radians_and_degrees():
 
 
 def test_gcrf_to_itrf_astropy_is_geocentric_and_norm_preserving():
-    from ssapy_toolkit.coordinates.earth_fixed import gcrf_to_itrf_astropy
+    from ssatk.coordinates.earth_fixed import gcrf_to_itrf_astropy
 
     times = Time(["2025-01-01T00:00:00", "2025-01-01T00:10:00"], scale="utc")
     positions = np.array([[0.0, 0.0, 0.0], [6_378_137.0, 0.0, 0.0]])
@@ -51,8 +51,8 @@ def test_gcrf_to_itrf_astropy_is_geocentric_and_norm_preserving():
 
 
 def test_frame_transform_conventions_match_ssapy_ntw_order():
-    from ssapy_toolkit.coordinates.satellite_frames import ntw_to_gcrf_matrix
-    from ssapy_toolkit.coordinates.frames import (
+    from ssatk.coordinates.satellite_frames import ntw_to_gcrf_matrix
+    from ssatk.coordinates.frames import (
         Frame,
         FrameTransform,
         eci_to_ecf_matrix,
@@ -105,8 +105,8 @@ def test_frame_transform_conventions_match_ssapy_ntw_order():
 
 
 def test_satellite_burns_use_canonical_ntw_components(tmp_path):
-    from ssapy_toolkit.plots.orbit_state import OrbitalState, Trajectory
-    from ssapy_toolkit.plots.satellite import BurnEvent, Satellite3D
+    from ssatk.plots.orbit_state import OrbitalState, Trajectory
+    from ssatk.plots.satellite import BurnEvent, Satellite3D
 
     r = np.array([7000.0, 0.0, 0.0])
     v = np.array([0.0, 7.5, 0.0])
@@ -172,7 +172,7 @@ def test_satellite_burns_use_canonical_ntw_components(tmp_path):
 
 
 def test_orbital_state_public_quantities_have_physical_oracles():
-    from ssapy_toolkit.plots.orbit_state import MU, OrbitalState, PropagatorConfig
+    from ssatk.plots.orbit_state import MU, OrbitalState, PropagatorConfig
 
     state = OrbitalState(
         a_km=7000.0,
@@ -234,7 +234,7 @@ def test_orbital_state_public_quantities_have_physical_oracles():
 
 def test_orbital_state_tle_and_ssapy_roundtrip():
     pytest.importorskip("ssapy")
-    from ssapy_toolkit.plots.orbit_state import OrbitalState
+    from ssatk.plots.orbit_state import OrbitalState
 
     tle = """ISS (ZARYA)
 1 25544U 98067A   25001.00000000  .00016717  00000+0  10270-3 0  9000
@@ -254,8 +254,8 @@ def test_orbital_state_tle_and_ssapy_roundtrip():
 
 
 def test_sun_geometry_helpers_have_expected_directions_and_scaling():
-    from ssapy_toolkit.constants import SUN_EARTH_AVERAGE_DISTANCE_KM, SUN_RADIUS_KM
-    from ssapy_toolkit.plots import sun_mpl, sun_render, sun_view
+    from ssatk.constants import SUN_EARTH_AVERAGE_DISTANCE_KM, SUN_RADIUS_KM
+    from ssatk.plots import sun_mpl, sun_render, sun_view
 
     PHI, THETA = np.meshgrid(np.linspace(0.0, np.pi, 5), np.linspace(0.0, 2.0 * np.pi, 7))
     lit = sun_mpl.shade_texture(PHI, THETA, [0.0, 0.0, 1.0], ambient=0.2, diffuse=0.6)
@@ -312,7 +312,7 @@ def test_sun_geometry_helpers_have_expected_directions_and_scaling():
 
 def test_satellite_viewer_rotates_gcrf_state_to_teme(monkeypatch):
     from ssapy import utils
-    from ssapy_toolkit.plots import build_satellite_viewer as builder
+    from ssatk.plots import build_satellite_viewer as builder
 
     captured = {}
     monkeypatch.setattr(builder, "build", lambda **kwargs: captured.update(kwargs) or "viewer.html")
@@ -341,7 +341,7 @@ def test_sun_ra_dec_matches_astropy_solar_position():
     from astropy.coordinates import get_sun
     from astropy.time import Time
 
-    from ssapy_toolkit.coordinates.sky import sun_ra_dec
+    from ssatk.coordinates.sky import sun_ra_dec
 
     times = Time(["2025-03-20T09:01:00", "2025-06-21T02:42:00", "2026-10-08T00:00:00"], scale="utc")
     tolerance_rad = np.radians(30.0 / 3600.0)
@@ -363,9 +363,9 @@ def test_satellite_viewer_rotates_body_to_gcrf_quaternions_into_teme():
     from astropy.time import Time
     from ssapy.utils import gcrf_to_teme
 
-    from ssapy_toolkit.coordinates.attitude import quaternion_from_matrix
+    from ssatk.coordinates.attitude import quaternion_from_matrix
 
-    module = importlib.import_module("ssapy_toolkit.plots.build_satellite_viewer")
+    module = importlib.import_module("ssatk.plots.build_satellite_viewer")
 
     def rotate(q, x):
         w, qv = q[0], np.asarray(q[1:])
@@ -396,7 +396,7 @@ def test_gcrf_to_itrf_transforms_a_supplied_velocity_like_astropy():
     from astropy.coordinates import GCRS, ITRS, CartesianDifferential, CartesianRepresentation
     from astropy.time import Time
 
-    from ssapy_toolkit.coordinates import gcrf_to_itrf
+    from ssatk.coordinates import gcrf_to_itrf
 
     times = Time(["2026-10-08T00:00:00", "2026-10-08T06:00:00", "2026-03-20T12:00:00"], scale="utc")
     r = np.array([[7000e3, 1000e3, -500e3], [-4000e3, 5000e3, 3000e3], [42164e3, 0.0, 0.0]])

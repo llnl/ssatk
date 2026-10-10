@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import ssapy
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.keplerian import kepler_to_parametric, state_to_kepler
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.keplerian import kepler_to_parametric, state_to_kepler
 
 # (a [m], e, i, pa, raan, nu) with angles in degrees; ISS-like, Molniya-like,
 # retrograde, and a near-polar GTO, chosen to put every angle in a different

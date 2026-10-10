@@ -1,1 +1,1 @@
-"""Sensor coverage SSAPy-Toolkit demos."""
+"""Sensor coverage SSATK demos."""

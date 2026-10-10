@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ssapy_toolkit.io import (
+from ssatk.io import (
     ReferenceCaseSegment,
     compare_reference_case,
     read_oem,

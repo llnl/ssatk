@@ -11,11 +11,11 @@ import matplotlib.pyplot as plt
 from astropy.time import Time, TimeDelta
 from ssapy import Orbit, rv, SciPyPropagator, AccelKepler
 
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.io.demo_data import ensure_demo_data_file
-from ssapy_toolkit.data import DataResourceNotFoundError, read_data_text
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk.plots.figpath import figpath
+from ssatk.io.demo_data import ensure_demo_data_file
+from ssatk.data import DataResourceNotFoundError, read_data_text
+from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "benchmarks"

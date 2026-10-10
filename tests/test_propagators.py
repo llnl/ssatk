@@ -1,21 +1,21 @@
 
 import numpy as np
 
-from ssapy_toolkit.accelerations_6dof import (
+from ssatk.accelerations_6dof import (
     SpacecraftManeuverAccel,
     SpacecraftReactionWheelTorque,
 )
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof import (
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof import (
     Spacecraft,
     propagate_spacecraft_segments,
 )
-from ssapy_toolkit.propagators_orbit import (
+from ssatk.propagators_orbit import (
     propagate_orbit_state,
     propagate_orbit_state_with_stm,
 )
-from ssapy_toolkit.propagators_orbit.high_accuracy import _kepler_jacobian
-from ssapy_toolkit.satellites import SpacecraftBody, reaction_wheel_triplet
+from ssatk.propagators_orbit.high_accuracy import _kepler_jacobian
+from ssatk.satellites import SpacecraftBody, reaction_wheel_triplet
 
 
 def test_high_accuracy_orbit_propagator_returns_near_circular_state_after_period():
@@ -73,7 +73,7 @@ def test_kepler_stm_jacobian_matches_central_gravity_derivative():
 
 
 def test_high_accuracy_spacecraft_segments_chain_state_and_mass(gps_epoch):
-    import ssapy_toolkit as ssatk
+    import ssatk
 
     assert ssatk.propagate_spacecraft_segments is propagate_spacecraft_segments
     spacecraft = Spacecraft(

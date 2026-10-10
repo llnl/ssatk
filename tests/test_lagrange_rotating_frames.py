@@ -3,7 +3,7 @@ import pytest
 from astropy.time import Time
 from ssapy import get_body
 
-from ssapy_toolkit.orbital_mechanics.lagrange_points import lagrange_points_lunar_fixed_frame
+from ssatk.orbital_mechanics.lagrange_points import lagrange_points_lunar_fixed_frame
 
 # R1: circular restricted three-body equilibria for the Earth-Moon mass ratio
 # mu = 0.01215 lie at 0.8369, 1.1557 and -1.0051 d from the barycentre, i.e.

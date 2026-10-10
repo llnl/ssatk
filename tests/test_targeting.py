@@ -1,6 +1,6 @@
 import numpy as np
 
-import ssapy_toolkit as ssatk
+import ssatk
 
 
 def test_solve_6dof_target_reaches_terminal_velocity():

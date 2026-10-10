@@ -33,7 +33,7 @@ import astropy.units as u
 from astropy.time import Time
 
 import ssapy
-from ssapy_toolkit.compute.faceted_magnitude import (
+from ssatk.compute.faceted_magnitude import (
     faceted_light_curve,
     line_of_sight_blocked,
 )
@@ -342,7 +342,7 @@ def main():
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
-    from ssapy_toolkit.plots import figsave
+    from ssatk.plots import figsave
 
     epoch = "2026-06-09T06:00:00"
     ground = ssapy.EarthObserver(lon=-121.7, lat=37.7, elevation=200.0)

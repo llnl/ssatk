@@ -30,18 +30,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,geomagnetics,atmosphere,propulsion]"
+          pip install --no-deps -e packaging/ssapy-toolkit-compat
 
       - name: Validate JavaScript plot assets
         run: |
-          node --check ssapy_toolkit/plots/satellite_viewer_scene.js
-          node --check ssapy_toolkit/plots/satellite_viewer_smoketest.js
+          node --check ssatk/plots/satellite_viewer_scene.js
+          node --check ssatk/plots/satellite_viewer_smoketest.js
 
       - name: Run tests
         run: pytest tests
 
       - name: Run analytical validation profile
         if: matrix.python-version == '3.13'
-        run: python -m ssapy_toolkit.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
+        run: python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
 
       - name: Upload analytical validation results
         if: always() && matrix.python-version == '3.13'

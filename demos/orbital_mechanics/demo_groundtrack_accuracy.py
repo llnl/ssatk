@@ -8,12 +8,12 @@ from astropy.time import Time
 from ssapy import Orbit, rv, AccelKepler
 from ssapy.propagator import KeplerianPropagator, RK78Propagator
 
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.orbital_mechanics.ellipse_fit import ellipse_fit
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.groundtrack_dashboard import groundtrack_dashboard
-from ssapy_toolkit.plots.groundtrack_plot import groundtrack_plot
-from ssapy_toolkit.plots.groundtrack_video import groundtrack_video
+from ssatk.constants import RGEO
+from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
+from ssatk.plots.figpath import figpath
+from ssatk.plots.groundtrack_dashboard import groundtrack_dashboard
+from ssatk.plots.groundtrack_plot import groundtrack_plot
+from ssatk.plots.groundtrack_video import groundtrack_video
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "orbital_mechanics"

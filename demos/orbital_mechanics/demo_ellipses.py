@@ -7,10 +7,10 @@ from astropy.time import Time
 from ssapy.accel import AccelKepler
 from ssapy.propagator import SciPyPropagator
 
-from ssapy_toolkit.constants import EARTH_RADIUS
-from ssapy_toolkit.time_functions.get_times import get_times
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.plots.figpath import figpath
+from ssatk.constants import EARTH_RADIUS
+from ssatk.time_functions.get_times import get_times
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.plots.figpath import figpath
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
-from ssapy_toolkit.launch.gravity_turn import accel_gravity_turn
-from ssapy_toolkit.launch.sites import launch_pads
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.launch.gravity_turn import accel_gravity_turn
+from ssatk.launch.sites import launch_pads
 
 
 def _site(lat_deg, lon_deg):

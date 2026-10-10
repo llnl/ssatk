@@ -7,10 +7,10 @@ from pathlib import Path
 
 import numpy as np
 
-from ssapy_toolkit.accelerations_6dof import SpacecraftAccelConstNTW
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.misc import orbital_elements_from_state
-from ssapy_toolkit.propagators_6dof import ImpulseManeuver, Spacecraft, propagate_spacecraft_segments
+from ssatk.accelerations_6dof import SpacecraftAccelConstNTW
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.misc import orbital_elements_from_state
+from ssatk.propagators_6dof import ImpulseManeuver, Spacecraft, propagate_spacecraft_segments
 
 GALLERY_INCLUDE = False
 OUTPUT_DIR = Path.home() / "ssatk_output" / "data" / "benchmarks"

@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.io.ccsds_cdm import (
+from ssatk.io.ccsds_cdm import (
     format_cdm,
     read_cdm,
 )

@@ -41,14 +41,14 @@ jobs:
 
       - name: Validate JavaScript plot assets
         run: |
-          node --check ssapy_toolkit/plots/satellite_viewer_scene.js
-          node --check ssapy_toolkit/plots/satellite_viewer_smoketest.js
+          node --check ssatk/plots/satellite_viewer_scene.js
+          node --check ssatk/plots/satellite_viewer_smoketest.js
 
       - name: Build demo gallery
         env:
           MPLBACKEND: Agg
         run: |
-          ssapy-demo-gallery --output site
+          ssatk-demo-gallery --output site
 
       - name: Upload GitHub Pages artifact
         if: github.event_name != 'pull_request'

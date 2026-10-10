@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.stats import ncx2
 
-from ssapy_toolkit.ssa import (
+from ssatk.ssa import (
     ClosestApproach,
     coarse_conjunction_screen,
     probability_of_collision,

@@ -4,14 +4,14 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from ssapy_toolkit.compute.calculate_errors import calculate_errors
-from ssapy_toolkit.compute.fft import FFT, FFTP
-from ssapy_toolkit.compute.find_bounding_cube import find_smallest_bounding_cube
-from ssapy_toolkit.compute.generate_sphere_of_vectors import generate_sphere_vectors
-from ssapy_toolkit.compute.lyapunov_exponent import lyapunov_exponent_from_statevectors
-from ssapy_toolkit.compute.mengos import megno
-from ssapy_toolkit.compute.sampling import perturb_state_3d
-from ssapy_toolkit.compute.segment_intersection import segment_intersects_sphere
+from ssatk.compute.calculate_errors import calculate_errors
+from ssatk.compute.fft import FFT, FFTP
+from ssatk.compute.find_bounding_cube import find_smallest_bounding_cube
+from ssatk.compute.generate_sphere_of_vectors import generate_sphere_vectors
+from ssatk.compute.lyapunov_exponent import lyapunov_exponent_from_statevectors
+from ssatk.compute.mengos import megno
+from ssatk.compute.sampling import perturb_state_3d
+from ssatk.compute.segment_intersection import segment_intersects_sphere
 
 
 @pytest.mark.parametrize("n", [64, 100, 1001])

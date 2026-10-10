@@ -1,8 +1,8 @@
 import numpy as np
 from astropy.time import Time
 
-from ssapy_toolkit.coordinates.inertial import j2000_to_gcrf
-from ssapy_toolkit.coordinates.lunar import get_lunar_rv
+from ssatk.coordinates.inertial import j2000_to_gcrf
+from ssatk.coordinates.lunar import get_lunar_rv
 
 MAS = np.radians(1.0 / 3.6e6)
 

@@ -1,7 +1,7 @@
 import pytest
 
-from ssapy_toolkit.constants import G0
-from ssapy_toolkit.engines import (
+from ssatk.constants import G0
+from ssatk.engines import (
     mass_flow_rate,
     propellant_mass_for_delta_v,
     thruster_spec,

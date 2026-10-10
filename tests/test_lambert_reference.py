@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from ssapy.orbit import Orbit
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics import transfer_ssapy_function as tsf
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics import transfer_ssapy_function as tsf
 
 RADIUS_M = 7000.0e3
 MEAN_MOTION = np.sqrt(EARTH_MU / RADIUS_M**3)

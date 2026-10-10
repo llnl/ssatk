@@ -1,1 +1,1 @@
-"""Video and animation SSAPy-Toolkit demos."""
+"""Video and animation SSATK demos."""

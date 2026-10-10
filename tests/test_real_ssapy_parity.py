@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from ssapy_toolkit.accelerations_6dof import wrap_ssapy_acceleration
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof import propagate_6dof
+from ssatk.accelerations_6dof import wrap_ssapy_acceleration
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof import propagate_6dof
 
 
 def test_real_ssapy_accel_kepler_matches_ssatk_adapter():

@@ -24,11 +24,11 @@ SSAPy/SSATK's Earth constants (``EARTH_MU``, ``EARTH_RADIUS``, ``RGEO``, and
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS, RGEO, VGEO
-from ssapy_toolkit.orbital_mechanics._transfer_result import G0, maneuver_burn
-from ssapy_toolkit.orbital_mechanics.misc import plane_change_delta_v
-from ssapy_toolkit.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
-from ssapy_toolkit.orbital_mechanics.transfer_hohmann import transfer_hohmann
+from ssatk.constants import EARTH_MU, EARTH_RADIUS, RGEO, VGEO
+from ssatk.orbital_mechanics._transfer_result import G0, maneuver_burn
+from ssatk.orbital_mechanics.misc import plane_change_delta_v
+from ssatk.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
+from ssatk.orbital_mechanics.transfer_hohmann import transfer_hohmann
 
 
 def _circular_speed(radius, mu=EARTH_MU):
@@ -158,7 +158,7 @@ def test_velocity_then_inclination_burn_obeys_gauss_at_the_node(i_target_deg):
     # v |di| = 65.85 m/s to within 0.2 % (u advances 0.07 rad during the
     # 66 s burn), and reaches the target inclination in either direction.
     import ssapy
-    from ssapy_toolkit.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
+    from ssatk.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
         transfer_velocity_and_inclination_continuous,
     )
 

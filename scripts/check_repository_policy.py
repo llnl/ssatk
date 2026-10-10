@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check repository layout and artifact policy for SSAPy Toolkit."""
+"""Check repository layout and artifact policy for SSATK."""
 
 from __future__ import annotations
 
@@ -31,7 +31,8 @@ ALLOWED_TOP_LEVEL = {
     "pyproject.toml",
     "requirements-dev.txt",
     "scripts",
-    "ssapy_toolkit",
+    "ssatk",
+    "packaging",   # packaging/ssapy-toolkit-compat: transitional ssapy-toolkit -> ssatk distribution
     "tests",
 }
 
@@ -209,7 +210,7 @@ def deduplicate_changed_paths(changed: list[ChangedPath]) -> list[ChangedPath]:
 
 
 def source_changed(path: str) -> bool:
-    return (path.startswith("ssapy_toolkit/") and path.endswith(".py")) or path == "pyproject.toml"
+    return (path.startswith(("ssatk/", "packaging/ssapy-toolkit-compat/ssapy_toolkit/")) and path.endswith(".py")) or path == "pyproject.toml"
 
 
 def test_changed(path: str) -> bool:

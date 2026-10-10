@@ -15,8 +15,8 @@ def test_igrf_magnetic_field_in_gcrf_matches_ppigrf_and_ignores_external_models(
     from astropy.coordinates import GCRS, ITRS, CartesianRepresentation, EarthLocation
     from astropy.time import Time
 
-    from ssapy_toolkit import geomagnetics
-    from ssapy_toolkit.environment import igrf_magnetic_field
+    from ssatk import geomagnetics
+    from ssatk.environment import igrf_magnetic_field
 
     t = Time("2026-10-08T00:00:00", scale="utc")
     lat, lon, height_km = 37.7, -121.7, 500.0

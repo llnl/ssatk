@@ -13,9 +13,9 @@ from ssapy import rv, Orbit
 from ssapy.propagator import default_numerical
 from astropy.time import Time
 
-from ssapy_toolkit.coordinates.lunar import get_lunar_rv
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.orbit_animation import _animation_writer
+from ssatk.coordinates.lunar import get_lunar_rv
+from ssatk.plots.figpath import figpath
+from ssatk.plots.orbit_animation import _animation_writer
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "video_animation"

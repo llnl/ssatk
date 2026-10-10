@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 import ssapy
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.burn_to_deltav import burn_to_deltav
-from ssapy_toolkit.orbital_mechanics.calculate_finite_burn_acceleration import calculate_finite_burn_acceleration
-from ssapy_toolkit.orbital_mechanics.deltav_to_burn import deltav_to_burn
+from ssatk.constants import EARTH_MU
+from ssatk.orbital_mechanics.burn_to_deltav import burn_to_deltav
+from ssatk.orbital_mechanics.calculate_finite_burn_acceleration import calculate_finite_burn_acceleration
+from ssatk.orbital_mechanics.deltav_to_burn import deltav_to_burn
 
 RADIUS = 7000e3
 V_CIRC = np.sqrt(EARTH_MU / RADIUS)

@@ -1,5 +1,5 @@
 """
-Demo script for ssapy_toolkit coverage_analysis.
+Demo script for ssatk coverage_analysis.
 
 Answers the question a ground station actually asks. Not "is this satellite
 overhead" -- "how often can I see it, for how long, and what is the worst gap
@@ -28,7 +28,7 @@ which sits inside that band.
 
 Runs offline. The TLE comes from the satellite list bundled with the toolkit,
 so no Space-Track credentials and no network are needed. For current elements,
-refresh explicitly with ssapy_toolkit.io.tle_updater.
+refresh explicitly with ssatk.io.tle_updater.
 
 Pytest-safe mode:
 - coarse coverage grid, so the 3-day propagation stays quick
@@ -42,7 +42,7 @@ import sys
 
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.plots.coverage_analysis import (
+from ssatk.plots.coverage_analysis import (
     SATELLITES,
     analyse_satellite,
     build_orbit,
@@ -95,7 +95,7 @@ def main(make_figures=None, fast=None):
 
     out_dir = "."
     if make_figures:
-        from ssapy_toolkit.plots.coverage_analysis import _analysis_output_dir
+        from ssatk.plots.coverage_analysis import _analysis_output_dir
         out_dir = _analysis_output_dir(SITE_NAME, SITE_LAT, SITE_LON)
 
     result = analyse_satellite(

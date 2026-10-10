@@ -2,7 +2,7 @@
 import pytest
 from astropy.time import Time
 
-from ssapy_toolkit.environment import SpaceEnvironment
+from ssatk.environment import SpaceEnvironment
 
 
 def test_nrlmsise00_density_uses_packaged_eop_and_space_weather():

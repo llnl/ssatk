@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU, RGEO
-from ssapy_toolkit.orbital_mechanics import keplerian
+from ssatk.constants import EARTH_MU, RGEO
+from ssatk.orbital_mechanics import keplerian
 
 
 def test_hkoe_period_longitude_and_anomaly_helpers(capsys):
@@ -71,8 +71,8 @@ def test_apsis_and_velocity_formula_helpers():
 def test_kepler_to_state_matches_ssapy_and_conic_invariants(converter, eccentricity):
     # R2: SSAPy's Orbit.fromKeplerianElements; R1: vis-viva and h = sqrt(mu p).
     import ssapy
-    from ssapy_toolkit.constants import EARTH_MU
-    from ssapy_toolkit.orbital_mechanics import keplerian
+    from ssatk.constants import EARTH_MU
+    from ssatk.orbital_mechanics import keplerian
 
     a, i, pa, raan, nu = 8000e3, np.radians(51.6), np.radians(30.0), np.radians(40.0), np.radians(70.0)
     r, v = (np.ravel(x) for x in getattr(keplerian, converter)(a, eccentricity, i, pa, raan, nu))
@@ -89,7 +89,7 @@ def test_kepler_to_state_matches_ssapy_and_conic_invariants(converter, eccentric
 @pytest.mark.parametrize("eccentricity", [0.1, 0.3, 0.7, 0.95])
 def test_true_anomaly_from_mean_anomaly_inverts_keplers_equation(eccentricity):
     # R1: nu -> E -> M in closed form, then true_anomaly(e, M) must return nu.
-    from ssapy_toolkit.orbital_mechanics import keplerian
+    from ssatk.orbital_mechanics import keplerian
 
     nu = np.radians([1.0, 45.0, 120.0, 179.0, 181.0, 300.0])
     ecc_anom = 2 * np.arctan2(np.sqrt(1 - eccentricity) * np.sin(nu / 2),

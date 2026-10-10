@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.ssa.conjunction import (
+from ssatk.ssa.conjunction import (
     encounter_frame,
 )
 
