@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssatk"
-version = "1.1.1"
+version = "1.1.2"
 description = "Space Situational Awareness Toolkit (SSATK): orbit and 6-DoF propagation, transfer design, frames, space environment, conjunction screening, data I/O and visualization"
 authors = [
   { name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }
@@ -33,11 +33,11 @@ dependencies = [
   "astropy",
   "h5py",
   "imageio",
-  "llnl-ssapy>=1.1.11",
-  "ssatk-data-core==0.0.1",
-  "ssatk-data-gravity==0.0.1",
-  "ssatk-data-lunar==0.0.1",
-  "ssatk-data-lunar-gravity==0.0.1",
+  "llnl-ssapy>=1.1.12",
+  "ssa-data-core==0.0.1",
+  "ssa-data-gravity==0.0.1",
+  "ssa-data-lunar==0.0.1",
+  "ssa-data-lunar-gravity==0.0.1",
   "matplotlib",
   "numpy",
   "pandas",
@@ -53,15 +53,15 @@ monitoring = [
   "psutil",
 ]
 
-propulsion = ["ssatk-data-propulsion==0.0.1"]
-benchmarks = ["ssatk-data-benchmarks==0.0.1"]
+propulsion = ["ssa-data-propulsion==0.0.1"]
+benchmarks = ["ssa-data-benchmarks==0.0.1"]
 all-data = [
-  "ssatk-data-core==0.0.1",
-  "ssatk-data-gravity==0.0.1",
-  "ssatk-data-lunar==0.0.1",
-  "ssatk-data-lunar-gravity==0.0.1",
-  "ssatk-data-propulsion==0.0.1",
-  "ssatk-data-benchmarks==0.0.1",
+  "ssa-data-core==0.0.1",
+  "ssa-data-gravity==0.0.1",
+  "ssa-data-lunar==0.0.1",
+  "ssa-data-lunar-gravity==0.0.1",
+  "ssa-data-propulsion==0.0.1",
+  "ssa-data-benchmarks==0.0.1",
 ]
 
 notebook = [

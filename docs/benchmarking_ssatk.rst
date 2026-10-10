@@ -287,7 +287,7 @@ Current strengths
 * Rich plotting and demo-gallery workflows.
 * Transfer-design helpers that accept either ``Orbit`` objects or raw inertial
   states.
-* Data-access strategy that keeps reusable datasets in the split ``ssatk-data-*`` packages rather
+* Data-access strategy that keeps reusable datasets in the split ``ssa-data-*`` packages rather
   than embedding large files in the Toolkit repository.
 * Coupled 6-DoF propagation with quaternion attitude, body angular rate,
   gravity-gradient torque, user-provided acceleration/torque models, attached

@@ -137,7 +137,7 @@ def _resolve_texture_path(texture_path, allow_download=False):
     """Turn texture_path (None | 'auto' | path) into a concrete file, if any.
 
     ``None``/``"auto"`` resolve to the Earth texture in the installed
-    ``ssatk-data-core`` package (:func:`ssatk.plots._textures.earth_texture_path`),
+    ``ssa-data-core`` package (:func:`ssatk.plots._textures.earth_texture_path`),
     so the result is the same file on every installation, offline included.
 
     This used to try home-directory and working-directory guesses

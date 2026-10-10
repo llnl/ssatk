@@ -19,7 +19,7 @@ SSATK is a source-code repository. Keep generated artifacts, analysis
 outputs, downloaded data products, figures, screenshots, animations, notebooks
 with embedded outputs, and other binary media out of the repository. If a change
 requires persistent data, put that data in
-the appropriate ``ssatk-data-*`` repository or document an external
+the appropriate ``ssa-data-*`` repository or document an external
 download/source instead of committing it here.
 
 Use the existing top-level structure for new work:
@@ -65,7 +65,7 @@ python scripts/check_repository_policy.py
 
 ## Development notes
 
-- Supported floors are `llnl-ssapy>=1.1.11` and the published `ssatk-data-*` distributions. Test
+- Supported floors are `llnl-ssapy>=1.1.12` and the published `ssa-data-*` distributions. Test
   against the split data distributions. SSAPy 1.1.5 and earlier
   rebuild a zero-drag `Satrec` in `SGP4Propagator`, so SGP4 comparisons fail
   there; that is an environment problem, not a Toolkit bug.

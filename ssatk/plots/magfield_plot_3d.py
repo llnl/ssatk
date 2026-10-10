@@ -1246,10 +1246,10 @@ def _check_environment():
 
     lines.append("data files:")
     try:
-        from .starfield import find_data_file, ssapy_data_dirs
+        from .starfield import find_data_file, ssa_data_dirs
     except Exception:
         find_data_file = None
-        ssapy_data_dirs = None
+        ssa_data_dirs = None
     if find_data_file is None:
         lines.append("  (starfield.find_data_file unavailable -- cannot search)")
     else:
@@ -1262,8 +1262,8 @@ def _check_environment():
                 lines.append(f"  MISSING  {asset}  -> {consequence}")
             else:
                 lines.append(f"  ok       {asset}  {found}")
-        if ssapy_data_dirs is not None:
-            lines.append("  searched: " + ", ".join(str(d) for d in ssapy_data_dirs()))
+        if ssa_data_dirs is not None:
+            lines.append("  searched: " + ", ".join(str(d) for d in ssa_data_dirs()))
 
     lines.append("optional packages:")
     for mod, consequence in (

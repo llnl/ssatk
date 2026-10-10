@@ -3,7 +3,7 @@
 Historically every plot asked SSAPy for ``earth.png`` (5400 x 2700 Blue
 Marble, longitude -180..180 left to right, north up). That file lived in
 SSAPy's Git LFS tree and legacy installations, but none
-of the split ``ssatk-data-*`` 0.0.1 wheels ships it. ``ssatk-data-core`` does
+of the split ``ssa-data-*`` 0.0.1 wheels ships it. ``ssa-data-core`` does
 ship ``earth_day_2048.jpg`` (2048 x 1024) in the same projection and
 orientation (normalized cross-correlation 0.866 at zero longitude shift
 against ``earth.png``, peak at zero shift, no vertical flip), so it is the
@@ -46,6 +46,6 @@ def earth_texture_path() -> Path:
     raise FileNotFoundError(
         "No Earth texture found: looked for "
         + " and ".join(EARTH_TEXTURE_NAMES)
-        + " in the working directory and the installed ssatk-data-* packages. "
-        "Install ssatk-data-core."
+        + " in the working directory and the installed ssa-data-* packages. "
+        "Install ssa-data-core."
     )

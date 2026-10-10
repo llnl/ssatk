@@ -44,8 +44,8 @@ python -m pip install ssatk
 ```
 
 The install pulls four data packages automatically, about 210 MB in total:
-`ssatk-data-core`, `ssatk-data-gravity`, `ssatk-data-lunar` and
-`ssatk-data-lunar-gravity`. They hold the IERS Earth-orientation and space-weather
+`ssa-data-core`, `ssa-data-gravity`, `ssa-data-lunar` and
+`ssa-data-lunar-gravity`. They hold the IERS Earth-orientation and space-weather
 snapshots, gravity models, planetary and lunar ephemerides, star catalogue, and
 Earth and Moon textures. SSATK reads them from the installed packages; only
 explicit download helpers (TLE catalogue updates, OMNI solar-wind records and
@@ -60,9 +60,9 @@ Optional extras:
 |---|---|
 | `ssatk[geomagnetics]` | IGRF field synthesis and T89/T96 magnetosphere models (`ppigrf`, `geopack`) |
 | `ssatk[atmosphere]` | NRLMSISE-00 atmospheric density (`pymsis`) |
-| `ssatk[propulsion]` | Certified rocket-motor thrust curves (`ssatk-data-propulsion`) |
-| `ssatk[benchmarks]` | Benchmark mission datasets (`ssatk-data-benchmarks`) |
-| `ssatk[all-data]` | All six `ssatk-data-*` packages |
+| `ssatk[propulsion]` | Certified rocket-motor thrust curves (`ssa-data-propulsion`) |
+| `ssatk[benchmarks]` | Benchmark mission datasets (`ssa-data-benchmarks`) |
+| `ssatk[all-data]` | All six `ssa-data-*` packages |
 | `ssatk[static]` | Static image export of interactive figures (`kaleido`) |
 | `ssatk[video]` | MP4 output (`opencv-python`, `imageio-ffmpeg`) |
 | `ssatk[notebook]` | IPython display and ipyvolume Earth/Moon meshes |
@@ -206,7 +206,7 @@ Disable it for one commit with `SSATK_GRAPHIFY_HOOK=0 git commit ...`.
 
 NumPy, SciPy, pandas, Astropy and PyERFA, h5py, Matplotlib, Plotly, Pillow,
 imageio, REBOUND, `llnl-ssapy` (orbit objects, SGP4 and Keplerian propagation,
-Earth-orientation helpers), and the four `ssatk-data-*` packages above.
+Earth-orientation helpers), and the four `ssa-data-*` packages above.
 
 ---
 

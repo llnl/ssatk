@@ -18,7 +18,7 @@ from ssatk.data import (
 
 DEMO_PACKAGE = "demo_ssapy_data"
 DEMO_RESOURCE = "catalogs/sample_catalog.txt"
-MISSING_PACKAGE = "demo_ssapy_data_missing_offline"
+MISSING_PACKAGE = "demo_ssa_data_missing_offline"
 
 
 def _create_demo_package(root: Path) -> None:

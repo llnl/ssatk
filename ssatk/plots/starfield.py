@@ -559,8 +559,8 @@ def _add_milky_way(ax, sky_radius):
 # ---------------------------------------------------------------------------
 # Large binary assets -- the HYG star catalogue, the AE-8/AP-8 flux table,
 # planetary textures -- are not carried in this repo. They ship in the split
-# ``ssatk-data-*`` distributions (``ssatk-data-core`` holds the star catalogue
-# and Earth textures), each installing its own ``ssapy_data_<name>`` package
+# ``ssa-data-*`` distributions (``ssa-data-core`` holds the star catalogue
+# and Earth textures), each installing its own ``ssa_data_<name>`` package
 # with files below ``<package>/data``. See ``ssatk.data``.
 #
 # Resolution order, first hit wins:
@@ -577,7 +577,7 @@ def _add_milky_way(ax, sky_radius):
 # starfield) when an asset is absent. Callers that fall back should say so.
 
 
-def _ssapy_data_package_dirs():
+def _ssa_data_package_dirs():
     """Directories of the installed split data packages, in search order.
 
     The split packages expose data via importlib.resources. For a normal
@@ -600,13 +600,13 @@ def _ssapy_data_package_dirs():
     return dirs
 
 
-def _ssapy_data_package_dir():
+def _ssa_data_package_dir():
     """First installed data-package directory, or None (backward compatible)."""
-    dirs = _ssapy_data_package_dirs()
+    dirs = _ssa_data_package_dirs()
     return dirs[0] if dirs else None
 
 
-def ssapy_data_dirs():
+def ssa_data_dirs():
     """Return the directories searched for data assets, in priority order.
 
     Public rather than private because it is what you want printed when an
@@ -629,11 +629,11 @@ def ssapy_data_dirs():
 
     # Sibling checkouts of the core data repository, raw or in packaged layout.
     for parent in (repo_parent, repo_root):
-        for name in ("ssatk-data-core", "data-core"):
+        for name in ("ssa-data-core", "data-core"):
             dirs.append(parent / name)
-            dirs.append(parent / name / "src" / "ssapy_data_core" / "data")
+            dirs.append(parent / name / "src" / "ssa_data_core" / "data")
 
-    dirs.extend(_ssapy_data_package_dirs())
+    dirs.extend(_ssa_data_package_dirs())
 
     dirs.append(plots_dir)
 
@@ -652,7 +652,7 @@ def find_data_file(name):
     Returns a pathlib.Path. None means "not present" -- callers degrade rather
     than fail, which is why this does not raise.
     """
-    for d in ssapy_data_dirs():
+    for d in ssa_data_dirs():
         try:
             candidate = d / name
             if candidate.is_file():

@@ -10,7 +10,7 @@ SSATK supports Python 3.10–3.13:
 
    python -m pip install ssatk
 
-This also installs the four required ``ssatk-data-*`` packages (about 210 MB):
+This also installs the four required ``ssa-data-*`` packages (about 210 MB):
 Earth-orientation and space-weather tables, gravity models, planetary and lunar
 ephemerides, the star catalogue, and Earth and Moon textures. One dependency
 compiles a C++ extension during installation, so a C++ compiler must be
@@ -547,7 +547,7 @@ electrospray, or dual-mode chemical/electric propulsion classes.  Each
 power and dry-mass ranges where applicable, and builders for
 ``Thruster`` body components or ``SpacecraftManeuverAccel`` finite burns.
 These values are engineering-scale defaults for analysis setup; replace them
-with vendor or mission thrust curves from ``ssatk-data-propulsion`` when flight-specific
+with vendor or mission thrust curves from ``ssa-data-propulsion`` when flight-specific
 validation is required.
 
 Preset body designs live in :mod:`ssatk.satellites`. Use
@@ -610,20 +610,20 @@ center of mass, and inertia when those values are not provided directly.
 Packaged data
 -------------
 
-Reusable datasets ship as separate ``ssatk-data-*`` distributions rather than
+Reusable datasets ship as separate ``ssa-data-*`` distributions rather than
 in the source repository. Each installs its own import package, with files
 below ``<package>/data``:
 
-================================  ============================  ============================
+================================  ============================  ==============================
 Distribution                      Import package                Installed by
-================================  ============================  ============================
-``ssatk-data-core``               ``ssapy_data_core``           ``pip install ssatk``
-``ssatk-data-gravity``            ``ssapy_data_gravity``        ``pip install ssatk``
-``ssatk-data-lunar``              ``ssapy_data_lunar``          ``pip install ssatk``
-``ssatk-data-lunar-gravity``      ``ssapy_data_lunar_gravity``  ``pip install ssatk``
-``ssatk-data-propulsion``         ``ssapy_data_propulsion``     ``ssatk[propulsion]``
-``ssatk-data-benchmarks``         ``ssapy_data_benchmarks``     ``ssatk[benchmarks]``
-================================  ============================  ============================
+================================  ============================  ==============================
+``ssa-data-core``                 ``ssa_data_core``              ``pip install ssatk``
+``ssa-data-gravity``              ``ssa_data_gravity``           ``pip install ssatk``
+``ssa-data-lunar``                ``ssa_data_lunar``             ``pip install ssatk``
+``ssa-data-lunar-gravity``        ``ssa_data_lunar_gravity``     ``pip install ssatk``
+``ssa-data-propulsion``           ``ssa_data_propulsion``        ``ssatk[propulsion]``
+``ssa-data-benchmarks``           ``ssa_data_benchmarks``        ``ssatk[benchmarks]``
+================================  ============================  ==============================
 
 Use :mod:`ssatk.data` to read a packaged file. With no ``package`` argument it
 searches the installed data packages in the order above and returns the first
@@ -634,7 +634,7 @@ match; a missing file raises an error that names the extra to install:
    from ssatk.data import data_path, read_data_text, resource_package
 
    eop_text = read_data_text("environment/eop/finals2000A.all")
-   print(resource_package("environment/eop/finals2000A.all"))   # ssapy_data_core
+   print(resource_package("environment/eop/finals2000A.all"))   # ssa_data_core
 
    with data_path("bright_stars.csv") as catalog_path:
        # Pass catalog_path to libraries that require a filesystem path.

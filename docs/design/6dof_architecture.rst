@@ -409,7 +409,7 @@ numerical backbone:
   field is a dependency-light centered Earth dipole; ``magnetic_field_model="igrf"``
   uses optional ``ppigrf`` for epoch-dependent internal-field synthesis.
 * ``ssatk.environment_eop.load_packaged_eop`` loads the frozen IERS
-  Finals2000A daily Earth-orientation snapshot from ``ssatk-data-core``. Its
+  Finals2000A daily Earth-orientation snapshot from ``ssa-data-core``. Its
   ``EarthOrientationTable`` preserves observed/predicted status and refuses
   predicted records unless the caller opts in. The explicit
   ``gcrf_to_itrf_eop`` and ``itrf_to_gcrf_eop`` transforms use UT1 and polar

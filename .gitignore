@@ -149,3 +149,6 @@ docs/generated/
 
 # Never commit Space-Track credentials.
 tle_credentials_local.py
+
+# Local agent guidance.
+AGENTS.md

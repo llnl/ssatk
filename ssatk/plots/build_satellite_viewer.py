@@ -122,7 +122,7 @@ def load_star_catalog(mag_limit=6.5, when=None):
     if stars is None:
         raise FileNotFoundError(
             "Accurate satellite-viewer stars require bright_stars.csv from "
-            "the appropriate ssatk-data-* package."
+            "the appropriate ssa-data-* package."
         )
 
     vectors, magnitudes, colors = (np.asarray(value, dtype=float) for value in stars)

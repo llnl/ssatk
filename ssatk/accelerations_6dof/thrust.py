@@ -57,7 +57,7 @@ class ThrustCurve:
     """Interpolated scalar thrust curve in newtons.
 
     Curves are evaluated with linear interpolation and return ``fill_value``
-    outside the tabulated time span. Store real engine data in ``ssatk-data-propulsion`` or a
+    outside the tabulated time span. Store real engine data in ``ssa-data-propulsion`` or a
     user path, then load it with :func:`load_thrust_curve_csv`.
     """
 
@@ -345,7 +345,7 @@ def load_packaged_thrust_curve(
     clamp_normalized: bool = True,
     fill_value: float = 0.0,
 ) -> ThrustCurve:
-    """Load a named thrust curve packaged in ``ssatk-data-propulsion``.
+    """Load a named thrust curve packaged in ``ssa-data-propulsion``.
 
     Absolute curves with a ``thrust_n`` column load directly. Normalized curves,
     such as the RS-18 startup shape, require ``steady_state_thrust_n`` so the

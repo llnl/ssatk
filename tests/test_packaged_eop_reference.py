@@ -1,8 +1,8 @@
-"""Packaged IERS EOP (``ssatk-data-core``) against astropy's bundled IERS-B.
+"""Packaged IERS EOP (``ssa-data-core``) against astropy's bundled IERS-B.
 
 Both tests load the snapshot through the default data-package search, so they
 also fail if the toolkit stops finding ``environment/eop/finals2000A.all`` in
-the split ``ssatk-data-*`` distributions (the 1.0.7 regression coverage, where the
+the split ``ssa-data-*`` distributions (the 1.0.7 regression coverage, where the
 toolkit still looked for the retired ``ssapy_data`` package).
 """
 
@@ -34,7 +34,7 @@ def test_packaged_ut1_minus_utc_matches_iers_c04_at_nodes_and_midday():
     # R2: packaged finals2000A UT1-UTC vs astropy IERS-B (EOP C04), weekly
     # from 1990-04-19 to the last final record, at 00:00 and 12:00 UTC.
     eop = load_packaged_eop()
-    assert eop.source.startswith("ssapy_data_core:")
+    assert eop.source.startswith("ssa_data_core:")
     iers_b = _iers_b()
     start, stop = _final_mjd_span(eop, iers_b)
 

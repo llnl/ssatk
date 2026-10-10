@@ -134,7 +134,7 @@ def read_space_weather(path: str | Path) -> SpaceWeatherTable:
 
 @lru_cache(maxsize=1)
 def load_packaged_space_weather() -> SpaceWeatherTable:
-    """Load the frozen CelesTrak space-weather snapshot from ``ssatk-data-core``."""
+    """Load the frozen CelesTrak space-weather snapshot from ``ssa-data-core``."""
 
     with data_path("environment/space_weather/SW-All.csv") as path:
         table = read_space_weather(path)

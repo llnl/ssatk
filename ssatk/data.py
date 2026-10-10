@@ -1,15 +1,15 @@
 """Access data packaged outside SSATK.
 
 SSATK keeps source code separate from bulky datasets and generated
-media. Datasets ship in the split ``ssatk-data-*`` distributions, each of which
+media. Datasets ship in the split ``ssa-data-*`` distributions, each of which
 installs its own import package with files below ``<package>/data``:
 
-* ``ssatk-data-core`` → ``ssapy_data_core`` (required)
-* ``ssatk-data-gravity`` → ``ssapy_data_gravity`` (required)
-* ``ssatk-data-lunar`` → ``ssapy_data_lunar`` (required)
-* ``ssatk-data-lunar-gravity`` → ``ssapy_data_lunar_gravity`` (required)
-* ``ssatk-data-propulsion`` → ``ssapy_data_propulsion`` (``[propulsion]`` extra)
-* ``ssatk-data-benchmarks`` → ``ssapy_data_benchmarks`` (``[benchmarks]`` extra)
+* ``ssa-data-core`` → ``ssa_data_core`` (required)
+* ``ssa-data-gravity`` → ``ssa_data_gravity`` (required)
+* ``ssa-data-lunar`` → ``ssa_data_lunar`` (required)
+* ``ssa-data-lunar-gravity`` → ``ssa_data_lunar_gravity`` (required)
+* ``ssa-data-propulsion`` → ``ssa_data_propulsion`` (``[propulsion]`` extra)
+* ``ssa-data-benchmarks`` → ``ssa_data_benchmarks`` (``[benchmarks]`` extra)
 
 When no ``package`` is given, the helpers below search these packages in order
 (then any user-supplied legacy package, if present)
@@ -32,12 +32,12 @@ from pathlib import Path, PurePosixPath
 from typing import Iterator
 
 DEFAULT_DATA_PACKAGES = (
-    "ssapy_data_core",
-    "ssapy_data_lunar",
-    "ssapy_data_gravity",
-    "ssapy_data_lunar_gravity",
-    "ssapy_data_propulsion",
-    "ssapy_data_benchmarks",
+    "ssa_data_core",
+    "ssa_data_lunar",
+    "ssa_data_gravity",
+    "ssa_data_lunar_gravity",
+    "ssa_data_propulsion",
+    "ssa_data_benchmarks",
 )
 """Split data import packages, searched in this order when ``package`` is None."""
 
@@ -50,12 +50,12 @@ DEFAULT_DATA_PACKAGE = DEFAULT_DATA_PACKAGES[0]
 DEFAULT_DATA_ROOT = "data"
 
 _INSTALL_HINTS = {
-    "propulsion": "pip install 'ssatk[propulsion]'  (ssatk-data-propulsion)",
-    "benchmarks": "pip install 'ssatk[benchmarks]'  (ssatk-data-benchmarks)",
+    "propulsion": "pip install 'ssatk[propulsion]'  (ssa-data-propulsion)",
+    "benchmarks": "pip install 'ssatk[benchmarks]'  (ssa-data-benchmarks)",
 }
 _DEFAULT_INSTALL_HINT = (
-    "pip install ssatk-data-core ssatk-data-gravity ssatk-data-lunar "
-    "ssatk-data-lunar-gravity"
+    "pip install ssa-data-core ssa-data-gravity ssa-data-lunar "
+    "ssa-data-lunar-gravity"
 )
 
 
@@ -249,7 +249,7 @@ def _package_root(package: str) -> Traversable:
         if exc.name != package:
             raise
         raise DataPackageNotFoundError(
-            f"Data package '{package}' is not installed. Install the ssatk-data-* "
+            f"Data package '{package}' is not installed. Install the ssa-data-* "
             "distribution that provides the required resource, then retry."
         ) from exc
 
