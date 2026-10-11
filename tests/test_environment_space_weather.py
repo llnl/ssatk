@@ -1,4 +1,3 @@
-
 import csv
 from datetime import timedelta
 
@@ -35,6 +34,20 @@ def test_nrlmsise00_density_uses_packaged_eop_and_space_weather(version):
         None,
     )
 
+    f107, f107a, aps = _reference_weather(epoch)
+    actual_weather = load_packaged_space_weather().msis_inputs(epoch)
+    np.testing.assert_allclose(actual_weather[:2], [f107, f107a], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(actual_weather[2], aps, atol=1e-12, rtol=0)
+    xyz = gcrf_to_itrf_eop([[6_778_137.0, 0, 0]], [epoch.gps])[0]
+    location = EarthLocation.from_geocentric(*xyz, unit=u.m)
+    expected = msis.run([epoch.to_datetime()], [location.lon.deg], [location.lat.deg],
+                        [location.height.to_value(u.km)], [f107], [f107a], [aps], version=version)
+    # pymsis returns single precision; allow 2 ppm for geodetic conversion.
+    assert density == pytest.approx(float(expected.reshape(-1, 11)[0, 0]), rel=2e-6, abs=0)
+
+
+def _reference_weather(epoch):
+    """Parse CelesTrak observed flux and chronological Ap bins independently."""
     with data_path("environment/space_weather/SW-All.csv") as path:
         with open(path, newline="") as stream:
             rows = {row["DATE"]: row for row in csv.DictReader(stream)}
@@ -46,13 +59,18 @@ def test_nrlmsise00_density_uses_packaged_eop_and_space_weather(version):
         sample = moment - timedelta(hours=3*offset)
         history.append(float(rows[sample.date().isoformat()][f"AP{sample.hour//3+1}"]))
     aps = [float(current["AP_AVG"]), *history[:4], np.mean(history[4:12]), np.mean(history[12:20])]
-    f107, f107a = float(previous["F10.7_ADJ"]), float(current["F10.7_ADJ_CENTER81"])
-    actual_weather = load_packaged_space_weather().msis_inputs(epoch)
-    np.testing.assert_allclose(actual_weather[:2], [f107, f107a], atol=1e-12, rtol=0)
-    np.testing.assert_allclose(actual_weather[2], aps, atol=1e-12, rtol=0)
-    xyz = gcrf_to_itrf_eop([[6_778_137.0, 0, 0]], [epoch.gps])[0]
-    location = EarthLocation.from_geocentric(*xyz, unit=u.m)
-    expected = msis.run([moment], [location.lon.deg], [location.lat.deg],
-                        [location.height.to_value(u.km)], [f107], [f107a], [aps], version=version)
-    # pymsis returns single precision; allow 2 ppm for geodetic conversion.
-    assert density == pytest.approx(float(expected.reshape(-1, 11)[0, 0]), rel=2e-6, abs=0)
+    # MSIS specifies flux at the actual Sun-Earth distance, not normalized
+    # to 1 au: pymsis.msis.calculate Notes and pymsis.utils.get_f107_ap.
+    # https://swxtrec.github.io/pymsis/reference/generated/pymsis.msis.calculate.html
+    f107, f107a = float(previous["F10.7_OBS"]), float(current["F10.7_OBS_CENTER81"])
+    return f107, f107a, aps
+
+
+@pytest.mark.parametrize("utc", ["2024-01-15T12:00:00", "2024-07-15T12:00:00"])
+def test_msis_inputs_use_observed_solar_flux_at_earth_distance(utc):
+    """R3: MSIS input definition, in winter and summer; no pymsis required."""
+    epoch = Time(utc, scale="utc")
+    expected_flux, expected_average, expected_ap = _reference_weather(epoch)
+    flux, average, ap = load_packaged_space_weather().msis_inputs(epoch)
+    np.testing.assert_allclose([flux, average], [expected_flux, expected_average], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(ap, expected_ap, atol=1e-12, rtol=0)
