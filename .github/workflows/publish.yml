@@ -99,7 +99,7 @@ jobs:
       - name: Smoke-test wheel
         run: |
           # Install the wheel with its declared dependencies, exactly as a user
-          # would, so a missing or misnamed ssatk-data-* package fails here.
+          # would, so a missing or misnamed ssa-data-* package fails here.
           pip install dist/ssatk-*.whl
           python -I - <<'PY'
           from importlib.metadata import entry_points, version
@@ -117,7 +117,7 @@ jobs:
                        "environment/space_weather/SW-All.csv",
                        "earth_map.npz", "bright_stars.csv"):
               assert data_resource(name).is_file(), name
-              assert resource_package(name) == "ssapy_data_core", name
+              assert resource_package(name) == "ssa_data_core", name
           assert find_data_file("bright_stars.csv") is not None
           assert earth_texture_path().is_file()
           scripts = {entry.name for entry in entry_points(group="console_scripts")}
