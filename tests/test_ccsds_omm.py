@@ -32,6 +32,12 @@ def test_celestrak_shaped_read_round_trip_and_comments():
     assert record.argument_of_pericenter == pytest.approx(record.argument_of_perigee)
     assert record.inclination_rad == pytest.approx(record.inclination)
     assert record.raan_rad == pytest.approx(record.raan)
+    # Synthetic CelesTrak-shaped fixture: literal input values, converted to
+    # SI. These are parser oracles, not a claim of an observed TERRA ephemeris.
+    assert record.mean_motion_rad_s == pytest.approx(14.61150647*2*np.pi/86400, rel=1e-12, abs=0)
+    assert record.mean_motion_dot_rad_s2 == pytest.approx(.338e-5*2*np.pi/86400**2, rel=1e-12, abs=0)
+    assert record.inclination_rad == pytest.approx(np.deg2rad(97.9399), abs=1e-12)
+    assert record.raan_rad == pytest.approx(np.deg2rad(286.4820), abs=1e-12)
     text = format_omm_xml(record)
     assert "<omm " in text and "<omm><omm" not in text
     restored = read_omm_xml(text)
@@ -57,7 +63,7 @@ def test_submicrosecond_epoch_and_empty_celestrak_header_are_preserved():
     assert "2026-08-27T19:05:27.769056123" in rendered
     orbit = record.to_ssapy_orbit()
     sat = orbit._sat
-    assert orbit.t == pytest.approx(Time(sat.jdsatepoch, sat.jdsatepochF, format="jd").gps)
+    assert orbit.t == pytest.approx(Time(sat.jdsatepoch, sat.jdsatepochF, format="jd").gps, abs=1e-6)
 
     ordinal = read_omm_xml(TERRA_XML.replace("2026-08-27T19:05:27.769056", "2026-239T19:05:27.769056"))
     assert ordinal.epoch.isot == "2026-08-27T19:05:27.769056000"

@@ -73,8 +73,12 @@ def test_real_earth_observer_frame_is_orthonormal():
     observer = station._observer()
     east, north, up = station._local_basis(0.0)
     basis = np.array([east, north, up])
-    np.testing.assert_allclose(basis @ basis.T, np.eye(3), atol=2e-12)
+    np.testing.assert_allclose(basis @ basis.T, np.eye(3), atol=2e-12, rtol=0)
     target = observer.getRV(0.0)[0] + 1_000_000.0 * up + 1_000.0 * east
     prediction = station.predict(np.r_[target, [0.0, 0.0, 0.0]], 0.0, "az_el")
     assert prediction.visible
-    assert np.all(np.isfinite(prediction.value))
+    np.testing.assert_allclose(prediction.value, [np.pi/2, np.arctan2(1e6, 1e3)], atol=1e-10, rtol=0)
+    # Geodetic up at lon=lat=0 is the observer's radial vector; celestial
+    # north is the rotated terrestrial pole, independently supplied by SSAPy.
+    position = observer.getRV(0.0)[0]
+    np.testing.assert_allclose(up, position / np.linalg.norm(position), atol=1e-12, rtol=0)

@@ -1,4 +1,5 @@
 import pytest
+import math
 
 from ssatk.constants import G0
 from ssatk.engines import (
@@ -20,4 +21,5 @@ def test_solid_motor_constraints_and_rocket_equation_helpers():
     assert solid.acceleration_for_mass(100.0) == pytest.approx(solid.nominal_thrust_n / 100.0)
     assert solid.mass_flow_rate() == pytest.approx(solid.nominal_thrust_n / (solid.nominal_isp_s * G0))
     assert mass_flow_rate(10.0, 250.0) == pytest.approx(10.0 / (250.0 * G0))
-    assert propellant_mass_for_delta_v(100.0, wet_mass_kg=1000.0, isp_s=300.0) > 0.0
+    expected = -1000.0 * math.expm1(-100.0/(300.0*9.80665))
+    assert propellant_mass_for_delta_v(100.0, wet_mass_kg=1000.0, isp_s=300.0) == pytest.approx(expected, rel=1e-12, abs=0)

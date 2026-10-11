@@ -76,7 +76,7 @@ def test_ssapy_acceleration_adapter_matches_base_accel_const_ntw():
     raw = AccelConstNTW([1e-8, 2e-8, 3e-8])
     adapter = wrap_ssapy_acceleration(raw)
 
-    np.testing.assert_allclose(adapter(r, v, t), raw(r, v, t))
+    np.testing.assert_allclose(adapter(r, v, t), raw(r, v, t), rtol=1e-12, atol=1e-15)
 
 
 def test_spacecraft_propagation_uses_wrapped_ssapy_acceleration():
@@ -109,16 +109,16 @@ def test_spacecraft_body_components_update_mass_center_and_inertia():
     expected_center = np.array([2.0, 8.0, 0.0]) / expected_mass
 
     assert body.current_mass == pytest.approx(expected_mass)
-    np.testing.assert_allclose(body.current_center_of_mass, expected_center)
+    np.testing.assert_allclose(body.current_center_of_mass, expected_center, rtol=1e-12, atol=1e-15)
     np.testing.assert_allclose(
         point_mass_inertia(2.0, [1.0, 0.0, 0.0]),
-        np.diag([0.0, 2.0, 2.0]),
+        np.diag([0.0, 2.0, 2.0]), rtol=1e-12, atol=1e-15
     )
     assert np.min(np.linalg.eigvalsh(body.current_inertia)) > 0.0
 
     spacecraft = Spacecraft(r=[0, 0, 0], v=[0, 0, 0], body=body)
     assert spacecraft.mass == pytest.approx(expected_mass)
-    np.testing.assert_allclose(spacecraft.inertia, body.current_inertia)
+    np.testing.assert_allclose(spacecraft.inertia, body.current_inertia, rtol=1e-12, atol=1e-15)
 
     depleted = body.with_current_mass(14.0)
     assert depleted.current_mass == pytest.approx(14.0)
@@ -144,9 +144,11 @@ def test_named_tank_burn_depletes_only_selected_tank_and_updates_body_properties
         "aux", 3.0 - (body.current_mass - trajectory.mass[-1])
     )
     assert final_body.tanks[0].propellant_mass == pytest.approx(2.0)
-    assert final_body.tanks[1].propellant_mass < 3.0
-    assert final_body.current_mass < body.current_mass
-    assert final_body.current_center_of_mass[0] > body.current_center_of_mass[0]
+    loss = 10.0 / (100.0 * 9.80665)
+    assert final_body.tanks[1].propellant_mass == pytest.approx(3.0 - loss, abs=1e-10)
+    assert final_body.current_mass == pytest.approx(17.0 - loss, abs=1e-10)
+    np.testing.assert_allclose(final_body.current_center_of_mass,
+                               np.array([6.0, 2*(4.0-loss), 0])/(17.0-loss), atol=1e-11, rtol=0)
     assert np.min(final_body.current_inertia.diagonal()) > 0.0
 
 
@@ -164,7 +166,7 @@ def test_named_tank_burn_stops_thrust_when_selected_tank_is_empty():
     )
 
     assert trajectory.mass[-1] == pytest.approx(body.current_mass - 0.02, abs=1e-8)
-    np.testing.assert_allclose(trajectory.v[5:, 0], trajectory.v[4, 0], atol=1e-8)
+    np.testing.assert_allclose(trajectory.v[5:, 0], trajectory.v[4, 0], atol=1e-8, rtol=0)
 
 
 def test_quaternion_helpers_rotate_body_to_inertial():
@@ -172,7 +174,7 @@ def test_quaternion_helpers_rotate_body_to_inertial():
     np.testing.assert_allclose(
         rotate_vector(q_z90, [1.0, 0.0, 0.0]),
         [0.0, 1.0, 0.0],
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
     with pytest.raises(ValueError, match="non-zero"):
         normalize_quaternion([0.0, 0.0, 0.0, 0.0])
@@ -196,25 +198,27 @@ def test_segment_impulse_applies_body_frame_delta_v_at_exact_epoch(gps_epoch):
     ])
     boundary = np.flatnonzero(trajectory.t == gps_epoch + 1.0)
     assert boundary.size == 2
-    np.testing.assert_allclose(trajectory.r[boundary[0]], trajectory.r[boundary[1]], atol=1e-12)
-    np.testing.assert_allclose(trajectory.v[boundary[0]], [0.0, 0.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(trajectory.v[boundary[1]], [0.0, 1.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(trajectory.mass[boundary], [10.0, 8.0], atol=1e-12)
-    np.testing.assert_allclose(trajectory.q[boundary[1]], [1.0, 0.0, 0.0, 0.0])
-    np.testing.assert_allclose(trajectory.omega[boundary[1]], [0.0, 0.0, 0.25])
-    np.testing.assert_allclose(trajectory.r[-1], [1.0, 1.0, 0.0], atol=1e-10)
-    np.testing.assert_allclose(trajectory.v[-1], [0.0, 1.0, 0.0], atol=1e-10)
+    np.testing.assert_allclose(trajectory.r[boundary[0]], trajectory.r[boundary[1]], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(trajectory.v[boundary[0]], [0.0, 0.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(trajectory.v[boundary[1]], [0.0, 1.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(trajectory.mass[boundary], [10.0, 8.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(trajectory.q[boundary[1]], [1.0, 0.0, 0.0, 0.0], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(trajectory.omega[boundary[1]], [0.0, 0.0, 0.25], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(trajectory.r[-1], [1.0, 1.0, 0.0], atol=1e-10, rtol=0)
+    np.testing.assert_allclose(trajectory.v[-1], [0.0, 1.0, 0.0], atol=1e-10, rtol=0)
     with pytest.raises(ValueError, match="unsupported satellite frame"):
         ImpulseManeuver([1.0, 0.0, 0.0], frame="bad").apply(spacecraft)
 
 
 def test_cubesat_preset_bodies_expose_valid_mass_properties():
-    for make_body in (cubesat_1u, cubesat_6u):
+    for units, make_body in ((1, cubesat_1u), (6, cubesat_6u)):
         body = make_body()
-        assert body.current_mass == pytest.approx(body.mass)
-        assert body.inertia.shape == (3, 3)
-        assert np.all(np.linalg.eigvalsh(body.inertia) > 0.0)
-        assert body.area > 0.0
+        # This is the documented simplified 0.1 x 0.1 x (0.1*N) m bus,
+        # not a flight-qualified CubeSat mass-properties data set.
+        mass, x, y, z = 1.33*units, .1, .1, .1*units
+        assert body.current_mass == pytest.approx(mass, abs=1e-12)
+        expected = mass/12*np.diag([y*y+z*z, x*x+z*z, x*x+y*y])
+        np.testing.assert_allclose(body.inertia, expected, atol=1e-14, rtol=0)
 
 
 def test_mass_only_impulse_updates_tank_body_and_preserves_mass_jump(gps_epoch):
@@ -231,7 +235,7 @@ def test_mass_only_impulse_updates_tank_body_and_preserves_mass_jump(gps_epoch):
     ])
     boundary = np.flatnonzero(trajectory.t == gps_epoch + 1.0)
     assert boundary.size == 2
-    np.testing.assert_allclose(trajectory.mass[boundary], [13.0, 12.0])
+    np.testing.assert_allclose(trajectory.mass[boundary], [13.0, 12.0], rtol=1e-12, atol=1e-15)
     assert trajectory.spacecraft(boundary[1], body=body).body.current_mass == pytest.approx(12.0)
     assert trajectory.spacecraft(boundary[1], body=body).inertia is not None
     with pytest.raises(ValueError, match="mass_change must be finite"):
@@ -251,10 +255,10 @@ def test_torque_free_principal_axis_spin_preserves_rate_and_norm():
     np.testing.assert_allclose(
         traj.omega,
         np.tile([0.0, 0.0, 0.01], (5, 1)),
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
-    np.testing.assert_allclose(np.linalg.norm(traj.q, axis=1), 1.0, atol=1e-12)
-    np.testing.assert_allclose(traj.r, np.tile([7_000_000.0, 0.0, 0.0], (5, 1)), atol=1e-10)
+    np.testing.assert_allclose(np.linalg.norm(traj.q, axis=1), 1.0, atol=1e-12, rtol=0)
+    np.testing.assert_allclose(traj.r, np.tile([7_000_000.0, 0.0, 0.0], (5, 1)), atol=1e-10, rtol=0)
 
 
 def test_gravity_gradient_torque_matches_rigid_body_formula():
@@ -277,7 +281,7 @@ def test_gravity_gradient_torque_matches_rigid_body_formula():
     )
     np.testing.assert_allclose(
         gravity_gradient_torque(r, [1.0, 0.0, 0.0, 0.0], inertia),
-        expected,
+        expected, rtol=1e-12, atol=1e-15
     )
 
 
@@ -290,7 +294,7 @@ def test_j2_acceleration_matches_standard_equatorial_formula():
         0.0,
     ])
 
-    np.testing.assert_allclose(j2_acceleration(r), expected)
+    np.testing.assert_allclose(j2_acceleration(r), expected, rtol=1e-12, atol=1e-15)
 
 
 def test_third_body_acceleration_is_earth_centered_perturbation():
@@ -299,7 +303,7 @@ def test_third_body_acceleration_is_earth_centered_perturbation():
 
     np.testing.assert_allclose(
         third_body_acceleration([1, 0, 0], [10, 0, 0], 1.0),
-        expected,
+        expected, rtol=1e-12, atol=1e-15
     )
 
 
@@ -308,12 +312,12 @@ def test_drag_and_srp_acceleration_have_expected_directions_and_magnitudes():
     atmosphere_velocity = co_rotating_atmosphere_velocity(r)
     np.testing.assert_allclose(
         atmosphere_velocity,
-        np.cross([0.0, 0.0, WGS84_EARTH_OMEGA], r),
+        np.cross([0.0, 0.0, WGS84_EARTH_OMEGA], r), rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         drag_acceleration(r, atmosphere_velocity, density=1e-12, area=2.0, mass=100.0),
         0.0,
-        atol=1e-20,
+        atol=1e-20, rtol=0
     )
 
     v = atmosphere_velocity + np.array([0.0, 100.0, 0.0])
@@ -329,12 +333,12 @@ def test_drag_and_srp_acceleration_have_expected_directions_and_magnitudes():
             atmosphere_velocity=[0.0, 0.0, 0.0],
         ),
         0.0,
-        atol=1e-20,
+        atol=1e-20, rtol=0
     )
 
     srp = srp_acceleration([0, 0, 0], [AU, 0, 0], area=2.0, mass=100.0, cr=1.5)
     expected_srp = np.array([-1361.0 / c * 1.5 * 2.0 / 100.0, 0.0, 0.0])
-    np.testing.assert_allclose(srp, expected_srp)
+    np.testing.assert_allclose(srp, expected_srp, rtol=1e-12, atol=1e-15)
 
 
 def test_flat_plate_drag_acceleration_torque_and_attitude_shadowing():
@@ -356,8 +360,8 @@ def test_flat_plate_drag_acceleration_torque_and_attitude_shadowing():
         earth_rotation_rate=0.0,
     )
 
-    np.testing.assert_allclose(acceleration, [-1.8, 0.0, 0.0])
-    np.testing.assert_allclose(torque, [0.0, 0.0, 18.0])
+    np.testing.assert_allclose(acceleration, [-1.8, 0.0, 0.0], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(torque, [0.0, 0.0, 18.0], rtol=1e-12, atol=1e-15)
 
     hidden_accel, hidden_torque = flat_plate_drag_acceleration_torque(
         r,
@@ -371,8 +375,8 @@ def test_flat_plate_drag_acceleration_torque_and_attitude_shadowing():
         earth_radius=0.0,
         earth_rotation_rate=0.0,
     )
-    np.testing.assert_allclose(hidden_accel, 0.0)
-    np.testing.assert_allclose(hidden_torque, 0.0)
+    np.testing.assert_allclose(hidden_accel, 0.0, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(hidden_torque, 0.0, rtol=1e-12, atol=1e-15)
 
     facet_accel, facet_torque = facet_drag_acceleration_torque(
         r,
@@ -384,8 +388,8 @@ def test_flat_plate_drag_acceleration_torque_and_attitude_shadowing():
         earth_radius=0.0,
         earth_rotation_rate=0.0,
     )
-    np.testing.assert_allclose(facet_accel, acceleration)
-    np.testing.assert_allclose(facet_torque, torque)
+    np.testing.assert_allclose(facet_accel, acceleration, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(facet_torque, torque, rtol=1e-12, atol=1e-15)
 
 
 def test_flat_plate_and_facet_lift_are_projected_and_signed():
@@ -406,12 +410,12 @@ def test_flat_plate_and_facet_lift_are_projected_and_signed():
 
     legacy_accel, legacy_torque = flat_plate_drag_acceleration_torque(r, v, q, **kwargs)
     zero_lift_accel, zero_lift_torque = flat_plate_drag_acceleration_torque(r, v, q, cl=0.0, **kwargs)
-    np.testing.assert_allclose(zero_lift_accel, legacy_accel)
-    np.testing.assert_allclose(zero_lift_torque, legacy_torque)
+    np.testing.assert_allclose(zero_lift_accel, legacy_accel, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(zero_lift_torque, legacy_torque, rtol=1e-12, atol=1e-15)
 
     lift_accel, lift_torque = flat_plate_drag_acceleration_torque(r, v, q, cl=1.0, **kwargs)
-    np.testing.assert_allclose(lift_accel, [-0.6, -3.3, 0.0])
-    np.testing.assert_allclose(lift_torque, [0.0, 0.0, 6.0])
+    np.testing.assert_allclose(lift_accel, [-0.6, -3.3, 0.0], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(lift_torque, [0.0, 0.0, 6.0], rtol=1e-12, atol=1e-15)
 
     facet_accel, facet_torque = facet_drag_acceleration_torque(
         r,
@@ -424,8 +428,8 @@ def test_flat_plate_and_facet_lift_are_projected_and_signed():
         earth_radius=0.0,
         earth_rotation_rate=0.0,
     )
-    np.testing.assert_allclose(facet_accel, lift_accel)
-    np.testing.assert_allclose(facet_torque, lift_torque)
+    np.testing.assert_allclose(facet_accel, lift_accel, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(facet_torque, lift_torque, rtol=1e-12, atol=1e-15)
 
     with pytest.raises(ValueError, match="cl must be finite"):
         flat_plate_drag_acceleration_torque(r, v, q, cl=np.nan, **kwargs)
@@ -453,8 +457,8 @@ def test_drag_models_include_local_surface_velocity_from_body_rotation():
         earth_radius=0.0,
         earth_rotation_rate=0.0,
     )
-    np.testing.assert_allclose(static_accel, 0.0)
-    np.testing.assert_allclose(static_torque, 0.0)
+    np.testing.assert_allclose(static_accel, 0.0, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(static_torque, 0.0, rtol=1e-12, atol=1e-15)
 
     spinning_accel, spinning_torque = flat_plate_drag_acceleration_torque(
         r,
@@ -470,8 +474,8 @@ def test_drag_models_include_local_surface_velocity_from_body_rotation():
         earth_radius=0.0,
         earth_rotation_rate=0.0,
     )
-    np.testing.assert_allclose(spinning_accel, [0.4, 0.0, 0.0])
-    np.testing.assert_allclose(spinning_torque, [0.0, 0.0, -4.0])
+    np.testing.assert_allclose(spinning_accel, [0.4, 0.0, 0.0], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(spinning_torque, [0.0, 0.0, -4.0], rtol=1e-12, atol=1e-15)
 
     facet_accel, facet_torque = facet_drag_acceleration_torque(
         r,
@@ -484,8 +488,8 @@ def test_drag_models_include_local_surface_velocity_from_body_rotation():
         earth_radius=0.0,
         earth_rotation_rate=0.0,
     )
-    np.testing.assert_allclose(facet_accel, spinning_accel)
-    np.testing.assert_allclose(facet_torque, spinning_torque)
+    np.testing.assert_allclose(facet_accel, spinning_accel, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(facet_torque, spinning_torque, rtol=1e-12, atol=1e-15)
 
 
 def test_flat_plate_srp_acceleration_torque_and_attitude_shadowing():
@@ -500,9 +504,9 @@ def test_flat_plate_srp_acceleration_torque_and_attitude_shadowing():
         center_of_pressure=[0.0, 1.0, 0.0],
     )
 
-    assert acceleration[0] < 0.0
-    np.testing.assert_allclose(acceleration[1:], 0.0)
-    assert torque[2] > 0.0
+    pressure = SOLAR_FLUX_1_AU / c
+    np.testing.assert_allclose(acceleration, [-pressure*2/10, 0, 0], atol=1e-20, rtol=1e-12)
+    np.testing.assert_allclose(torque, [0, 0, pressure*2], atol=1e-20, rtol=1e-12)
 
     hidden_accel, hidden_torque = flat_plate_srp_acceleration_torque(
         [0.0, 0.0, 0.0],
@@ -513,8 +517,8 @@ def test_flat_plate_srp_acceleration_torque_and_attitude_shadowing():
         cr=1.0,
         normal_body=[-1.0, 0.0, 0.0],
     )
-    np.testing.assert_allclose(hidden_accel, 0.0)
-    np.testing.assert_allclose(hidden_torque, 0.0)
+    np.testing.assert_allclose(hidden_accel, 0.0, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(hidden_torque, 0.0, rtol=1e-12, atol=1e-15)
 
     facet_accel, facet_torque = facet_srp_acceleration_torque(
         [0.0, 0.0, 0.0],
@@ -523,8 +527,8 @@ def test_flat_plate_srp_acceleration_torque_and_attitude_shadowing():
         [Facet(area=2.0, normal_body=[1.0, 0.0, 0.0], center_of_pressure=[0.0, 1.0, 0.0], cr=1.0)],
         mass=10.0,
     )
-    np.testing.assert_allclose(facet_accel, acceleration)
-    np.testing.assert_allclose(facet_torque, torque)
+    np.testing.assert_allclose(facet_accel, acceleration, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(facet_torque, torque, rtol=1e-12, atol=1e-15)
 
 
 def test_optical_srp_coefficients_match_flat_plate_limits():
@@ -562,9 +566,9 @@ def test_optical_srp_coefficients_match_flat_plate_limits():
         normal_body=[1.0, 0.0, 0.0],
     )
 
-    np.testing.assert_allclose(absorber, [-pressure * 2.0 / 10.0, 0.0, 0.0])
-    np.testing.assert_allclose(specular, 2.0 * absorber)
-    np.testing.assert_allclose(diffuse, (5.0 / 3.0) * absorber)
+    np.testing.assert_allclose(absorber, [-pressure * 2.0 / 10.0, 0.0, 0.0], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(specular, 2.0 * absorber, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(diffuse, (5.0 / 3.0) * absorber, rtol=1e-12, atol=1e-15)
     with pytest.raises(ValueError, match="must be <= 1"):
         flat_plate_srp_acceleration_torque(
             [0.0, 0.0, 0.0],
@@ -610,7 +614,7 @@ def test_facet_srp_self_shadowing_and_mesh_facets(tmp_path):
         self_shadowing=True,
     )
     assert np.linalg.norm(with_shadow) < np.linalg.norm(no_shadow)
-    np.testing.assert_allclose(np.linalg.norm(with_shadow), 0.5 * np.linalg.norm(no_shadow), rtol=1e-12)
+    np.testing.assert_allclose(np.linalg.norm(with_shadow), 0.5 * np.linalg.norm(no_shadow), rtol=1e-12, atol=0)
 
     obj_path = tmp_path / "plate.obj"
     obj_path.write_text("v 0 -0.5 -0.5\nv 0 0.5 -0.5\nv 0 0.5 0.5\nv 0 -0.5 0.5\nf 1 2 3 4\n")
@@ -633,13 +637,13 @@ def test_magnetic_dipole_torque_uses_body_frame_field():
 
     np.testing.assert_allclose(
         magnetic_dipole_torque([dipole], [0.0, 2.0e-5, 0.0]),
-        [0.0, 0.0, 2.0e-5],
+        [0.0, 0.0, 2.0e-5], rtol=1e-12, atol=1e-15
     )
     torque = SpacecraftMagneticTorque([0.0, 2.0e-5, 0.0])
-    np.testing.assert_allclose(torque(spacecraft), [0.0, 0.0, 2.0e-5])
+    np.testing.assert_allclose(torque(spacecraft), [0.0, 0.0, 2.0e-5], rtol=1e-12, atol=1e-15)
     np.testing.assert_allclose(
         SpacecraftMagneticTorque([0.0, 2.0e-5, 0.0], dipole_names=["missing"])(spacecraft),
-        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0], rtol=1e-12, atol=1e-15
     )
 
 
@@ -651,19 +655,19 @@ def test_reaction_wheel_torque_allocates_and_saturates_body_torque():
     assert len(body.reaction_wheels) == 3
     np.testing.assert_allclose(
         reaction_wheel_torque(body.reaction_wheels, [0.01, -0.03, 0.0]),
-        [0.01, -0.02, 0.0],
+        [0.01, -0.02, 0.0], rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         reaction_wheel_torque_commands(body.reaction_wheels, [0.01, -0.03, 0.0]),
-        [0.01, -0.02, 0.0],
+        [0.01, -0.02, 0.0], rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         reaction_wheel_torque(body.reaction_wheels, {"wheel_z": 0.05}),
-        [0.0, 0.0, 0.02],
+        [0.0, 0.0, 0.02], rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         SpacecraftReactionWheelTorque([0.0, 0.0, -0.05])(Spacecraft(r=[0, 0, 0], v=[0, 0, 0], body=body)),
-        [0.0, 0.0, -0.02],
+        [0.0, 0.0, -0.02], rtol=1e-12, atol=1e-15
     )
     with pytest.raises(ValueError, match="reaction-wheel command"):
         reaction_wheel_torque(body.reaction_wheels, [1.0, 2.0])
@@ -692,12 +696,12 @@ def test_reaction_wheel_momentum_state_conserves_internal_angular_momentum():
     )
 
     assert traj.wheel_momentum.shape == (2, 3)
-    np.testing.assert_allclose(traj.wheel_momentum[-1], [0.0, 0.0, -0.02], atol=1e-10)
-    np.testing.assert_allclose(traj.omega[-1], [0.0, 0.0, 0.005], atol=1e-10)
+    np.testing.assert_allclose(traj.wheel_momentum[-1], [0.0, 0.0, -0.02], atol=1e-10, rtol=0)
+    np.testing.assert_allclose(traj.omega[-1], [0.0, 0.0, 0.005], atol=1e-10, rtol=0)
     wheel_axes = np.column_stack([wheel.axis_body for wheel in body.reaction_wheels])
     total_h0 = body.current_inertia @ traj.omega[0] + wheel_axes @ traj.wheel_momentum[0]
     total_h1 = body.current_inertia @ traj.omega[-1] + wheel_axes @ traj.wheel_momentum[-1]
-    np.testing.assert_allclose(total_h1, total_h0, atol=1e-10)
+    np.testing.assert_allclose(total_h1, total_h0, atol=1e-10, rtol=0)
 
 
 def test_attitude_pd_torque_uses_shortest_quaternion_error():
@@ -711,12 +715,13 @@ def test_attitude_pd_torque_uses_shortest_quaternion_error():
         omega=np.array([0.0, 0.0, 0.02]),
     )
 
-    assert attitude_error_quaternion(q_z_error)[3] > 0.0
-    assert torque[2] < 0.0
-    assert np.linalg.norm(torque) <= 0.05
+    np.testing.assert_allclose(attitude_error_quaternion(q_z_error),
+                               [np.cos(.05), 0, 0, np.sin(.05)], atol=1e-14, rtol=0)
+    # -2*kp*sin(theta/2)-kd*omega is below -0.05 N m, so it saturates.
+    np.testing.assert_allclose(torque, [0, 0, -.05], atol=1e-14, rtol=0)
     np.testing.assert_allclose(
         attitude_error_quaternion(-q_z_error),
-        attitude_error_quaternion(q_z_error),
+        attitude_error_quaternion(q_z_error), rtol=1e-12, atol=1e-15
     )
 
 
@@ -733,17 +738,17 @@ def test_spacecraft_maneuver_accel_supports_operational_frames():
     np.testing.assert_allclose(
         SpacecraftManeuverAccel(10.0, frame="rtn")(spacecraft),
         [0.0, 0.1, 0.0],
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
     np.testing.assert_allclose(
         SpacecraftManeuverAccel(10.0, frame="ntw")(spacecraft),
         [0.0, 0.1, 0.0],
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
     np.testing.assert_allclose(
         SpacecraftManeuverAccel(10.0, frame="body")(spacecraft),
         [0.0, 0.1, 0.0],
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
     assert SpacecraftManeuverAccel(10.0, frame="rtn", isp=200.0).mass_flow_rate(spacecraft) == pytest.approx(
         10.0 / (200.0 * STANDARD_GRAVITY)
@@ -817,7 +822,7 @@ def test_spacecraft_propagate_tracks_thruster_mass_depletion():
     final_mass = spacecraft.mass - mass_flow_rate * burn_time
     expected_delta_v = isp * STANDARD_GRAVITY * np.log(spacecraft.mass / final_mass)
 
-    np.testing.assert_allclose(trajectory.mass, [spacecraft.mass, final_mass], rtol=1e-12)
+    np.testing.assert_allclose(trajectory.mass, [spacecraft.mass, final_mass], rtol=1e-12, atol=0)
     np.testing.assert_allclose(trajectory.v[-1], [expected_delta_v, 0.0, 0.0], rtol=1e-9, atol=1e-12)
     assert trajectory.spacecraft().mass == pytest.approx(final_mass)
 
@@ -833,7 +838,7 @@ def test_propagate_6dof_tracks_explicit_mass_flow_rate():
         mass_flow_rate=lambda t, r, v, q, omega: 0.25,
     )
 
-    np.testing.assert_allclose(trajectory.mass, [5.0, 4.5])
+    np.testing.assert_allclose(trajectory.mass, [5.0, 4.5], rtol=1e-12, atol=1e-15)
 
 
 def test_spacecraft_propagate_updates_body_mass_properties_during_burn():
@@ -930,9 +935,9 @@ def test_spacecraft_propagate_coasts_without_propulsive_acceleration_after_deple
 
     assert trajectory.t[-1] == pytest.approx(10.0)
     assert np.all(trajectory.mass >= body.dry_mass_total)
-    depleted = np.flatnonzero(np.isclose(trajectory.mass, body.dry_mass_total))
+    depleted = np.flatnonzero(np.isclose(trajectory.mass, body.dry_mass_total, rtol=1e-12, atol=1e-15))
     assert depleted.size
-    np.testing.assert_allclose(trajectory.v[depleted[0]:, 0], trajectory.v[depleted[0], 0])
+    np.testing.assert_allclose(trajectory.v[depleted[0]:, 0], trajectory.v[depleted[0], 0], rtol=1e-12, atol=1e-15)
     assert trajectory.solution(10.0)[13] == pytest.approx(body.dry_mass_total)
 
 
@@ -943,9 +948,9 @@ def test_rhs_central_gravity_matches_newtonian_acceleration():
 
     dy = sixdof_rhs(0.0, y, inertia=np.eye(3))
 
-    np.testing.assert_allclose(dy[0:3], v)
-    np.testing.assert_allclose(dy[3:6], -EARTH_MU * r / np.linalg.norm(r) ** 3)
-    np.testing.assert_allclose(dy[10:13], 0.0)
+    np.testing.assert_allclose(dy[0:3], v, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(dy[3:6], -EARTH_MU * r / np.linalg.norm(r) ** 3, rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(dy[10:13], 0.0, rtol=1e-12, atol=1e-15)
 
 
 def test_body_acceleration_rotates_through_current_attitude():
@@ -962,8 +967,8 @@ def test_body_acceleration_rotates_through_current_attitude():
         body_acceleration=lambda t, r, v, q, omega: [2.0e-6, 0.0, 0.0],
     )
 
-    np.testing.assert_allclose(traj.r[:, 0], 0.0, atol=1e-14)
-    np.testing.assert_allclose(traj.v[:, 0], 0.0, atol=1e-14)
+    np.testing.assert_allclose(traj.r[:, 0], 0.0, atol=1e-14, rtol=0)
+    np.testing.assert_allclose(traj.v[:, 0], 0.0, atol=1e-14, rtol=0)
     np.testing.assert_allclose(traj.v[:, 1], 2.0e-6 * times, rtol=1e-10, atol=1e-14)
     np.testing.assert_allclose(
         traj.r[:, 1],
@@ -991,7 +996,7 @@ def test_ntw_acceleration_uses_ssapy_component_order():
         ntw_acceleration=lambda t, r, v, q, omega: [1.0e-6, 2.0e-6, 3.0e-6],
     )
 
-    np.testing.assert_allclose(dy[3:6], [1.0e-6, 2.0e-6, 3.0e-6])
+    np.testing.assert_allclose(dy[3:6], [1.0e-6, 2.0e-6, 3.0e-6], rtol=1e-12, atol=1e-15)
 
 
 def test_constant_torque_changes_principal_axis_spin():
@@ -1007,7 +1012,7 @@ def test_constant_torque_changes_principal_axis_spin():
     )
 
     np.testing.assert_allclose(traj.omega[:, 0], times, rtol=1e-10, atol=1e-12)
-    np.testing.assert_allclose(traj.omega[:, 1:], 0.0, atol=1e-12)
+    np.testing.assert_allclose(traj.omega[:, 1:], 0.0, atol=1e-12, rtol=0)
 
 
 def test_propagate_6dof_supports_terminal_events_and_dense_output(gps_epoch):

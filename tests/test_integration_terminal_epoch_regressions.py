@@ -44,4 +44,4 @@ def test_requested_sample_just_before_the_root_survives_at_small_epochs():
     times = np.asarray(trajectory.t, dtype=float)
     assert times.size == 3
     assert times[-1] == pytest.approx(1.25, abs=1.0e-9)
-    assert times[-1] - times[-2] == pytest.approx(5.0e-7, rel=1e-6)
+    assert times[-1] - times[-2] == pytest.approx(5.0e-7, rel=1e-6, abs=0)

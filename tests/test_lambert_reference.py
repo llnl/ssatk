@@ -29,8 +29,8 @@ def test_lambert_recovers_the_circular_orbit_through_both_points(prograde, sweep
                                mu=EARTH_MU, prograde=prograde)
 
     np.testing.assert_allclose(v1, CIRCULAR_SPEED * np.array(expected_direction),
-                               atol=1e-6 * CIRCULAR_SPEED)
-    np.testing.assert_allclose(np.linalg.norm(v2), CIRCULAR_SPEED, rtol=1e-9)
+                               atol=1e-6 * CIRCULAR_SPEED, rtol=0)
+    np.testing.assert_allclose(np.linalg.norm(v2), CIRCULAR_SPEED, rtol=1e-9, atol=0)
 
 
 def test_lambert_arc_reaches_target_under_independent_kepler_propagation():
@@ -43,5 +43,5 @@ def test_lambert_arc_reaches_target_under_independent_kepler_propagation():
 
     arrival = Orbit(r=r1, v=v1, t=0.0, mu=EARTH_MU).at(tof)
 
-    np.testing.assert_allclose(arrival.r, r2, atol=0.5)
-    np.testing.assert_allclose(arrival.v, v2, atol=1e-3)
+    np.testing.assert_allclose(arrival.r, r2, atol=0.5, rtol=0)
+    np.testing.assert_allclose(arrival.v, v2, atol=1e-3, rtol=0)

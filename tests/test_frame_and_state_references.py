@@ -33,6 +33,15 @@ def test_equatorial_ecliptic_round_trips_radians_and_degrees():
     ra_direct, dec_direct = eqecl.xyz_to_equatorial(1.0, 2.0, 3.0)
     assert ra_from_xyz == pytest.approx(ra_direct)
     assert dec_from_xyz == pytest.approx(dec_direct)
+    # R1: the J2000 equatorial +Y axis has ecliptic latitude -obliquity.
+    # A round trip alone would also pass if both transformations were identity.
+    lon, lat = eqecl.equatorial_to_ecliptic(90.0, 0.0, degrees=True)
+    assert lon == pytest.approx(90.0, abs=1e-10)
+    assert lat == pytest.approx(-23.439291, abs=1e-10)
+    eps = np.deg2rad(23.439291)
+    np.testing.assert_allclose([ecl_x, ecl_y, ecl_z],
+                               [1, 2*np.cos(eps)+3*np.sin(eps), -2*np.sin(eps)+3*np.cos(eps)],
+                               atol=1e-12, rtol=0)
 
 
 def test_gcrf_to_itrf_astropy_is_geocentric_and_norm_preserving():
@@ -44,7 +53,7 @@ def test_gcrf_to_itrf_astropy_is_geocentric_and_norm_preserving():
     transformed = gcrf_to_itrf_astropy(positions, times)
 
     assert transformed.shape == (2, 3)
-    np.testing.assert_allclose(transformed[0], [0.0, 0.0, 0.0], atol=1e-6)
+    np.testing.assert_allclose(transformed[0], [0.0, 0.0, 0.0], atol=1e-6, rtol=0)
     assert np.linalg.norm(transformed[1]) == pytest.approx(np.linalg.norm(positions[1]), rel=0, abs=1e-3)
     with pytest.raises(ValueError, match="shape"):
         gcrf_to_itrf_astropy(np.ones(3), times[0])
@@ -68,13 +77,18 @@ def test_frame_transform_conventions_match_ssapy_ntw_order():
 
     assert "velocity" in Frame.NTW.label
     rotation = eci_to_ecf_matrix(0.0)
-    np.testing.assert_allclose(rotation @ rotation.T, np.eye(3), atol=1e-12)
+    # The SSAPy convention linearizes polar motion: P=I+skew, hence
+    # ||P P.T-I|| <= xp^2+yp^2, not exact orthogonality to machine epsilon.
+    from ssapy.utils import iers_interp
+    _, xp, yp = iers_interp(0.0)
+    np.testing.assert_allclose(rotation @ rotation.T, np.eye(3),
+                               atol=float(xp*xp+yp*yp)+1e-14, rtol=0)
     assert np.linalg.det(rotation) == pytest.approx(1.0)
 
     lvlh = lvlh_matrix(r, v)
     ntw = ntw_matrix(r, v)
-    np.testing.assert_allclose(lvlh @ lvlh.T, np.eye(3), atol=1e-12)
-    np.testing.assert_allclose(ntw @ ntw.T, np.eye(3), atol=1e-12)
+    np.testing.assert_allclose(lvlh @ lvlh.T, np.eye(3), atol=1e-12, rtol=0)
+    np.testing.assert_allclose(ntw @ ntw.T, np.eye(3), atol=1e-12, rtol=0)
     np.testing.assert_allclose(ntw, ntw_to_gcrf_matrix(r, v).T)
 
     T_hat, N_hat, W_hat = ntw_axes(r, v)
@@ -87,15 +101,15 @@ def test_frame_transform_conventions_match_ssapy_ntw_order():
     np.testing.assert_allclose(W_lvlh, W_hat)
 
     ntw_tf = FrameTransform(Frame.NTW)
-    np.testing.assert_allclose(ntw_tf.transform_point(r, v), [7000.0, 0.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(ntw_tf.transform_vector(v, r, v), [0.0, 7.5, 0.0], atol=1e-12)
+    np.testing.assert_allclose(ntw_tf.transform_point(r, v), [7000.0, 0.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(ntw_tf.transform_vector(v, r, v), [0.0, 7.5, 0.0], atol=1e-12, rtol=0)
 
     r_series = np.array([r, [0.0, 7000.0, 0.0]])
     v_series = np.array([v, [-7.5, 0.0, 0.0]])
     transformed = ntw_tf.transform_trajectory(r_series, v_series)
-    np.testing.assert_allclose(transformed[:, 0], [7000.0, 7000.0], atol=1e-12)
+    np.testing.assert_allclose(transformed[:, 0], [7000.0, 7000.0], atol=1e-12, rtol=0)
     relative = ntw_tf.relative_trajectory(r_series, v_series)
-    np.testing.assert_allclose(relative[0], [0.0, 0.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(relative[0], [0.0, 0.0, 0.0], atol=1e-12, rtol=0)
 
     with pytest.raises(ValueError, match="t_gps required"):
         FrameTransform(Frame.ECF).transform_trajectory(r_series, v_series)
@@ -112,7 +126,7 @@ def test_satellite_burns_use_canonical_ntw_components(tmp_path):
     v = np.array([0.0, 7.5, 0.0])
     burn = BurnEvent(epoch_offset_s=10.0, dv_ntw_km_s=[0.0, 0.02, 0.0])
 
-    np.testing.assert_allclose(burn.dv_eci(r, v), [0.0, 0.02, 0.0], atol=1e-12)
+    np.testing.assert_allclose(burn.dv_eci(r, v), [0.0, 0.02, 0.0], atol=1e-12, rtol=0)
     assert burn.dv_mag_m_s == pytest.approx(20.0)
     assert burn.dv_mag_km_s == pytest.approx(0.02)
     assert burn.burn_duration_s() == 0.0
@@ -135,12 +149,12 @@ def test_satellite_burns_use_canonical_ntw_components(tmp_path):
 
     T, N, W = sat.ntw_vectors(r, v, scale=2.0)
     R, S, W_lvlh = sat.lvlh_vectors(r, v, scale=3.0)
-    np.testing.assert_allclose(T, [0.0, 2.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(N, [2.0, 0.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(W, [0.0, 0.0, 2.0], atol=1e-12)
-    np.testing.assert_allclose(R, [3.0, 0.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(S, [0.0, 3.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(W_lvlh, [0.0, 0.0, 3.0], atol=1e-12)
+    np.testing.assert_allclose(T, [0.0, 2.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(N, [2.0, 0.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(W, [0.0, 0.0, 2.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(R, [3.0, 0.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(S, [0.0, 3.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(W_lvlh, [0.0, 0.0, 3.0], atol=1e-12, rtol=0)
     assert np.linalg.norm(sat.burn_vector_eci(burn, r, v)) == pytest.approx(sat.ntw_scale * 0.2)
     sat.remove_burn(0)
     assert sat.burns == [finite]
@@ -249,7 +263,7 @@ def test_orbital_state_tle_and_ssapy_roundtrip():
     ssapy_orbit = state.to_ssapy()
     converted = OrbitalState.from_ssapy(ssapy_orbit, name="converted")
     assert converted.name == "converted"
-    assert converted.a_km == pytest.approx(state.a_km, rel=1e-6)
+    assert converted.a_km == pytest.approx(state.a_km, rel=1e-6, abs=0)
     assert converted.e == pytest.approx(state.e, abs=1e-8)
 
 
@@ -385,7 +399,7 @@ def test_satellite_viewer_rotates_body_to_gcrf_quaternions_into_teme():
 
     body_vector = rng.normal(size=3)
     expected = np.asarray(gcrf_to_teme(epoch), dtype=float) @ (body_to_gcrf @ body_vector)
-    np.testing.assert_allclose(rotate(q_out[0][0], body_vector), expected, atol=1e-12)
+    np.testing.assert_allclose(rotate(q_out[0][0], body_vector), expected, atol=1e-12, rtol=0)
 
 
 def test_gcrf_to_itrf_transforms_a_supplied_velocity_like_astropy():

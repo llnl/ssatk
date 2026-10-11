@@ -124,9 +124,10 @@ code imports the module it needs, for example
 ## Validation
 
 SSATK's test policy ([`docs/testing_policy.md`](docs/testing_policy.md))
-requires every test to compare against an independent reference with a stated
-tolerance; tests that only show code runs are not accepted. Representative
-results:
+requires numerical tests to identify their reference and tolerance. The
+[test reference audit](docs/test_reference_audit.rst) distinguishes independent
+physical references from consistency and compatibility checks, and records
+remaining validation limits. Representative results:
 
 | Quantity | Reference | Result |
 |---|---|---|

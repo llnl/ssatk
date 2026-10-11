@@ -49,6 +49,6 @@ def test_eclipse_surface_latlon_round_trips_with_earth_rotation():
     for lat, lon in [(-45.0, -170.0), (0.0, 0.0), (30.363, -97.979), (71.0, 145.0)]:
         point = _latlon_to_eci_surface(lat, lon, sample_time)
         got_lat, got_lon = _eci_surface_to_latlon(point, sample_time)
-        np.testing.assert_allclose(got_lat, lat, atol=1e-9)
+        np.testing.assert_allclose(got_lat, lat, atol=1e-9, rtol=0)
         wrapped_diff = ((got_lon - lon + 180.0) % 360.0) - 180.0
-        np.testing.assert_allclose(wrapped_diff, 0.0, atol=1e-9)
+        np.testing.assert_allclose(wrapped_diff, 0.0, atol=1e-9, rtol=0)
