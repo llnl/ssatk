@@ -10,8 +10,7 @@ Compatibility, serialization, callback, and input-contract tests have a
 different purpose. Keep them clearly identified as contract checks; they do
 not count as physical validation. Returning an object or writing a file alone
 does not validate a numerical result. The complete test-file inventory and
-known limitations are recorded in `test_reference_audit.csv` and
-`test_reference_audit.rst`.
+known limitations are recorded in `test_reference_audit.rst`.
 
 ## Accepted references
 
