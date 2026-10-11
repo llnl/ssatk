@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from scipy.integrate import trapezoid as _trapezoid
 
 try:
     from .scene_primitives import stabilize_sphere_poles
@@ -446,9 +447,9 @@ def _omnidirectional_flux_ratio(b_over_beq, n=2.0):
     # against the closed-form solution.
     u = np.linspace(0.0, 1.0, 512)[None, :]
     a = a_max[:, None] * u
-    num = np.trapezoid(np.sin(a) ** (n + 1.0), a, axis=1)
+    num = _trapezoid(np.sin(a) ** (n + 1.0), a, axis=1)
     a_full = (np.pi / 2) * u
-    den = np.trapezoid(np.sin(a_full) ** (n + 1.0), a_full, axis=1)
+    den = _trapezoid(np.sin(a_full) ** (n + 1.0), a_full, axis=1)
     return num / np.maximum(den, 1e-30)
 
 

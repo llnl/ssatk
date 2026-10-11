@@ -81,8 +81,12 @@ def leapfrog(
     dt_vals = np.diff(t_abs)
     if np.any(dt_vals <= 0):
         raise ValueError("t must be strictly increasing")
-    if not np.allclose(dt_vals, dt_vals[0], rtol=0.0,
-                       atol=4 * np.spacing(max(1.0, np.max(np.abs(t_abs))))):
+    # Astropy's two-part Julian-date conversion contributes picosecond
+    # differences even near GPS zero, where the GPS float ULP is much smaller.
+    # 32 float64 eps * one day bounds this conversion scale (~0.6 ns).
+    time_tolerance = max(32 * np.finfo(float).eps * 86400.0,
+                         4 * np.spacing(max(1.0, np.max(np.abs(t_abs)))))
+    if not np.allclose(dt_vals, dt_vals[0], rtol=0.0, atol=time_tolerance):
         raise ValueError("Non-uniform Δt not supported")
 
     # ---- burn profiles ----

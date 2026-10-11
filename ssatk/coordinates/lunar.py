@@ -1,42 +1,69 @@
 import numpy as np
 from ssapy import get_body
-from ssapy.body import MoonPosition
-from ssapy.utils import normed
 from astropy.time import Time
 
-from .velocity import v_from_r
+
+def _lunar_rotation(moon, t):
+    """GCRF-to-Earth-Moon rotating axes, with shape (N, 3, 3)."""
+    rmoon = np.asarray(moon.position(t), dtype=float).reshape(3, -1).T
+    vmoon = (np.asarray(moon.position(t + 5.0)).reshape(3, -1).T
+             - np.asarray(moon.position(t - 5.0)).reshape(3, -1).T) / 10.0
+    xhat = rmoon / np.linalg.norm(rmoon, axis=1)[:, None]
+    transverse = vmoon - np.sum(xhat * vmoon, axis=1)[:, None] * xhat
+    yhat = transverse / np.linalg.norm(transverse, axis=1)[:, None]
+    return np.stack((xhat, yhat, np.cross(xhat, yhat)), axis=1)
 
 
-def gcrf_to_lunar(r: np.ndarray, t: np.ndarray, v: np.ndarray = None) -> np.ndarray:
-    """Convert GCRF position/velocity vectors to the rotating lunar frame."""
-
-    class MoonRotator:
-        def __init__(self):
-            self.mpm = MoonPosition()
-
-        def __call__(self, r: np.ndarray, t: np.ndarray) -> np.ndarray:
-            if isinstance(t, Time):
-                t = t.gps
-            rmoon = self.mpm(t)
-            vmoon = (self.mpm(t + 5.0) - self.mpm(t - 5.0)) / 10.0
-            xhat = normed(rmoon.T).T
-            vpar = np.einsum("ab,ab->b", xhat, vmoon) * xhat
-            yhat = normed((vmoon - vpar).T).T
-            zhat = np.cross(xhat, yhat, axisa=0, axisb=0).T
-            rotation = np.empty((3, 3, len(t)))
-            rotation[0] = xhat
-            rotation[1] = yhat
-            rotation[2] = zhat
-            return np.einsum("abc,cb->ca", rotation, r)
-
-    rotator = MoonRotator()
+def _rotating_lunar_state(r, t, v, *, moon_centred, step_s):
+    r = np.asarray(r, dtype=float)
+    scalar = r.ndim == 1
+    if r.ndim not in (1, 2) or r.shape[-1] != 3 or not np.all(np.isfinite(r)):
+        raise ValueError("r must contain finite 3-vectors in metres.")
+    r = np.atleast_2d(r)
+    epochs = _gps_seconds(t)
+    if epochs.size == 1:
+        epochs = np.repeat(epochs, len(r))
+    if epochs.size != len(r) or not np.all(np.isfinite(epochs)):
+        raise ValueError("t must be finite with one epoch per position or a single epoch.")
+    step_s = float(step_s)
+    if not np.isfinite(step_s) or step_s <= 0.0:
+        raise ValueError("step_s must be finite and positive.")
+    moon = get_body("moon")
+    rotation = _lunar_rotation(moon, epochs)
+    relative = r
+    if moon_centred:
+        relative = r - np.asarray(moon.position(epochs)).reshape(3, -1).T
+    position = np.einsum("nij,nj->ni", rotation, relative)
     if v is None:
-        return rotator(r, t)
-    r_lunar = rotator(r, t)
-    return r_lunar, v_from_r(r_lunar, t)
+        return position[0] if scalar else position
+    v = np.asarray(v, dtype=float)
+    if v.shape not in ((3,), r.shape) or not np.all(np.isfinite(v)):
+        raise ValueError("v must contain finite 3-vectors in metres per second matching r.")
+    v = np.broadcast_to(v, r.shape)
+    if moon_centred:
+        moon_velocity = (np.asarray(moon.position(epochs + step_s)).reshape(3, -1).T
+                         - np.asarray(moon.position(epochs - step_s)).reshape(3, -1).T) / (2.0 * step_s)
+        v = v - moon_velocity
+    rotation_rate = (_lunar_rotation(moon, epochs + step_s)
+                     - _lunar_rotation(moon, epochs - step_s)) / (2.0 * step_s)
+    velocity = (np.einsum("nij,nj->ni", rotation, v)
+                + np.einsum("nij,nj->ni", rotation_rate, relative))
+    return (position[0], velocity[0]) if scalar else (position, velocity)
 
 
-def gcrf_to_lunar_fixed(r: np.ndarray, t: np.ndarray, v: np.ndarray = None) -> np.ndarray:
+def gcrf_to_lunar(r: np.ndarray, t: np.ndarray, v: np.ndarray = None, *, step_s=1.0):
+    """Convert GCRF states to the Earth-centred Earth-Moon rotating frame.
+
+    Positions are metres, velocities metres per second, and epochs GPS seconds
+    or Astropy Time. A supplied velocity is transformed as R v + Rdot r;
+    Rdot is evaluated with a +/- ``step_s`` second central difference at each
+    epoch, independently of the requested sampling. Inputs are (N, 3) or one
+    (3,) state; a scalar epoch applies to every row.
+    """
+    return _rotating_lunar_state(r, t, v, moon_centred=False, step_s=step_s)
+
+
+def gcrf_to_lunar_fixed(r: np.ndarray, t: np.ndarray, v: np.ndarray = None, *, step_s=1.0):
     """Convert GCRF vectors to the Moon-centred Earth-Moon rotating frame.
 
     +X points from Earth to the Moon (so Earth lies on -X), +Y along the
@@ -44,12 +71,12 @@ def gcrf_to_lunar_fixed(r: np.ndarray, t: np.ndarray, v: np.ndarray = None) -> n
     normal. This is the frame cislunar plots want; it is not the lunar
     body-fixed frame used by selenographic maps. For that, use
     :func:`gcrf_to_lunar_body`.
+
+    Units and shapes follow :func:`gcrf_to_lunar`. A supplied velocity becomes
+    R (v - v_moon) + Rdot (r - r_moon), with ephemeris derivatives evaluated
+    locally at each epoch using +/- ``step_s`` seconds.
     """
-    moon_body = get_body("moon")
-    r_lunar = gcrf_to_lunar(r, t) - gcrf_to_lunar(moon_body.position(t).T, t)
-    if v is None:
-        return r_lunar
-    return r_lunar, v_from_r(r_lunar, t)
+    return _rotating_lunar_state(r, t, v, moon_centred=True, step_s=step_s)
 
 
 def _gps_seconds(t):

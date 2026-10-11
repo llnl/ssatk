@@ -45,6 +45,7 @@ def frame_to_gcrf_matrix(
     q=None,
     lat=None,
     lon=None,
+    t=None,
     degrees: bool = True,
     origin=None,
     target=None,
@@ -59,8 +60,11 @@ def frame_to_gcrf_matrix(
     - ``rtn``/``rsw``/``ric``/``lvlh``: radial, transverse, orbit-normal.
     - ``vnb``: velocity, orbit-normal, binormal.
     - ``body``: quaternion ``q=[w, x, y, z]`` body-to-GCRF.
-    - ``nadir_velocity``: +X velocity, +Y opposite orbit normal, +Z nadir.
-    - ``enu``/``ned``/``sez``: local tangent frames at geodetic ``lat``/``lon``.
+    - ``nadir_velocity``: +X transverse velocity, +Y opposite orbit normal,
+      +Z nadir. The radial component of velocity does not define an axis.
+    - ``enu``/``ned``/``sez``: local tangent frames at geodetic ``lat``/``lon``;
+      require a scalar GPS epoch or Astropy ``Time`` in ``t``. The Earth
+      orientation convention matches SSAPy's ``EarthObserver(fast=True)``.
     - ``los``/``target``/``sun``: +X points from ``origin`` to ``target`` and
       ``up_hint`` defines the projected +Z direction.
     """
@@ -78,12 +82,17 @@ def frame_to_gcrf_matrix(
         return body_to_gcrf_matrix(q)
     if name == "nadir_velocity":
         return nadir_velocity_to_gcrf_matrix(r, v)
-    if name == "enu":
-        return enu_to_ecef_matrix(lat, lon, degrees=degrees)
-    if name == "ned":
-        return ned_to_ecef_matrix(lat, lon, degrees=degrees)
-    if name == "sez":
-        return sez_to_ecef_matrix(lat, lon, degrees=degrees)
+    if name in {"enu", "ned", "sez"}:
+        from .frames import eci_to_ecf_matrix
+
+        if t is None:
+            raise ValueError("t is required for local tangent frames in GCRF.")
+        epoch = np.asarray(getattr(t, "gps", t), dtype=float)
+        if epoch.ndim != 0 or not np.isfinite(epoch):
+            raise ValueError("t must be a finite scalar GPS epoch or Astropy Time.")
+        local_to_ecef = {"enu": enu_to_ecef_matrix, "ned": ned_to_ecef_matrix,
+                         "sez": sez_to_ecef_matrix}[name](lat, lon, degrees=degrees)
+        return eci_to_ecf_matrix(float(epoch)).T @ local_to_ecef
     if name in {"los", "sun"}:
         return los_to_gcrf_matrix(origin, target, up_hint=up_hint)
     raise ValueError(f"unsupported satellite frame {frame!r}")
@@ -149,12 +158,13 @@ def vnb_to_gcrf_matrix(r, v) -> np.ndarray:
 
 
 def nadir_velocity_to_gcrf_matrix(r, v) -> np.ndarray:
-    """Return body-like nadir-pointing matrix: +X velocity, +Y -normal, +Z nadir."""
+    """Return nadir axes: +X transverse velocity, +Y -normal, +Z nadir."""
 
     r_hat = _unit(_vector3(r, "r"), "r")
-    v_hat = _unit(_vector3(v, "v"), "v")
+    v = _vector3(v, "v")
     h_hat = _unit(np.cross(r, v), "r cross v")
-    return np.column_stack((v_hat, -h_hat, -r_hat))
+    transverse = np.cross(h_hat, r_hat)
+    return np.column_stack((transverse, -h_hat, -r_hat))
 
 
 def body_to_gcrf_matrix(q) -> np.ndarray:

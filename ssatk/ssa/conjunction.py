@@ -14,6 +14,7 @@ from itertools import pairwise
 
 import numpy as np
 from scipy.integrate import quad
+from scipy.special import ndtr, ndtri
 from scipy.spatial import cKDTree
 
 
@@ -474,7 +475,7 @@ def probability_of_collision(
     if not np.allclose(covariance, covariance.T, rtol=0.0, atol=1.0e-12):
         raise ValueError("covariance must be symmetric.")
     try:
-        cholesky = np.linalg.cholesky(covariance)
+        np.linalg.cholesky(covariance)
     except np.linalg.LinAlgError as exc:
         raise ValueError("covariance must be positive-definite.") from exc
     epsabs, epsrel = float(epsabs), float(epsrel)
@@ -482,18 +483,51 @@ def probability_of_collision(
         raise ValueError("epsabs and epsrel must be finite and positive.")
     if radius == 0.0:
         return 0.0
-    normalization = np.exp(-np.log(2.0 * np.pi) - np.log(cholesky[0, 0]) - np.log(cholesky[1, 1]))
+    # The disk is invariant under an orthogonal change of coordinates. In
+    # principal axes the two Gaussian components are independent, so integrate
+    # the second component analytically and the first in standard deviations.
+    # Polar quadrature can miss an entire narrow Gaussian between its nodes.
+    eigenvalues, axes = np.linalg.eigh(0.5 * (covariance + covariance.T))
+    if np.any(eigenvalues <= 0.0):
+        raise ValueError("covariance must be positive-definite.")
+    sx, sy = np.sqrt(eigenvalues[::-1])
+    mx, my = axes[:, ::-1].T @ mean
+    tail = min(epsabs / 8.0, 1.0e-4)
+    if tail == 0.0:
+        raise ValueError("epsabs is below the representable integration tolerance.")
+    cutoff = -ndtri(tail)
+    lower = max((-radius - mx) / sx, -cutoff)
+    upper = min((radius - mx) / sx, cutoff)
+    if lower >= upper:
+        return 0.0  # The omitted standard-normal mass is at most 2 * tail.
 
-    def angular_integrand(angle):
-        unit = np.array([np.cos(angle), np.sin(angle)])
+    def integrand(z):
+        x = mx + sx * z
+        half_height = np.sqrt(max(0.0, (radius - x) * (radius + x)))
+        lo, hi = (-half_height - my) / sy, (half_height - my) / sy
+        # Use survival probabilities when both limits are positive, avoiding
+        # cancellation between two CDF values indistinguishable from one.
+        conditional = ndtr(-lo) - ndtr(-hi) if lo > 0.0 else ndtr(hi) - ndtr(lo)
+        return np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi) * conditional
 
-        def radial_integrand(distance):
-            whitened = np.linalg.solve(cholesky, distance * unit - mean)
-            return distance * normalization * np.exp(-0.5 * float(np.dot(whitened, whitened)))
-
-        return quad(radial_integrand, 0.0, radius, epsabs=epsabs, epsrel=epsrel)[0]
-
-    probability = quad(angular_integrand, 0.0, 2.0 * np.pi, epsabs=epsabs, epsrel=epsrel)[0]
+    # Resolve the normal peak and the conditional-CDF transition at the disk
+    # boundary, including when one principal variance is extremely small.
+    points = list(np.arange(np.ceil(lower), upper, 1.0))
+    for k in (0.0, -1.0, 1.0, -2.0, 2.0, -4.0, 4.0, -8.0, 8.0, -cutoff, cutoff):
+        y = my + k * sy
+        if abs(y) < radius:
+            x = np.sqrt((radius - y) * (radius + y))
+            points.extend(((x - mx) / sx, (-x - mx) / sx))
+    points = sorted({float(z) for z in points if lower < z < upper})
+    probability, error = quad(
+        integrand, lower, upper, points=points,
+        epsabs=epsabs / 2.0, epsrel=epsrel / 2.0,
+        limit=max(100, 2 * len(points) + 50),
+    )
+    tolerance = max(epsabs / 2.0, epsrel * abs(probability) / 2.0)
+    if (not np.isfinite(probability) or not np.isfinite(error)
+            or error > tolerance or probability < -tolerance or probability > 1.0 + tolerance):
+        raise RuntimeError("Collision-probability quadrature did not meet the requested tolerance.")
     return float(np.clip(probability, 0.0, 1.0))
 
 
