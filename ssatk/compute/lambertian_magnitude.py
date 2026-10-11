@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import functools
 import numpy as np
+from scipy.integrate import trapezoid as _trapezoid
 import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import (
@@ -212,7 +213,7 @@ def _planck_band_radiance(T, lam_lo, lam_hi, n=2000):
     with np.errstate(over="ignore"):
         x = H_PLANCK * C_LIGHT / (lam * K_BOLTZ * max(T, 1e-3))
         B = (2 * H_PLANCK * C_LIGHT**2 / lam**5) / np.expm1(np.clip(x, None, 700.0))
-    return float(np.trapezoid(B, lam))
+    return float(_trapezoid(B, lam))
 
 
 def _planck_band_fraction(T, lam_lo, lam_hi):

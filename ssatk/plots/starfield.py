@@ -53,6 +53,7 @@ import os
 from datetime import datetime
 
 import numpy as np
+from scipy.integrate import trapezoid as _trapezoid
 
 _STAR_CACHE = {}
 _HYG_PATHS = [
@@ -264,9 +265,9 @@ def _teff_to_srgb(teff):
     T = np.atleast_1d(np.asarray(teff, float))[:, None]
     B = (2*h*c**2 / l_m**5) / (np.exp(h*c/(l_m*kB*T)) - 1.0)
     xb, yb, zb = _cie_xyz_bar(lam)
-    X = np.trapezoid(B*xb, lam, axis=1)
-    Y = np.trapezoid(B*yb, lam, axis=1)
-    Z = np.trapezoid(B*zb, lam, axis=1)
+    X = _trapezoid(B*xb, lam, axis=1)
+    Y = _trapezoid(B*yb, lam, axis=1)
+    Z = _trapezoid(B*zb, lam, axis=1)
     s = X+Y+Z
     X, Y, Z = X/s, Y/s, Z/s
     M = np.array([[ 3.2406,-1.5372,-0.4986],

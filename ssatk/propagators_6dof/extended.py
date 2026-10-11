@@ -139,6 +139,7 @@ class Extended6DOFTrajectory:
     flexible: np.ndarray | None = None
     slosh: np.ndarray | None = None
     stm: np.ndarray | None = None
+    reference_q: np.ndarray | None = None
 
 
 def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=None,
@@ -146,7 +147,7 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
                             mass0=None, mu=EARTH_MU, acceleration=None, torque=None,
                             gravity_gradient=False, rtol=1e-9, atol=1e-12, method="DOP853",
                             max_step=np.inf, first_step=None, with_stm=False, stm0=None,
-                            jacobian_step=1e-7):
+                            jacobian_step=1e-7, stm_reference_q=None):
     """Propagate rigid-body state plus hinge, flexible, and slosh modes.
 
     Each mode argument may be one mode or a sequence of modes. Extended arrays
@@ -256,7 +257,10 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
         values = y[:, j:j + 2 * len(modes)].reshape(len(times), len(modes), 2)
         arrays.append(values[:, 0, :] if len(modes) == 1 else values.transpose(0, 2, 1))
         j += 2 * len(modes)
-    return Extended6DOFTrajectory(trajectory, *arrays, stm)
+    from .variational import _stm_reference_quaternion
+
+    reference_q = _stm_reference_quaternion(state.q, stm0, stm_reference_q) if with_stm else None
+    return Extended6DOFTrajectory(trajectory, *arrays, stm, reference_q)
 
 
 def propagate_6dof_extended_variational(*, times, inertia, hinge=None, flexible=None, slosh=None,
@@ -264,7 +268,8 @@ def propagate_6dof_extended_variational(*, times, inertia, hinge=None, flexible=
                                          omega0=None, mass0=None, mu=EARTH_MU, acceleration=None,
                                          torque=None, gravity_gradient=False, stm0=None,
                                          jacobian_step=1e-7, rtol=1e-9, atol=1e-12,
-                                         method="DOP853", max_step=np.inf, first_step=None):
+                                         method="DOP853", max_step=np.inf, first_step=None,
+                                         stm_reference_q=None):
     """Propagate extended 6-DoF states and their full finite-difference STM.
 
     The STM state ordering is ``[r, v, q, omega, [mass], modes]``.  It can be
@@ -272,6 +277,8 @@ def propagate_6dof_extended_variational(*, times, inertia, hinge=None, flexible=
     :func:`attitude_error_stm` for the non-redundant local attitude form.
     ``jacobian_step`` is a relative central-difference perturbation because
     the reduced-order coupling includes nonlinear hinge stiffness.
+    For nonidentity ``stm0``, ``stm_reference_q`` identifies its input attitude
+    basis; see :func:`propagate_6dof_variational`.
     """
     return propagate_6dof_extended(
         times=times, inertia=inertia, hinge=hinge, flexible=flexible, slosh=slosh,
@@ -279,4 +286,5 @@ def propagate_6dof_extended_variational(*, times, inertia, hinge=None, flexible=
         mu=mu, acceleration=acceleration, torque=torque, gravity_gradient=gravity_gradient,
         rtol=rtol, atol=atol, method=method, max_step=max_step, first_step=first_step,
         with_stm=True, stm0=stm0, jacobian_step=jacobian_step,
+        stm_reference_q=stm_reference_q,
     )
