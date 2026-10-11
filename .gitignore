@@ -152,3 +152,5 @@ tle_credentials_local.py
 
 # Local agent guidance.
 AGENTS.md
+# Local agent handoff notes
+agents.md
