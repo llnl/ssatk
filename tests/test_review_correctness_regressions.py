@@ -70,7 +70,7 @@ def test_force_factory_respects_each_spacecraft_area(name, cache, monkeypatch):
     r = np.asarray(sun.position(1.4e9))
     r = 7e6 * r / np.linalg.norm(r)  # sunlit Earth orbit
     ratio = np.linalg.norm(b(r, np.zeros(3), 1.4e9)) / np.linalg.norm(a(r, np.zeros(3), 1.4e9))
-    assert ratio == pytest.approx(10.0, rel=1e-12)
+    assert ratio == pytest.approx(10.0, rel=1e-12, abs=0)
 
 
 @pytest.mark.parametrize("frame,local_up", [
@@ -92,7 +92,14 @@ def test_nadir_frame_is_a_rotation_for_an_eccentric_state():
     matrix = nadir_velocity_to_gcrf_matrix(r, v)
     np.testing.assert_allclose(matrix.T @ matrix, np.eye(3), atol=1e-12, rtol=0)
     assert np.linalg.det(matrix) == pytest.approx(1.0, abs=1e-12)
-    attitude_quaternion_from_frame("nadir_velocity", r=r, v=v)
+    # Along-track, negative orbit normal, and nadir, respectively. Orthogonality
+    # alone would also accept an identity matrix or a different frame.
+    expected = np.array([[0, 0, -1], [1, 0, 0], [0, -1, 0]])
+    np.testing.assert_allclose(matrix, expected, atol=1e-12, rtol=0)
+    from scipy.spatial.transform import Rotation
+    q = attitude_quaternion_from_frame("nadir_velocity", r=r, v=v)
+    np.testing.assert_allclose(Rotation.from_quat(q[[1, 2, 3, 0]]).as_matrix(),
+                               expected, atol=1e-12, rtol=0)
 
 
 def test_lambert_recovers_an_independently_integrated_hyperbolic_arc():
@@ -117,6 +124,22 @@ def _attitude_options():
                 mu=0.0, q0=[1, 0, 0, 0], omega0=[0, 0, 0.5], rtol=1e-11, atol=1e-13)
 
 
+def _free_body_error_stm(t, rate=0.5):
+    """Closed-form right/body attitude error: theta_dot=-omega x theta+dw.
+
+    An isotropic, torque-free body has constant angular velocity. Integrating
+    the planar sine/cosine solution gives both attitude blocks; translation
+    is free flight. No production Jacobian or quaternion conversion is used.
+    """
+    c, s = np.cos(rate * t), np.sin(rate * t)
+    phi = np.eye(12)
+    phi[:3, 3:6] = t * np.eye(3)
+    phi[6:9, 6:9] = [[c, s, 0], [-s, c, 0], [0, 0, 1]]
+    phi[6:9, 9:12] = [[s / rate, (1 - c) / rate, 0],
+                       [(c - 1) / rate, s / rate, 0], [0, 0, t]]
+    return phi
+
+
 def test_variational_stm_includes_angular_momentum_flux_derivative():
     """For I=1 and angular flux=-omega, d omega(t)/d omega0 = exp(-t) I."""
     def flux(t, r, v, q, omega, *, mass=None, mass_rate=0.0):
@@ -134,14 +157,47 @@ def test_attitude_covariance_is_independent_of_output_sampling():
     initial_covariance = np.diag([0.0]*6 + [1e-4, 4e-4, 9e-4] + [0.0]*3)
     first = propagate_6dof_covariance(all_samples, initial_covariance)[-1]
     second = propagate_6dof_covariance(late_samples, initial_covariance)[-1]
-    np.testing.assert_allclose(first, second, atol=1e-10, rtol=0)
+    phi = _free_body_error_stm(2.0)
+    expected = phi @ initial_covariance @ phi.T
+    for result, covariance in ((all_samples, first), (late_samples, second)):
+        np.testing.assert_allclose(result.attitude_error_stm[-1], phi, atol=1e-9, rtol=0)
+        np.testing.assert_allclose(covariance, expected, atol=1e-12, rtol=0)
+
+
+def _normal_burn_reference(orbit, target):
+    """Independent Radau integration of a 1 m/s^2 positive normal burn.
+
+    The stopping condition uses cos(i), separately from the production angle
+    event. Tightening tolerances by 10 must change the reference by <0.1 mm.
+    """
+    def rhs(t, y):
+        r, v = y[:3], y[3:]
+        h = np.cross(r, v)
+        return np.r_[v, -EARTH_MU * r / np.linalg.norm(r)**3 + h / np.linalg.norm(h)]
+
+    def event(t, y):
+        h = np.cross(y[:3], y[3:])
+        return h[2] / np.linalg.norm(h) - np.cos(target)
+
+    event.terminal = True
+    solutions = [solve_ivp(rhs, (0, 300), np.r_[orbit.r, orbit.v], method="Radau",
+                           rtol=tol, atol=tol, events=event) for tol in (1e-11, 1e-12)]
+    for solution in solutions:
+        assert solution.success and len(solution.t_events[0]) == 1
+    np.testing.assert_allclose(solutions[0].y[:, -1], solutions[1].y[:, -1], atol=1e-4, rtol=0)
+    return solutions[1].t[-1], solutions[1].y[:, -1]
 
 
 def test_inclination_target_is_invariant_under_node_rotation():
     def solve(raan):
         orbit = Orbit.fromKeplerianElements(7e6, 0, np.radians(30), 0, raan, 0, t=0)
-        return transfer_inclination_continuous(orbit.r, orbit.v, i_target=np.radians(31),
-                                               a_thrust=1.0, max_time=300.0)
+        result = transfer_inclination_continuous(orbit.r, orbit.v, i_target=np.radians(31),
+                                                a_thrust=1.0, max_time=300.0)
+        time, state = _normal_burn_reference(orbit, np.radians(31))
+        assert result["tof"] == pytest.approx(time, abs=1e-5)
+        np.testing.assert_allclose(result["final"]["r"], state[:3], atol=1e-2, rtol=0)
+        np.testing.assert_allclose(result["final"]["v"], state[3:], atol=1e-5, rtol=0)
+        return result
 
     reference = solve(np.pi)
     h = np.cross(reference["final"]["r"], reference["final"]["v"])
@@ -175,11 +231,18 @@ def test_leapfrog_accepts_an_astropy_grid_from_get_times():
     """A 4.8 ps conversion discrepancy must not invalidate a 1 s time step."""
     time = get_times(2.0, freq=1.0)
     np.testing.assert_allclose(time.gps, [0.0, 1.0, 2.0], atol=1e-10, rtol=0)
-    r0, v0 = [7e6, 0, 0], [0, 7500, 0]
+    speed = np.sqrt(EARTH_MU / 7e6)
+    r0, v0 = [7e6, 0, 0], [0, speed, 0]
     reference_r, reference_v = leapfrog(r0, v0, [0.0, 1.0, 2.0])
     actual_r, actual_v = leapfrog(r0, v0, time)
     np.testing.assert_allclose(actual_r, reference_r, atol=1e-5, rtol=0)
     np.testing.assert_allclose(actual_v, reference_v, atol=1e-8, rtol=0)
+    phase = speed / 7e6 * np.arange(3)
+    expected_r = 7e6 * np.column_stack((np.cos(phase), np.sin(phase), np.zeros(3)))
+    expected_v = speed * np.column_stack((-np.sin(phase), np.cos(phase), np.zeros(3)))
+    # Velocity-Verlet's O(dt^2) global error at dt=1 s, over only 2 s.
+    np.testing.assert_allclose(actual_r, expected_r, atol=0.01, rtol=0)
+    np.testing.assert_allclose(actual_v, expected_v, atol=2e-5, rtol=0)
 
 
 def test_control_ntw_matches_ssapy_for_a_non_circular_state():
@@ -230,16 +293,20 @@ def test_anisotropic_collision_probability_matches_independent_polar_cubature():
     from numpy.polynomial.legendre import leggauss
 
     radius, mean, covariance = 3.0, np.array([1.0, 1.0]), np.diag([.2**2, 1.2**2])
-    radial_nodes, radial_weights = leggauss(128)
-    angular_nodes, angular_weights = leggauss(512)
-    distance = radius * (radial_nodes + 1.0) / 2.0
-    theta = np.pi * (angular_nodes + 1.0)
-    points = distance[:, None, None] * np.stack((np.cos(theta), np.sin(theta)), axis=1)
-    delta = points - mean
-    exponent = np.einsum("...i,ij,...j->...", delta, np.linalg.inv(covariance), delta)
-    density = np.exp(-.5 * exponent) / (2 * np.pi * np.sqrt(np.linalg.det(covariance)))
-    expected = np.sum(density * distance[:, None] * radial_weights[:, None]
+    def cubature(n):
+        radial_nodes, radial_weights = leggauss(n)
+        angular_nodes, angular_weights = leggauss(4 * n)
+        distance = radius * (radial_nodes + 1.0) / 2.0
+        theta = np.pi * (angular_nodes + 1.0)
+        points = distance[:, None, None] * np.stack((np.cos(theta), np.sin(theta)), axis=1)
+        delta = points - mean
+        exponent = np.einsum("...i,ij,...j->...", delta, np.linalg.inv(covariance), delta)
+        density = np.exp(-.5 * exponent) / (2 * np.pi * np.sqrt(np.linalg.det(covariance)))
+        return np.sum(density * distance[:, None] * radial_weights[:, None]
                       * angular_weights[None, :]) * radius * np.pi / 2.0
+
+    expected = cubature(128)
+    assert cubature(64) == pytest.approx(expected, abs=2e-12, rel=0)
     for angle in (0.0, .73, 2.1):
         c, s = np.cos(angle), np.sin(angle)
         rotation = np.array([[c, -s], [s, c]])
@@ -282,10 +349,15 @@ def test_moon_state_is_stationary_at_origin_of_moon_centred_frame():
 
 
 def test_variational_stm_includes_inertia_rate():
-    """R1: prescribed I=1, Idot=1 gives omega_dot=-omega, 1e-8 STM tolerance."""
-    result = propagate_6dof_variational(times=[0.0, 1.0], inertia_rate=np.eye(3), **_attitude_options())
+    """R1: I(t)=exp(t) I and Idot=I(t) conserve I omega without external torque."""
+    options = _attitude_options()
+    options["inertia"] = lambda t, r, v, q, omega, **kwargs: np.exp(t) * np.eye(3)
+    result = propagate_6dof_variational(times=[0.0, 1.0],
+                                        inertia_rate=lambda t, r, v, q, omega, **kwargs: np.exp(t) * np.eye(3), **options)
     np.testing.assert_allclose(result.trajectory.omega[-1], [0, 0, .5 * np.exp(-1)], atol=1e-10, rtol=0)
     np.testing.assert_allclose(result.stm[-1, 10:13, 10:13], np.exp(-1) * np.eye(3), atol=1e-8, rtol=0)
+    np.testing.assert_allclose(np.exp(result.trajectory.t)[:, None] * result.trajectory.omega,
+                               [[0, 0, .5], [0, 0, .5]], atol=1e-10, rtol=0)
 
 
 def test_extended_attitude_covariance_is_independent_of_output_sampling():
@@ -296,8 +368,12 @@ def test_extended_attitude_covariance_is_independent_of_output_sampling():
     complete = propagate_6dof_extended_variational(times=[0, 1, 2], **options)
     late = propagate_6dof_extended_variational(times=[1, 2], **options)
     covariance = np.diag([0.0]*6 + [1e-4, 4e-4, 9e-4] + [0.0]*5)
-    np.testing.assert_allclose(propagate_6dof_covariance(complete, covariance)[-1],
-                               propagate_6dof_covariance(late, covariance)[-1], atol=1e-10, rtol=0)
+    phi = np.eye(14)
+    phi[:12, :12] = _free_body_error_stm(2.0)
+    expected = phi @ covariance @ phi.T
+    for result in (complete, late):
+        np.testing.assert_allclose(propagate_6dof_covariance(result, covariance)[-1],
+                                   expected, atol=1e-12, rtol=0)
 
 
 def test_chained_attitude_stm_preserves_its_original_reference_quaternion():
@@ -308,6 +384,7 @@ def test_chained_attitude_stm_preserves_its_original_reference_quaternion():
     second = propagate_6dof_variational(times=[1, 2], stm0=whole.stm[1],
                                         stm_reference_q=whole.reference_q, **options)
     np.testing.assert_allclose(second.attitude_error_stm[-1], whole.attitude_error_stm[-1], atol=1e-9, rtol=0)
+    np.testing.assert_allclose(second.attitude_error_stm[-1], _free_body_error_stm(2.0), atol=1e-9, rtol=0)
 
 
 @pytest.mark.parametrize("raan", [0, np.pi / 2, np.pi, 3 * np.pi / 2])
@@ -318,6 +395,39 @@ def test_inclination_target_detects_decreasing_inclination(raan):
                                             a_thrust=1.0, max_time=300.0)
     h = np.cross(result["final"]["r"], result["final"]["v"])
     assert np.arccos(h[2] / np.linalg.norm(h)) == pytest.approx(np.radians(29), abs=1e-10, rel=0)
+    time, state = _normal_burn_reference(orbit, np.radians(29))
+    assert result["tof"] == pytest.approx(time, abs=1e-5)
+    np.testing.assert_allclose(result["final"]["r"], state[:3], atol=1e-2, rtol=0)
+    np.testing.assert_allclose(result["final"]["v"], state[3:], atol=1e-5, rtol=0)
+
+
+@pytest.mark.parametrize("function,moon_centred", [(gcrf_to_lunar, False), (gcrf_to_lunar_fixed, True)])
+def test_lunar_frame_matches_analytic_circular_ephemeris(function, moon_centred, monkeypatch):
+    """R1: exact rotating-frame kinematics for a prescribed circular Moon.
+
+    This validates the coordinate transform, not the accuracy of a lunar
+    ephemeris. Finite-difference roundoff and truncation allow 1e-6 m/s.
+    """
+    module = importlib.import_module("ssatk.coordinates.lunar")
+    distance, rate, epoch = 384400000.0, 2 * np.pi / (27.321661 * 86400), 1.4e9
+
+    class CircularMoon:
+        def position(self, t):
+            angle = rate * (np.asarray(t) - epoch)
+            return distance * np.array([np.cos(angle), np.sin(angle), np.zeros_like(angle)])
+
+    monkeypatch.setattr(module, "get_body", lambda name: CircularMoon())
+    r, v = np.array([7e6, 2e6, -1e6]), np.array([-1000., 7000., 2000.])
+    for elapsed in (0., 60000., 120000.):
+        c, s = np.cos(rate * elapsed), np.sin(rate * elapsed)
+        rotation = np.array([[c, s, 0], [-s, c, 0], [0, 0, 1]])
+        rotation_rate = rate * np.array([[-s, c, 0], [-c, -s, 0], [0, 0, 0]])
+        relative_r = r - distance * np.array([c, s, 0]) if moon_centred else r
+        relative_v = v - distance * rate * np.array([-s, c, 0]) if moon_centred else v
+        position, velocity = function(r, epoch + elapsed, v=v)
+        np.testing.assert_allclose(position, rotation @ relative_r, atol=1e-6, rtol=0)
+        np.testing.assert_allclose(velocity, rotation @ relative_v + rotation_rate @ relative_r,
+                                   atol=1e-6, rtol=0)
 
 
 def test_leapfrog_still_rejects_a_physically_nonuniform_grid():

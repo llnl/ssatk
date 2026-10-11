@@ -12,9 +12,9 @@ def test_astropy_llh_gcrf_roundtrip_and_surface_velocity():
 
     assert r_gcrf.shape == (1, 3)
     lon, lat, alt = astropy_gcrf_to_llh(r_gcrf, time)
-    np.testing.assert_allclose(lon, [0.0], atol=1e-9)
-    np.testing.assert_allclose(lat, [0.0], atol=1e-9)
-    np.testing.assert_allclose(alt, [0.0], atol=1e-6)
+    np.testing.assert_allclose(lon, [0.0], atol=1e-9, rtol=0)
+    np.testing.assert_allclose(lat, [0.0], atol=1e-9, rtol=0)
+    np.testing.assert_allclose(alt, [0.0], atol=1e-6, rtol=0)
 
     r_surface, v_surface = astropy_surface_rv(lon=0.0, lat=0.0, elevation=0.0, t=time)
     assert r_surface.shape == (3,)

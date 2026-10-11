@@ -169,7 +169,7 @@ def test_attitude_error_stm_has_nonsingular_three_parameter_attitude_state():
 
     assert result.attitude_error_stm is not None
     assert error_stm.shape == (2, 12, 12)
-    np.testing.assert_allclose(error_stm[0], np.eye(12), atol=1e-12)
+    np.testing.assert_allclose(error_stm[0], np.eye(12), atol=1e-12, rtol=0)
 
 
 def test_covariance_transform_uses_stm_and_process_noise():
@@ -187,8 +187,8 @@ def test_covariance_transform_uses_stm_and_process_noise():
     expected = result.stm[-1] @ covariance0 @ result.stm[-1].T + process_noise[-1]
 
     assert ssatk.propagate_6dof_covariance is propagate_6dof_covariance
-    np.testing.assert_allclose(covariance[-1], expected, atol=1e-12)
-    np.testing.assert_allclose(covariance, np.swapaxes(covariance, -1, -2), atol=1e-12)
+    np.testing.assert_allclose(covariance[-1], expected, atol=1e-12, rtol=0)
+    np.testing.assert_allclose(covariance, np.swapaxes(covariance, -1, -2), atol=1e-12, rtol=0)
 
     local_stm = result.attitude_error_stm
     local_noise = np.broadcast_to(np.eye(12) * 1e-6, local_stm.shape).copy()
@@ -196,11 +196,11 @@ def test_covariance_transform_uses_stm_and_process_noise():
         result, np.eye(12), local_noise, coordinates="attitude_error"
     )
     local_expected = local_stm[-1] @ local_stm[-1].T + local_noise[-1]
-    np.testing.assert_allclose(local_covariance[-1], local_expected, atol=1e-12)
+    np.testing.assert_allclose(local_covariance[-1], local_expected, atol=1e-12, rtol=0)
     np.testing.assert_allclose(
         local_covariance,
         propagate_6dof_covariance(result, np.eye(12), local_noise),
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
 
 

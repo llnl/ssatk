@@ -49,8 +49,8 @@ def test_ntw_and_rtn_are_distinct_for_radial_velocity():
     rtn = rtn_to_gcrf_matrix(r, v)
 
     assert not np.allclose(ntw, rtn)
-    np.testing.assert_allclose(ntw.T @ ntw, np.eye(3), atol=1e-12)
-    np.testing.assert_allclose(rtn.T @ rtn, np.eye(3), atol=1e-12)
+    np.testing.assert_allclose(ntw.T @ ntw, np.eye(3), atol=1e-12, rtol=0)
+    np.testing.assert_allclose(rtn.T @ rtn, np.eye(3), atol=1e-12, rtol=0)
 
 
 def test_vnb_and_nadir_velocity_frames_are_right_handed():
@@ -74,8 +74,8 @@ def test_body_quaternion_frame_matches_dynamics_convention():
     q_z90 = [np.sqrt(0.5), 0.0, 0.0, np.sqrt(0.5)]
     matrix = body_to_gcrf_matrix(q_z90)
 
-    np.testing.assert_allclose(matrix @ [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(gcrf_to_body_matrix(q_z90) @ [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(matrix @ [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(gcrf_to_body_matrix(q_z90) @ [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], atol=1e-12, rtol=0)
     np.testing.assert_allclose(gcrf_to_frame_matrix("body", q=q_z90), matrix.T)
 
 

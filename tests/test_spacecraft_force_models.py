@@ -106,12 +106,12 @@ def test_facet_models_on_a_cube_see_only_the_exposed_faces():
         R_LEO, v, IDENTITY_Q, faces, density=1e-11, mass=10.0, atmosphere_velocity=np.zeros(3)
     )
     np.testing.assert_allclose(a_drag, [-0.5 * 1e-11 * 7_500.0**2 * 2.2 / 10.0, 0.0, 0.0], rtol=1e-12, atol=0)
-    np.testing.assert_allclose(tau_drag, 0.0, atol=1e-30)
+    np.testing.assert_allclose(tau_drag, 0.0, atol=1e-30, rtol=0)
 
     a_srp, tau_srp = facet_srp_acceleration_torque(R_LEO, IDENTITY_Q, SUN_ON_MINUS_X, faces, mass=10.0)
     pressure = P_1AU * (AU / (AU + R_LEO[0])) ** 2
     np.testing.assert_allclose(a_srp, [pressure * 1.0 / 10.0, 0.0, 0.0], rtol=1e-12, atol=0)
-    np.testing.assert_allclose(tau_srp, 0.0, atol=1e-30)
+    np.testing.assert_allclose(tau_srp, 0.0, atol=1e-30, rtol=0)
 
 
 def test_facet_srp_self_shadowing_hides_a_plate_behind_another():

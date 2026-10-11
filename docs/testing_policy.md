@@ -1,8 +1,17 @@
 # Testing Policy
 
-Every test in `tests/` compares a computed quantity with an independent
-reference, under a stated tolerance. A test that only shows that code runs,
-returns an object, writes a file, or accepts an argument is not kept.
+Numerical tests must compare computed quantities with named analytic,
+published, or independently implemented references under stated tolerances.
+Conservation and derivative tests constrain particular properties; neither a
+round trip nor agreement between two SSATK runs establishes absolute accuracy.
+Pair those checks with an independent numerical reference for the same model.
+
+Compatibility, serialization, callback, and input-contract tests have a
+different purpose. Keep them clearly identified as contract checks; they do
+not count as physical validation. Returning an object or writing a file alone
+does not validate a numerical result. The complete test-file inventory and
+known limitations are recorded in `test_reference_audit.csv` and
+`test_reference_audit.rst`.
 
 ## Accepted references
 
@@ -18,12 +27,21 @@ returns an object, writes a file, or accepts an argument is not kept.
 Name the reference in the test name or docstring, and state the tolerance with
 its unit.
 
+Use `rtol=0` for an absolute NumPy tolerance and `abs=0` for a purely relative
+`pytest.approx` comparison, especially for densities, fluxes, accelerations,
+and other small quantities. Explicit `pytest.approx(abs=...)` already disables
+its default relative tolerance. Explain model approximation, discretization,
+or floating-point error budgets; do not enlarge tolerances merely to pass.
+Converge numerical reference integrations before using them as an oracle.
+Synthetic trajectories and specified physical parameters are valid analytic
+test cases, but must not be described as measured flight or laboratory data.
+
 ## Not tested in `tests/`
 
 - Plot, viewer, and HTML rendering, and demo execution. Demos run in the
   gallery workflow, on pull requests and on pushes to `main`.
-- Import paths, aliases, and package exports. The docs build imports every
-  module.
+- Import paths and aliases are compatibility checks, isolated in
+  `test_legacy_import_name.py`, rather than physical reference tests.
 - Argument validation and error messages, unless the rejected input is
   physically meaningful.
 - Code paths exercised only to raise a coverage percentage.

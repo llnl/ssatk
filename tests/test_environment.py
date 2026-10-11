@@ -66,7 +66,7 @@ def test_environment_conical_eclipse_includes_moon_shadow_for_srp():
 
     shadowed_srp = shadowed_environment.force_models(solar_radiation=True, body=body)[0]
     illuminated_srp = earth_only_environment.force_models(solar_radiation=True, body=body)[0]
-    np.testing.assert_allclose(shadowed_srp(spacecraft), 0.0, atol=1e-20)
+    np.testing.assert_allclose(shadowed_srp(spacecraft), 0.0, atol=1e-20, rtol=0)
     assert np.linalg.norm(illuminated_srp(spacecraft)) > 0.0
 
 
@@ -75,28 +75,28 @@ def test_earth_dipole_magnetic_field_matches_equator_and_pole_limits():
 
     np.testing.assert_allclose(
         earth_dipole_magnetic_field([reference_radius, 0.0, 0.0]),
-        [0.0, 0.0, -EARTH_DIPOLE_EQUATOR_FIELD],
+        [0.0, 0.0, -EARTH_DIPOLE_EQUATOR_FIELD], rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         earth_dipole_magnetic_field([0.0, 0.0, reference_radius]),
-        [0.0, 0.0, 2.0 * EARTH_DIPOLE_EQUATOR_FIELD],
+        [0.0, 0.0, 2.0 * EARTH_DIPOLE_EQUATOR_FIELD], rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         earth_dipole_magnetic_field([2.0 * reference_radius, 0.0, 0.0]),
-        [0.0, 0.0, -EARTH_DIPOLE_EQUATOR_FIELD / 8.0],
+        [0.0, 0.0, -EARTH_DIPOLE_EQUATOR_FIELD / 8.0], rtol=1e-12, atol=1e-15
     )
 
     environment = SpaceEnvironment()
     np.testing.assert_allclose(
         environment.magnetic_field(0.0, [reference_radius, 0.0, 0.0]),
-        [0.0, 0.0, -EARTH_DIPOLE_EQUATOR_FIELD],
+        [0.0, 0.0, -EARTH_DIPOLE_EQUATOR_FIELD], rtol=1e-12, atol=1e-15
     )
     np.testing.assert_allclose(
         SpaceEnvironment(magnetic_field_model="zero").magnetic_field(
             0.0,
             [reference_radius, 0.0, 0.0],
         ),
-        0.0,
+        0.0, rtol=1e-12, atol=1e-15
     )
     with pytest.raises(ValueError, match="r_inertial"):
         environment.magnetic_field(0.0)
@@ -109,7 +109,9 @@ def test_exponential_atmosphere_validates_and_decays():
         scale_height=50_000.0,
     )
 
-    assert density(400_000.0) == pytest.approx(1.0e-12)
-    assert density(450_000.0) < density(400_000.0)
+    # abs=0 is essential: pytest's default 1e-12 floor would accept zero density.
+    for altitude in (350_000.0, 400_000.0, 450_000.0, 500_000.0):
+        expected = 1e-12 * np.exp(-(altitude - 400_000) / 50_000)
+        assert density(altitude) == pytest.approx(expected, rel=1e-12, abs=0)
     with pytest.raises(ValueError, match="positive"):
         exponential_atmosphere(reference_density=0.0, reference_altitude=0.0, scale_height=1.0)

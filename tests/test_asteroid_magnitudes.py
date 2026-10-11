@@ -1,4 +1,13 @@
 
+"""Analytic size relation and published LSST colors; model contracts noted below.
+
+LSST colors: Chesley & Veres (2017), JPL Publication 16-11, Table 8, p.18:
+https://ntrs.nasa.gov/api/citations/20170008014/downloads/20170008014.pdf
+ZTF currently reuses those LSST coefficients; this test does NOT establish
+their calibration for ZTF. The source of the two Granvik fit coefficients
+is also unverified; those assertions only preserve the shipped model.
+"""
+
 import numpy as np
 
 from ssatk import asteroids
@@ -7,6 +16,11 @@ from ssatk import asteroids
 def test_asteroid_size_magnitude_and_filter_conversions():
     H = np.array([17.0, 20.0])
     radius = asteroids.radius_from_H_albedo(H, albedo=0.1)
+    # D=1329 km * 10^(-H/5) / sqrt(p_V), the asteroid H-albedo relation.
+    # Verify size independently; an inverse round trip cannot detect a wrong
+    # kilometre-to-metre factor shared by both routines.
+    expected_radius = .5 * 1329 * 1000 * np.power(10., -H/5) / np.sqrt(.1)
+    np.testing.assert_allclose(radius, expected_radius, rtol=1e-12, atol=0)
     np.testing.assert_allclose(asteroids.H_mag(radius, albedo=0.1), H)
 
     mags = np.full(12, 20.0)

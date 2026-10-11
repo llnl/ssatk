@@ -26,5 +26,5 @@ def test_minimum_delta_v_search_recovers_the_hohmann_transfer():
     a = 8000e3
     hohmann = (np.sqrt(EARTH_MU * (2 / 7000e3 - 1 / a)) - np.sqrt(EARTH_MU / 7000e3)
                + np.sqrt(EARTH_MU / 9000e3) - np.sqrt(EARTH_MU * (2 / 9000e3 - 1 / a)))
-    assert result["delta_v_total"] == pytest.approx(hohmann, rel=1e-5)
-    assert result["tof"] == pytest.approx(np.pi * np.sqrt(a**3 / EARTH_MU), rel=1e-3)
+    assert result["delta_v_total"] == pytest.approx(hohmann, rel=1e-5, abs=0)
+    assert result["tof"] == pytest.approx(np.pi * np.sqrt(a**3 / EARTH_MU), rel=1e-3, abs=0)

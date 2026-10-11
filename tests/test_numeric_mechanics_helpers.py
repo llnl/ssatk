@@ -28,7 +28,7 @@ def test_orbital_misc_formula_helpers():
     assert np.isclose(misc.vis_viva(mu, r, r), v_circ)
     assert np.isclose(misc.specific_orbital_energy(mu, r, v_circ), -mu / (2 * r))
     np.testing.assert_allclose(misc.specific_angular_momentum([r, 0, 0], [0, v_circ, 0]), [0, 0, r * v_circ])
-    np.testing.assert_allclose(misc.eccentricity_vector(np.array([r, 0, 0]), np.array([0, v_circ, 0]), mu), [0, 0, 0], atol=1e-12)
+    np.testing.assert_allclose(misc.eccentricity_vector(np.array([r, 0, 0]), np.array([0, v_circ, 0]), mu), [0, 0, 0], atol=1e-12, rtol=0)
 
     a, e, inc, raan, argp, nu, M = misc.orbital_elements_from_state(np.array([r, 0, 0]), np.array([0, v_circ, 0]), mu)
     assert np.isclose(a, r)
@@ -72,9 +72,9 @@ def test_coordinate_conversion_helpers():
     r_vec = np.array([1.0, 0.0, 0.0])
     v_vec = np.array([0.0, 1.0, 0.0])
     matrix = ntw_to_gcrf_matrix(r_vec, v_vec)
-    np.testing.assert_allclose(matrix, np.eye(3), atol=1e-12)
-    np.testing.assert_allclose(ntw_to_gcrf([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12)
-    np.testing.assert_allclose(gcrf_to_ntw([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12)
+    np.testing.assert_allclose(matrix, np.eye(3), atol=1e-12, rtol=0)
+    np.testing.assert_allclose(ntw_to_gcrf([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(gcrf_to_ntw([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12, rtol=0)
 
     assert equatorial_ecliptic.equatorial_to_ecliptic is eqecl.equatorial_to_ecliptic
 

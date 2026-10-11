@@ -18,8 +18,8 @@ def test_default_fit_is_the_fundamental_ellipse():
     fit = ellipse_fit(P1, P2, n_pts=16)
     r1, r2 = np.linalg.norm(P1), np.linalg.norm(P2)
     chord = np.linalg.norm(P2 - P1)
-    assert fit["a"] == pytest.approx(0.5 * (r1 + r2), rel=1e-8)
-    assert fit["e"] == pytest.approx(abs(r2 - r1) / chord, rel=1e-8)
+    assert fit["a"] == pytest.approx(0.5 * (r1 + r2), rel=1e-8, abs=0)
+    assert fit["e"] == pytest.approx(abs(r2 - r1) / chord, rel=1e-8, abs=0)
 
 
 def test_fit_from_second_focus_matches_focal_definition():
@@ -30,8 +30,8 @@ def test_fit_from_second_focus_matches_focal_definition():
     p2 = _point_on_ellipse(focus, P1, angle_rad=np.pi / 2)
     fit = ellipse_fit(P1, p2, n_pts=16, F2_m=focus)
     two_a = np.linalg.norm(P1) + np.linalg.norm(P1 - focus)
-    assert fit["a"] == pytest.approx(0.5 * two_a, rel=1e-10)
-    assert fit["e"] == pytest.approx(np.linalg.norm(focus) / two_a, rel=1e-10)
+    assert fit["a"] == pytest.approx(0.5 * two_a, rel=1e-10, abs=0)
+    assert fit["e"] == pytest.approx(np.linalg.norm(focus) / two_a, rel=1e-10, abs=0)
     np.testing.assert_allclose(fit["r"][-1], p2, rtol=0, atol=1e-3)
 
 
@@ -50,9 +50,9 @@ def test_sampled_arc_is_a_two_body_trajectory_from_p1_to_p2(kwargs):
     # first sample satisfies vis-viva (1e-9 relative).
     fit = ellipse_fit(P1, P2, n_pts=16, time_of_departure=DEPARTURE_GPS_S, **kwargs)
     if "a_m" in kwargs:
-        assert fit["a"] == pytest.approx(kwargs["a_m"], rel=1e-12)
+        assert fit["a"] == pytest.approx(kwargs["a_m"], rel=1e-12, abs=0)
     if "e" in kwargs:
-        assert fit["e"] == pytest.approx(kwargs["e"], rel=1e-12)
+        assert fit["e"] == pytest.approx(kwargs["e"], rel=1e-12, abs=0)
 
     orbit = ssapy.Orbit(r=fit["r"][0], v=fit["v"][0], t=fit["t_abs"][0], mu=EARTH_MU)
     r_ref, v_ref = ssapy.rv(orbit, fit["t_abs"], propagator=ssapy.KeplerianPropagator())
@@ -63,7 +63,7 @@ def test_sampled_arc_is_a_two_body_trajectory_from_p1_to_p2(kwargs):
     assert fit["t_abs"][0] == pytest.approx(DEPARTURE_GPS_S, abs=1e-6)
 
     r0 = np.linalg.norm(fit["r"][0])
-    assert np.dot(fit["v"][0], fit["v"][0]) == pytest.approx(EARTH_MU * (2.0 / r0 - 1.0 / fit["a"]), rel=1e-9)
+    assert np.dot(fit["v"][0], fit["v"][0]) == pytest.approx(EARTH_MU * (2.0 / r0 - 1.0 / fit["a"]), rel=1e-9, abs=0)
 
 
 def test_arrival_epoch_anchors_the_end_of_the_arc():

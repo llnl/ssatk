@@ -74,5 +74,5 @@ def test_prograde_equatorial_circular_orbit_heads_east_at_zero_gamma():
 
     gamma, heading = calc_gamma_and_heading(r, t_gps)
 
-    np.testing.assert_allclose(gamma[1:-1], 0.0, atol=1e-3)
-    np.testing.assert_allclose(heading[1:-1], 90.0, atol=0.5)
+    np.testing.assert_allclose(gamma[1:-1], 0.0, atol=1e-3, rtol=0)
+    np.testing.assert_allclose(heading[1:-1], 90.0, atol=0.5, rtol=0)
