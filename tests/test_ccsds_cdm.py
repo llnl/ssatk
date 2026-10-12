@@ -94,8 +94,14 @@ def test_gcrf_rtn_covariance_rotation_and_immutable_arrays():
 
     assert obj.covariance_ref_frame == "RTN"
     rotated = obj.position_covariance_gcrf()
-    assert np.allclose(rotated, rotated.T, atol=1e-12)
-    assert np.allclose(np.linalg.eigvalsh(rotated), [1.0, 4.0, 9.0], atol=1e-12)
+    assert np.allclose(rotated, rotated.T, atol=1e-12, rtol=0)
+    assert np.allclose(np.linalg.eigvalsh(rotated), [1.0, 4.0, 9.0], atol=1e-12, rtol=0)
+    r, v = np.array([7e6, 1e5, 5e4]), np.array([-100., 7500., 200.])
+    radial = r/np.linalg.norm(r)
+    normal = np.cross(r, v)/np.linalg.norm(np.cross(r, v))
+    transverse = np.cross(normal, radial)
+    expected = np.outer(radial, radial) + 4*np.outer(transverse, transverse) + 9*np.outer(normal, normal)
+    np.testing.assert_allclose(rotated, expected, atol=1e-12, rtol=0)
     with pytest.raises(ValueError):
         obj.state[0] = 0.0
     with pytest.raises(TypeError):
@@ -107,7 +113,24 @@ def test_supported_frames_transform_to_gcrf(frame):
     message = read_cdm(_fixture(frame=frame))
     obj = message.object1
     assert obj.reference_frame == frame
-    assert not np.allclose(obj.state_gcrf(), obj.state, rtol=0.0, atol=1e-8)
+    import erfa
+    from astropy.time import TimeDelta
+    from astropy.utils.iers import earth_orientation_table
+    # ERFA matrices form an independent path from the Astropy frame graph
+    # used by the CDM reader. Check both positions and rotating velocities.
+    def rotation(time):
+        if frame == "EME2000":
+            return erfa.bp00(2451545.0, 0.0)[0].T
+        xp, yp = earth_orientation_table.get().pm_xy(time)
+        return erfa.c2t06a(time.tt.jd1, time.tt.jd2, time.ut1.jd1, time.ut1.jd2,
+                          xp.to_value("rad"), yp.to_value("rad")).T
+    matrix = rotation(obj.epoch)
+    dt = TimeDelta(.5, format="sec")
+    rate = rotation(obj.epoch+dt) - rotation(obj.epoch-dt)
+    expected_r = matrix @ obj.state[:3]
+    expected_v = matrix @ obj.state[3:] + rate @ obj.state[:3]
+    np.testing.assert_allclose(obj.state_gcrf()[:3], expected_r, atol=.002, rtol=0)
+    np.testing.assert_allclose(obj.state_gcrf()[3:], expected_v, atol=1e-4, rtol=0)
 
 
 def test_optional_epoch_and_writer_round_trip():

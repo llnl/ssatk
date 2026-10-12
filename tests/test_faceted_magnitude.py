@@ -64,4 +64,4 @@ def test_doubling_facet_area_brightens_by_the_expected_amount():
     small = faceted_reflection(position, IDENTITY, facets_small, **common)
     large = faceted_reflection(position, IDENTITY, facets_large, **common)
     difference = small["ab_mag_exoatmospheric"] - large["ab_mag_exoatmospheric"]
-    assert difference == pytest.approx(2.5 * np.log10(2.0), rel=1e-9)
+    assert difference == pytest.approx(2.5 * np.log10(2.0), rel=1e-9, abs=0)

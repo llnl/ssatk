@@ -135,6 +135,7 @@ demos = ["README.md"]
 "ssatk.plots" = ["*.js"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
   "slow: demo smoke tests that may render media or run longer workflows",
 ]

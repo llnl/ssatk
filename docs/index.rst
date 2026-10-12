@@ -16,9 +16,10 @@ visualization from ground tracks to an interactive WebGL satellite viewer.
 
    import ssatk
 
-Every automated test compares a computed value against an independent
-reference (a closed-form result, a published value, or a separate
-implementation such as Astropy) with a stated tolerance. The
+Numerical tests use closed-form results, published values, and separate
+implementations such as Astropy, with stated tolerances. Compatibility and
+consistency checks have narrower scope; the :doc:`test reference audit
+<test_reference_audit>` records the references and remaining limitations. The
 :doc:`benchmarking study <benchmarking_ssatk>` positions SSATK against
 established astrodynamics and spacecraft-dynamics tools, and the
 :doc:`6-DoF design notes <design/6dof_architecture>` explain the spacecraft
@@ -29,6 +30,9 @@ body and component model.
    :caption: Contents:
 
    usage
+   spacecraft_view
+   gallery_hosting
    benchmarking_ssatk
+   test_reference_audit
    design/6dof_architecture
    api

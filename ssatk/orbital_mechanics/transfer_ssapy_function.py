@@ -177,12 +177,19 @@ def solve_lambert(r1, r2, tof, mu=EARTH_MU, prograde=True, max_iter=200,
         chi = np.sqrt(yy / _stumpff_C(z))
         return (chi**3 * _stumpff_S(z) + A * np.sqrt(yy)) / np.sqrt(mu)
 
-    # Bracket z: lower bound where y(z) > 0, upper bound where tof exceeded.
+    # Keep an inadmissible lower endpoint: bisection approaches y=0 from the
+    # physical side. Moving it to the first y>0 point can discard short-time
+    # hyperbolic solutions. If it is admissible, bracket the TOF residual too.
     z_lo = -4 * np.pi**2
-    while y(z_lo) < 0:
-        z_lo /= 2
-        if z_lo > -1e-12:
+    for _ in range(max_iter):
+        t_lo = tof_of_z(z_lo)
+        if t_lo is None or t_lo <= tof:
             break
+        if not np.isfinite(t_lo):
+            raise RuntimeError("Could not bracket Lambert time of flight at negative z.")
+        z_lo *= 2.0
+    else:
+        raise RuntimeError("Could not bracket Lambert time of flight at negative z.")
     z_hi = 4 * np.pi**2 * 0.999  # below the z of an exactly closed orbit
     t_hi = tof_of_z(z_hi)
     if t_hi is not None and t_hi < tof:

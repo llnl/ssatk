@@ -15,7 +15,7 @@ def test_time_grid_spans_the_2016_leap_second_in_si_seconds():
     t = get_times(20, (1, "s"), t0="2016-12-31T23:59:50")
     assert len(t) == 21
     assert abs((t[-1] - Time("2017-01-01T00:00:09", scale="utc")).sec) < 1e-6
-    np.testing.assert_allclose(np.diff((t.tai - t.tai[0]).sec), 1.0, atol=1e-6)
+    np.testing.assert_allclose(np.diff((t.tai - t.tai[0]).sec), 1.0, atol=1e-6, rtol=0)
 
 
 def test_time_grid_anchors_on_the_middle_and_final_epochs():
@@ -36,9 +36,9 @@ def test_all_orbital_quantities_agree_with_ssapy():
     q = all_orbital_quantities(a=9000e3, e=0.3, i=0.5, pa=1.0, raan=2.0, ma=1.2, t=1.4e9)
     orbit = ssapy.Orbit.fromKeplerianElements(9000e3, 0.3, 0.5, 1.0, 2.0, q["trueAnomaly"], t=1.4e9)
     assert orbit.meanAnomaly == pytest.approx(1.2, abs=1e-12)
-    assert q["rp"] == pytest.approx(9000e3 * 0.7, rel=1e-12)
+    assert q["rp"] == pytest.approx(9000e3 * 0.7, rel=1e-12, abs=0)
 
     q2 = all_orbital_quantities(periapsis=7000e3, apoapsis=9000e3, t=1.4e9)
     assert (q2["a"], q2["e"]) == (8000e3, 0.125)
     speed2 = np.dot(q2["v"], q2["v"])
-    assert speed2 == pytest.approx(EARTH_MU * (2 / np.linalg.norm(q2["r"]) - 1 / 8000e3), rel=1e-12)
+    assert speed2 == pytest.approx(EARTH_MU * (2 / np.linalg.norm(q2["r"]) - 1 / 8000e3), rel=1e-12, abs=0)

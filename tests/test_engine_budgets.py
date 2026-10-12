@@ -18,7 +18,7 @@ def test_fuel_for_a_constant_acceleration_follows_the_rocket_equation(steps):
     accels = np.full(steps, acceleration)
     positions = np.zeros((steps, 3))
     fuel = estimate_fuel_usage(accels, duration / steps, positions, engine="biprop_400n", initial_mass_kg=1000.0)
-    assert fuel == pytest.approx(1000.0 * (1.0 - np.exp(-0.5)), rel=1e-12)
+    assert fuel == pytest.approx(1000.0 * (1.0 - np.exp(-0.5)), rel=1e-12, abs=0)
 
 
 def test_rescale_burn_closed_forms():

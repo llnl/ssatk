@@ -18,8 +18,8 @@ def test_lunar_l4_is_the_leading_equilateral_point(utc):
     moon = get_body("moon")  # hold the Body: SSAPy closes the ephemeris of a collected temporary
     r_moon = np.asarray(moon.position(t.gps), dtype=float).reshape(3)
     d = np.linalg.norm(r_moon)
-    assert np.linalg.norm(orbit.r) == pytest.approx(d, rel=1e-9)
-    assert np.linalg.norm(orbit.r - r_moon) == pytest.approx(d, rel=1e-9)
+    assert np.linalg.norm(orbit.r) == pytest.approx(d, rel=1e-9, abs=0)
+    assert np.linalg.norm(orbit.r - r_moon) == pytest.approx(d, rel=1e-9, abs=0)
     v_moon = (np.asarray(moon.position(t.gps + 1.0)).reshape(3) - np.asarray(moon.position(t.gps - 1.0)).reshape(3)) / 2.0
     assert np.dot(np.cross(r_moon, orbit.r), np.cross(r_moon, v_moon)) > 0.0  # leading, not trailing
     l4 = np.asarray(lunar_lagrange_points(t)["L4"], dtype=float).reshape(3)

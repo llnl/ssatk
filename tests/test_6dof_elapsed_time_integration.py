@@ -108,4 +108,4 @@ def test_events_are_defined_and_reported_in_absolute_time(epoch):
     assert trajectory.status == 1
     assert trajectory.t[-1] == pytest.approx(epoch + 0.25, rel=0.0, abs=1.0e-6)
     assert trajectory.t_events[0][0] == pytest.approx(epoch + 0.25, rel=0.0, abs=1.0e-6)
-    np.testing.assert_allclose(trajectory.r[-1], [0.25, 0.0, 0.0], atol=1.0e-9)
+    np.testing.assert_allclose(trajectory.r[-1], [0.25, 0.0, 0.0], atol=1.0e-9, rtol=0)

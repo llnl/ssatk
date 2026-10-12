@@ -39,4 +39,4 @@ def test_collinear_points_sit_at_published_cr3bp_fractions():
     d = np.linalg.norm(r_moon)
     points = lp.lunar_lagrange_points(epoch)
     fractions = [np.dot(np.ravel(points[k]), r_moon) / d**2 for k in ("L1", "L2", "L3")]
-    np.testing.assert_allclose(fractions, [0.8491, 1.1678, -0.9929], atol=2e-4)
+    np.testing.assert_allclose(fractions, [0.8491, 1.1678, -0.9929], atol=2e-4, rtol=0)

@@ -32,9 +32,9 @@ def test_tangential_burn_on_a_circular_orbit_matches_vis_viva(convert, duration,
     else:
         out = deltav_to_burn(ORBIT, times, [0.0, DELTA_V, 0.0])
     expected = 1.0 / (2.0 / RADIUS - (V_CIRC + DELTA_V) ** 2 / EARTH_MU)
-    assert _semi_major_axis(out["r_instantaneous"][-1], out["v_instantaneous"][-1]) == pytest.approx(expected, rel=1e-12)
-    assert _semi_major_axis(out["r_continuous"][-1], out["v_continuous"][-1]) == pytest.approx(expected, rel=1e-8)
-    np.testing.assert_allclose(np.linalg.norm(out["delta_v_gcrf"]), DELTA_V, rtol=1e-12)
+    assert _semi_major_axis(out["r_instantaneous"][-1], out["v_instantaneous"][-1]) == pytest.approx(expected, rel=1e-12, abs=0)
+    assert _semi_major_axis(out["r_continuous"][-1], out["v_continuous"][-1]) == pytest.approx(expected, rel=1e-8, abs=0)
+    np.testing.assert_allclose(np.linalg.norm(out["delta_v_gcrf"]), DELTA_V, rtol=1e-12, atol=0)
     k = int(np.flatnonzero(times == out["t_center"])[0])
     jump = out["v_instantaneous"][k] - out["v_instantaneous"][k - 1]  # post-impulse state sits at index k
     assert np.linalg.norm(jump) > 0.9 * DELTA_V
@@ -45,5 +45,5 @@ def test_finite_burn_window_is_centred_and_delivers_the_delta_v():
     # along its direction. Exact.
     delta_v = np.array([3.0, -4.0, 12.0])
     a_vec, t_burn, t_start, t_end = calculate_finite_burn_acceleration(delta_v, 1000.0, 0.5)
-    np.testing.assert_allclose(a_vec * t_burn, delta_v, rtol=1e-15)
+    np.testing.assert_allclose(a_vec * t_burn, delta_v, rtol=1e-15, atol=0)
     assert (t_burn, t_start, t_end) == (26.0, 987.0, 1013.0)

@@ -126,8 +126,8 @@ def load_star_catalog(mag_limit=6.5, when=None):
         )
 
     vectors, magnitudes, colors = (np.asarray(value, dtype=float) for value in stars)
-    rotation = _gcrf_to_teme_rotation(when)
-    vectors = vectors @ rotation.T
+    # star_directions(frame="teme") already applied GCRF -> TEME. Applying
+    # that rotation again offsets the sky by up to 0.374 degrees in 2026.
     brightness = np.clip(1.60 - 0.15 * magnitudes, 0.16, 1.0)
     sizes = np.clip(4.8 - 0.48 * magnitudes, 1.0, 6.5)
     return {

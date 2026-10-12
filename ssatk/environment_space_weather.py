@@ -85,8 +85,10 @@ class SpaceWeatherTable:
     def msis_inputs(self, time, *, allow_predicted: bool = False):
         """Return ``(F10.7, F10.7a, Ap[0:7])`` inputs for ``pymsis``.
 
-        ``pymsis`` expects the prior day's daily F10.7, an 81-day centered
-        average, and the current plus preceding 3-hour Ap intervals. Missing
+        ``pymsis`` expects the prior day's observed daily F10.7 and the
+        observed 81-day centered average, both at the actual Sun-Earth
+        distance (not adjusted to 1 au), plus the current and preceding
+        3-hour Ap intervals. Missing
         subdaily values fall back to the daily Ap value.
         """
 
@@ -117,8 +119,8 @@ class SpaceWeatherTable:
             dtype=float,
         )
         return (
-            float(previous.f107_adjusted_sfu),
-            float(current.f107_adjusted_81_sfu),
+            float(previous.f107_observed_sfu),
+            float(current.f107_observed_81_sfu),
             ap,
         )
 

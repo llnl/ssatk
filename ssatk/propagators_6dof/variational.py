@@ -55,12 +55,15 @@ class SixDOFVariationalTrajectory:
     """Nominal trajectory and state-transition matrices.
 
     ``stm[k]`` maps infinitesimal perturbations of the solver state at
-    ``t[0]`` to perturbations at ``t[k]``.  The state ordering is the same as
-    ``sixdof_rhs``: ``r, v, q, omega, [mass], [wheel_momentum]``.
+    the initial solver epoch to perturbations at ``t[k]`` (or from the input
+    basis of a supplied ``stm0``). The first output need not be at the initial
+    epoch. ``reference_q`` is the nominal quaternion of that input basis.
+    The state ordering is ``r, v, q, omega, [mass], [wheel_momentum]``.
     """
 
     trajectory: SixDOFTrajectory
     stm: np.ndarray
+    reference_q: np.ndarray | None = None
 
     @property
     def t(self):
@@ -90,7 +93,15 @@ def attitude_error_stm(variational) -> np.ndarray:
     if n < 13 or trajectory.q.shape[0] != stm.shape[0]:
         raise ValueError("variational must contain a quaternion STM matching its trajectory.")
 
-    initial_q = normalize_quaternion(trajectory.q[0])
+    reference_q = getattr(variational, "reference_q", None)
+    if reference_q is None:
+        # Retain the historical two-argument result constructor when its
+        # first sample really is the reference state. Otherwise guessing the
+        # input quaternion from an output sample changes the covariance basis.
+        if not np.array_equal(stm[0], np.eye(n)):
+            raise ValueError("reference_q is required when the first STM is not identity.")
+        reference_q = trajectory.q[0]
+    initial_q = normalize_quaternion(reference_q)
     input_map = np.zeros((n, n - 1))
     input_map[:6, :6] = np.eye(6)
     input_map[6:10, 6:9] = _quaternion_error_input_map(initial_q)
@@ -192,6 +203,7 @@ def propagate_6dof_variational(
     wheel_torque=None,
     wheel_momentum_capacity: ArrayLike | None = None,
     stm0: ArrayLike | None = None,
+    stm_reference_q: ArrayLike | None = None,
     jacobian_step: float = 1e-7,
     rtol: float = 1e-9,
     atol: float = 1e-12,
@@ -205,6 +217,11 @@ def propagate_6dof_variational(
     result uses the solver's quaternion coordinates; quaternion normalization
     in ``sixdof_rhs`` therefore makes this a local STM, not a globally valid
     six-parameter attitude error state.
+
+    With the default identity ``stm0``, the attitude-error input basis is
+    always ``q0`` at the initial solver epoch, even if ``times`` omits it.
+    For a nonidentity ``stm0``, provide ``stm_reference_q`` to identify its
+    input attitude basis before converting to attitude-error coordinates.
     """
     times = _times(times)
     if wheel_axes_body is None and orbit0 is not None:
@@ -270,6 +287,8 @@ def propagate_6dof_variational(
         and (torque is None or callable(getattr(torque, "state_jacobian", None)))
         and mass_flow_rate is None
         and wheel_torque is None
+        and inertia_rate is None
+        and angular_momentum_flux is None
         and not callable(inertia)
     )
 
@@ -345,7 +364,19 @@ def propagate_6dof_variational(
     wheel_start = 14 if state.mass is not None else 13
     wheels = None if wheel_momentum is None else y[:, wheel_start:]
     trajectory = SixDOFTrajectory(sol.t + t_ref, y[:, :3], y[:, 3:6], q, y[:, 10:13], mass, wheels, int(sol.nfev), str(sol.message), int(sol.status), solution=_solution_in_absolute_time(sol.sol, t_ref))
-    return SixDOFVariationalTrajectory(trajectory, stm)
+    reference_q = _stm_reference_quaternion(state.q, stm0, stm_reference_q)
+    return SixDOFVariationalTrajectory(trajectory, stm, reference_q)
+
+
+def _stm_reference_quaternion(initial_q, stm0, reference_q):
+    if reference_q is not None:
+        reference_q = np.asarray(reference_q, dtype=float)
+        if not np.all(np.isfinite(reference_q)):
+            raise ValueError("stm_reference_q must be finite.")
+        return normalize_quaternion(reference_q).copy()
+    if stm0 is None or np.array_equal(stm0, np.eye(len(stm0))):
+        return normalize_quaternion(initial_q).copy()
+    return None
 
 
 def _constrained_variational_solution(rhs, span, y0, phi0, capacity, wheel_start, step, options):

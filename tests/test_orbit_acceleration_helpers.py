@@ -45,9 +45,9 @@ def test_uniform_earth_gravity_is_linear_inside_and_inverse_square_outside():
     # outside; both equal mu / R^2 at the surface. 1e-12 relative.
     for radius in (0.25 * EARTH_RADIUS, 0.9 * EARTH_RADIUS):
         r = np.array([0.0, radius, 0.0])
-        np.testing.assert_allclose(accel_uniform_earth(r), -EARTH_MU * r / EARTH_RADIUS**3, rtol=1e-12)
+        np.testing.assert_allclose(accel_uniform_earth(r), -EARTH_MU * r / EARTH_RADIUS**3, rtol=1e-12, atol=0)
     r = np.array([0.0, 0.0, 2.0 * EARTH_RADIUS])
-    np.testing.assert_allclose(accel_uniform_earth(r), [0.0, 0.0, -EARTH_MU / (2.0 * EARTH_RADIUS) ** 2], rtol=1e-12)
+    np.testing.assert_allclose(accel_uniform_earth(r), [0.0, 0.0, -EARTH_MU / (2.0 * EARTH_RADIUS) ** 2], rtol=1e-12, atol=0)
 
 
 def test_steering_helpers_point_along_their_named_directions():
@@ -57,15 +57,15 @@ def test_steering_helpers_point_along_their_named_directions():
     r = 7000e3 * np.array([1.0, 0.0, 1.0]) / np.sqrt(2.0)
     v = np.array([-3000.0, 6500.0, 3000.0])
     magnitude = 1.5e-3
-    np.testing.assert_allclose(accel_equatorial(r, magnitude=magnitude), [0.0, magnitude, 0.0], atol=1e-15)
+    np.testing.assert_allclose(accel_equatorial(r, magnitude=magnitude), [0.0, magnitude, 0.0], atol=1e-15, rtol=0)
     np.testing.assert_allclose(
-        accel_inclination(r, magnitude=-magnitude), -magnitude * np.array([-1.0, 0.0, 1.0]) / np.sqrt(2.0), atol=1e-15
+        accel_inclination(r, magnitude=-magnitude), -magnitude * np.array([-1.0, 0.0, 1.0]) / np.sqrt(2.0), atol=1e-15, rtol=0
     )
-    np.testing.assert_allclose(accel_radial(r, magnitude), magnitude * np.array([1.0, 0.0, 1.0]) / np.sqrt(2.0), atol=1e-15)
-    np.testing.assert_allclose(accel_velocity(v, magnitude), magnitude * v / np.linalg.norm(v), atol=1e-15)
+    np.testing.assert_allclose(accel_radial(r, magnitude), magnitude * np.array([1.0, 0.0, 1.0]) / np.sqrt(2.0), atol=1e-15, rtol=0)
+    np.testing.assert_allclose(accel_velocity(v, magnitude), magnitude * v / np.linalg.norm(v), atol=1e-15, rtol=0)
     r_hat = r / np.linalg.norm(r)
     horizontal = v - np.dot(v, r_hat) * r_hat
-    np.testing.assert_allclose(accel_plane(r, v, magnitude), magnitude * horizontal / np.linalg.norm(horizontal), atol=1e-15)
+    np.testing.assert_allclose(accel_plane(r, v, magnitude), magnitude * horizontal / np.linalg.norm(horizontal), atol=1e-15, rtol=0)
 
 
 def test_circularization_command_points_at_the_circular_velocity():
@@ -77,7 +77,7 @@ def test_circularization_command_points_at_the_circular_velocity():
     r = np.array([radius, 0.0, 0.0])
     v = np.array([150.0, 0.85 * np.sqrt(EARTH_MU / radius), 0.0])
     dv = np.array([0.0, np.sqrt(EARTH_MU / radius), 0.0]) - v
-    np.testing.assert_allclose(accel_to_circular(r, v, thrust=0.2), 0.2 * dv / np.linalg.norm(dv), rtol=1e-12)
+    np.testing.assert_allclose(accel_to_circular(r, v, thrust=0.2), 0.2 * dv / np.linalg.norm(dv), rtol=1e-12, atol=0)
     v_close = np.array([1.0, np.sqrt(EARTH_MU / radius), 0.0])
-    np.testing.assert_allclose(accel_to_circular(r, v_close, thrust=0.2, tol=10.0), 0.0, atol=0)
+    np.testing.assert_allclose(accel_to_circular(r, v_close, thrust=0.2, tol=10.0), 0.0, atol=0, rtol=0)
     reset_orbit_status()

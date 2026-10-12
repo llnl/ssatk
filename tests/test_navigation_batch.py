@@ -49,10 +49,10 @@ def test_batch_fit_recovers_mu_zero_state_and_stm(synthetic_station):
         propagation_kwargs={"mu": 0.0},
     )
     assert isinstance(result, BatchOrbitFitResult)
-    np.testing.assert_allclose(result.state0, truth, atol=2e-4)
+    np.testing.assert_allclose(result.state0, truth, atol=2e-4, rtol=0)
     assert result.success and result.numerical_rank == 6
     assert result.covariance.shape == (6, 6)
-    np.testing.assert_allclose(result.trajectory.stm[1, :3, 3:], np.eye(3), atol=1e-10)
+    np.testing.assert_allclose(result.trajectory.stm[1, :3, 3:], np.eye(3), atol=1e-10, rtol=0)
     finite_stm = np.empty((6, 6))
     for column in range(6):
         step = 1e-5
@@ -62,7 +62,7 @@ def test_batch_fit_recovers_mu_zero_state_and_stm(synthetic_station):
         minus_traj = propagate_orbit_state_with_stm(times=[0.0, 1.0], r0=minus[:3], v0=minus[3:], t0=0.0, mu=0.0)
         finite_stm[:, column] = np.r_[plus_traj.r[-1], plus_traj.v[-1]] - np.r_[minus_traj.r[-1], minus_traj.v[-1]]
     finite_stm /= 2.0e-5
-    np.testing.assert_allclose(result.trajectory.stm[1], finite_stm, atol=1e-8)
+    np.testing.assert_allclose(result.trajectory.stm[1], finite_stm, atol=1e-8, rtol=0)
     observation = observations[-1][1]
     nominal_state = np.r_[result.trajectory.r[1], result.trajectory.v[1]]
     nominal = synthetic_station.predict(nominal_state, 1.0, observation.measurement)
@@ -78,7 +78,7 @@ def test_batch_fit_recovers_mu_zero_state_and_stm(synthetic_station):
         delta[0] = (delta[0] + np.pi) % (2.0 * np.pi) - np.pi
         finite_measurement.append(delta / 2.0e-5)
     expected_measurement_jacobian = nominal.jacobian @ result.trajectory.stm[1]
-    np.testing.assert_allclose(expected_measurement_jacobian, np.asarray(finite_measurement).T, atol=1e-8)
+    np.testing.assert_allclose(expected_measurement_jacobian, np.asarray(finite_measurement).T, atol=1e-8, rtol=0)
     fisher_jacobian = []
     for station, observation in observations:
         epoch = 0 if observation.time == 0.0 else 1

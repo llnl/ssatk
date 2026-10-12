@@ -36,9 +36,9 @@ def test_bake_normals_tilt_downslope_in_east_north_frame():
     # Ground rising northward faces south; ground rising eastward faces west.
     assert np.all(north[..., 1] < 0.0)
     assert np.all(east[..., 0] < 0.0)
-    np.testing.assert_allclose(north[..., 1], -slope, rtol=0.02)
-    np.testing.assert_allclose(east[..., 0], -slope, rtol=0.02)
-    np.testing.assert_allclose(north[..., 0], 0.0, atol=1e-12)
+    np.testing.assert_allclose(north[..., 1], -slope, rtol=0.02, atol=0)
+    np.testing.assert_allclose(east[..., 0], -slope, rtol=0.02, atol=0)
+    np.testing.assert_allclose(north[..., 0], 0.0, atol=1e-12, rtol=0)
 
 
 _FRAME_EPOCH_ISO = "2025-01-01T00:00:00"

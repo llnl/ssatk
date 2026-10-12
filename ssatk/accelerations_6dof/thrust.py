@@ -8,6 +8,7 @@ from io import StringIO as _StringIO
 from pathlib import Path as _Path
 
 import numpy as _np
+from scipy.integrate import trapezoid as _trapezoid
 
 from ..constants import STANDARD_GRAVITY
 from ..coordinates.satellite_frames import frame_to_gcrf_matrix
@@ -79,7 +80,7 @@ class ThrustCurve:
     def total_impulse(self) -> float:
         """Trapezoidal total impulse over the tabulated span in N s."""
 
-        return float(_np.trapezoid(self.thrusts, self.times))
+        return float(_trapezoid(self.thrusts, self.times))
 
 
 class SpacecraftManeuverAccel(SpacecraftAccel):
@@ -393,7 +394,7 @@ def integrated_thrust_impulse(profile, start: float, stop: float, *, samples: in
         raise ValueError("samples must be at least 2.")
     times = _np.linspace(float(start), float(stop), int(samples))
     thrusts = _np.array([float(profile(t)) for t in times], dtype=float)
-    return float(_np.trapezoid(thrusts, times))
+    return float(_trapezoid(thrusts, times))
 
 
 def make_maneuver_acceleration(thrust, **kwargs):

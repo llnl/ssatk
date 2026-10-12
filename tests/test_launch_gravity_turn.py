@@ -25,8 +25,8 @@ def test_gravity_turn_thrust_rises_vertically_and_levels_on_the_azimuth(name):
     thrust = np.full(times.size, 20.0)
     gravity = -EARTH_MU * r / EARTH_RADIUS**3
     azimuth = np.radians(45.0)
-    np.testing.assert_allclose(accel_gravity_turn(r, 0, times, thrust, 100.0, azimuth), gravity + 20.0 * up, atol=1e-12)
+    np.testing.assert_allclose(accel_gravity_turn(r, 0, times, thrust, 100.0, azimuth), gravity + 20.0 * up, atol=1e-12, rtol=0)
     level = np.cos(azimuth) * north + np.sin(azimuth) * east
-    np.testing.assert_allclose(accel_gravity_turn(r, 10, times, thrust, 100.0, azimuth), gravity + 20.0 * level, atol=1e-12)
+    np.testing.assert_allclose(accel_gravity_turn(r, 10, times, thrust, 100.0, azimuth), gravity + 20.0 * level, atol=1e-12, rtol=0)
     half = (np.sin(np.pi / 4) * up + np.cos(np.pi / 4) * level)
-    np.testing.assert_allclose(accel_gravity_turn(r, 5, times, thrust, 100.0, azimuth), gravity + 20.0 * half, atol=1e-12)
+    np.testing.assert_allclose(accel_gravity_turn(r, 5, times, thrust, 100.0, azimuth), gravity + 20.0 * half, atol=1e-12, rtol=0)
