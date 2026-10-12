@@ -36,8 +36,11 @@ def example_mesh():
     return SpacecraftMesh.from_body(body.with_updates(facets=tuple(facets)))
 
 
-def example_view(environment="earth", count=25):
-    """One-minute circular arc and prescribed 120-degree body spin, in GCRF."""
+def example_view(environment="earth", count=25, mesh=None):
+    """One-minute arc and body spin; default Starlink-like or custom mesh.
+
+    For alternatives use mesh="cubesat", mesh="boxwing", or mesh=example_mesh().
+    """
     times = Time(Time("2026-10-11T12:00:00", scale="utc").gps + np.linspace(0, 60, count), format="gps")
     earth = environment == "earth"
     radius = (EARTH_RADIUS + 20_200e3) if earth else (MOON_RADIUS + 3_000e3)
@@ -56,7 +59,7 @@ def example_view(environment="earth", count=25):
     spin_axis = np.array([0.3, 0.5, 0.8])
     spin_axis /= np.linalg.norm(spin_axis)
     q = np.column_stack((np.cos(theta / 2), np.sin(theta / 2)[:, None] * spin_axis))
-    return SpacecraftView(r, times, q, mesh=example_mesh(), environment=environment,
+    return SpacecraftView(r, times, q, mesh=mesh, environment=environment,
                           title=f"{environment.title()} orbit / spacecraft attitude")
 
 

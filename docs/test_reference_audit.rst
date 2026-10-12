@@ -1,7 +1,7 @@
 Test reference audit
 ====================
 
-This audit covers all 101 ``tests/test_*.py`` files and their 373 test
+This audit covers all 101 ``tests/test_*.py`` files and their 375 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
@@ -215,7 +215,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_satellite_frames.py,5,R1 R4,Known circular/local axes and 90 degree quaternions,Eccentric nadir/NTW independently anchored in review regressions
    tests/test_segment_dense_output.py,2,R1 C,Free-flight positions and pre/post impulse velocity jump,Known piecewise time convention
    tests/test_spacecraft_force_models.py,7,R1,Closed-form gravity gradient; drag; SRP; facet forces/torques; exponential density,Specified ideal force models
-   tests/test_spacecraft_view.py,12,R1 C,Quarter-turn and center-of-mass geometry; spherical occultation/limb; pinhole projection; constant-rate interpolation,Illustrative spherical lighting; export contracts are separate from physical references
+   tests/test_spacecraft_view.py,14,R1 C,Quarter-turn and center-of-mass geometry; spherical occultation/limb; pinhole projection; constant-rate interpolation; preset prism and panel dimensions/areas,Illustrative spacecraft shapes and spherical lighting; export contracts are separate from physical references
    tests/test_ssa_conjunction.py,4,R1 R2 R4,Linear TCA; covariance algebra; dense cubic minimum; chi-square disk probability,Anisotropic absolute probability independently cubature-checked in review tests
    tests/test_starfield_epochs.py,1,R2 R3,Astropy leap-second time conversion,Epoch contract
    tests/test_state_to_kepler.py,3,R1 R2,SSAPy elements/state conversion and known conic invariants,Specified conics

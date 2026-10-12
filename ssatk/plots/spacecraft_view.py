@@ -88,6 +88,59 @@ class SpacecraftMesh:
         self.triangles = np.asarray(triangles, dtype=int)
         self.triangle_colors = np.asarray(colors)
 
+    @staticmethod
+    def presets():
+        """Return the built-in visual mesh names; no files are required."""
+        return ("starlink", "cubesat", "boxwing")
+
+    @classmethod
+    def from_preset(cls, name="starlink", *, scale=1.0):
+        """Build an illustrative mesh in metres, optionally scaled uniformly.
+
+        ``starlink`` is a schematic flat bus with two deployed solar wings;
+        ``cubesat`` is a simple 3U-shaped bus; ``boxwing`` has a rectangular
+        bus and two wings. These are visual templates, not measured vehicle
+        dimensions or mass/force models. The origin is the bus center, +Z is
+        the panel normal, and the arrays are rigid. See the guide for sizes.
+        """
+        from ssatk.satellites import SpacecraftBody
+
+        if not isinstance(name, str) or name.strip().lower() not in cls.presets():
+            raise ValueError(f"unknown mesh preset {name!r}; choose from {', '.join(cls.presets())}")
+        if not np.isfinite(scale) or scale <= 0:
+            raise ValueError("scale must be a positive dimensionless factor")
+        name = name.strip().lower()
+        if name == "cubesat":
+            mesh = cls.from_body(SpacecraftBody.cubesat(units=3))
+            # Four long faces represent body-mounted solar panels.
+            for i, face in enumerate(mesh.faces):
+                if np.ptp(mesh.vertices[face, 2]) > 0:
+                    mesh.colors[i] = (0.12, 0.27, 0.48)
+            return cls(mesh.vertices * scale, mesh.faces, mesh.colors)
+
+        size = (2.8, 1.4, 0.18) if name == "starlink" else (1.2, 1.0, 0.8)
+        bus = cls.from_body(SpacecraftBody.box(mass=1.0, size=size))
+        vertices, faces, colors = list(bus.vertices), list(bus.faces), list(bus.colors)
+        if name == "starlink":
+            colors = [(0.76, 0.80, 0.84)] * len(faces)
+        # Each wing extends outwards from the bus edge in its local XY plane.
+        # Starlink-like wings extend along +/-Y; box wings extend along +/-X.
+        axis = 1 if name == "starlink" else 0
+        length, width = (4.0, 2.8) if name == "starlink" else (2.0, 1.4)
+        for sign in (-1, 1):
+            for row in range(8):
+                for col in range(4):
+                    lo, hi = sorted(sign * (size[axis] / 2 + np.array([row, row + 1]) * length / 8))
+                    left, right = -width / 2 + np.array([col, col + 1]) * width / 4
+                    points = np.array([[lo, left, 0], [hi, left, 0],
+                                       [hi, right, 0], [lo, right, 0]])
+                    if axis == 1:
+                        points = points[::-1, [1, 0, 2]]  # Preserve +Z winding.
+                    faces.append(np.arange(len(vertices), len(vertices) + 4))
+                    vertices.extend(points)
+                    colors.append((0.12, 0.27, 0.48))
+        return cls(np.asarray(vertices) * scale, faces, colors)
+
     @classmethod
     def from_body(cls, body):
         """Read the actual ``SpacecraftBody.facets`` geometry without synthesis.
@@ -190,6 +243,8 @@ class SpacecraftView:
     frame). Stars are catalog GCRF directions at the first epoch. ``camera_offset``
     is a GCRF metre vector from the spacecraft to the camera, constant or (N, 3).
     The default camera puts the nearest body's limb behind the spacecraft.
+    ``mesh`` accepts a preset name or SpacecraftMesh. With neither mesh nor
+    body supplied, a schematic Starlink-like mesh is used automatically.
     """
 
     def __init__(self, r, t, q, *, mesh=None, body=None, units="m", frame="gcrf",
@@ -228,12 +283,12 @@ class SpacecraftView:
         if mesh is not None and body is not None:
             raise ValueError("supply mesh or body, not both")
         if mesh is None:
-            if body is None:
-                from ssatk.satellites import SpacecraftBody
-                body = SpacecraftBody.box_wing(name="illustrative bus", mass=100.0)
-            mesh = SpacecraftMesh.from_body(body)
+            mesh = (SpacecraftMesh.from_preset() if body is None
+                    else SpacecraftMesh.from_body(body))
+        elif isinstance(mesh, str):
+            mesh = SpacecraftMesh.from_preset(mesh)
         if not isinstance(mesh, SpacecraftMesh):
-            raise TypeError("mesh must be a SpacecraftMesh")
+            raise TypeError("mesh must be a preset name or SpacecraftMesh")
         self.mesh = mesh
         self.mesh_radius = float(np.max(np.linalg.norm(mesh.vertices, axis=1)))
         self.camera_offset = (None if camera_offset is None else
