@@ -986,4 +986,3 @@ smm — Solar Maximum Mission
 * Axes: +Z is the schematic telescope/payload direction. Right-handed visual axes, not a mission flight attitude convention.
 * Model notes: Component sizes, separation, appendages and colors are illustrative.
 * `Source 1 <https://heasarc.gsfc.nasa.gov/docs/heasarc/missions/solarmax.html>`__
-
