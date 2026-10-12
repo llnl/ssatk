@@ -1,3 +1,4 @@
+# Literal sexagesimal conversions: 1e-12 degree absolute float64 budget.
 import numpy as np
 import pytest
 from astropy.time import Time
@@ -17,14 +18,12 @@ def test_dms_and_hms_decimal_conversions_round_trip_common_values():
     assert dms_to_dd("-12:30:0") == pytest.approx(-12.5)
     np.testing.assert_allclose(
         dms_to_dd(["0:0:0", "1:30:0"]),
-        [0.0, 1.5],
-    )
+        [0.0, 1.5], rtol=0, atol=1e-12)
 
     assert hms_to_dd("1:0:0") == pytest.approx(15.0)
     np.testing.assert_allclose(
         hms_to_dd(["0:0:0", "2:30:0"]),
-        [0.0, 37.5],
-    )
+        [0.0, 37.5], rtol=0, atol=1e-12)
 
     assert dd_to_dms(12.5) == "12:30:0"
     assert dd_to_hms(15.0) == "1:0:0"

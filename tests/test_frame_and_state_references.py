@@ -1,3 +1,4 @@
+# Cardinal/unit-vector arithmetic: 1e-14 dimensionless; literal Sun scaling: 1e-12 plot units.
 from __future__ import annotations
 
 
@@ -89,16 +90,16 @@ def test_frame_transform_conventions_match_ssapy_ntw_order():
     ntw = ntw_matrix(r, v)
     np.testing.assert_allclose(lvlh @ lvlh.T, np.eye(3), atol=1e-12, rtol=0)
     np.testing.assert_allclose(ntw @ ntw.T, np.eye(3), atol=1e-12, rtol=0)
-    np.testing.assert_allclose(ntw, ntw_to_gcrf_matrix(r, v).T)
+    np.testing.assert_allclose(ntw, ntw_to_gcrf_matrix(r, v).T, rtol=0, atol=1e-14)
 
     T_hat, N_hat, W_hat = ntw_axes(r, v)
     R_hat, S_hat, W_lvlh = lvlh_axes(r, v)
-    np.testing.assert_allclose(T_hat, [0.0, 1.0, 0.0])
-    np.testing.assert_allclose(N_hat, [1.0, 0.0, 0.0])
-    np.testing.assert_allclose(W_hat, [0.0, 0.0, 1.0])
-    np.testing.assert_allclose(R_hat, N_hat)
-    np.testing.assert_allclose(S_hat, T_hat)
-    np.testing.assert_allclose(W_lvlh, W_hat)
+    np.testing.assert_allclose(T_hat, [0.0, 1.0, 0.0], rtol=0, atol=1e-14)
+    np.testing.assert_allclose(N_hat, [1.0, 0.0, 0.0], rtol=0, atol=1e-14)
+    np.testing.assert_allclose(W_hat, [0.0, 0.0, 1.0], rtol=0, atol=1e-14)
+    np.testing.assert_allclose(R_hat, N_hat, rtol=0, atol=1e-14)
+    np.testing.assert_allclose(S_hat, T_hat, rtol=0, atol=1e-14)
+    np.testing.assert_allclose(W_lvlh, W_hat, rtol=0, atol=1e-14)
 
     ntw_tf = FrameTransform(Frame.NTW)
     np.testing.assert_allclose(ntw_tf.transform_point(r, v), [7000.0, 0.0, 0.0], atol=1e-12, rtol=0)
@@ -287,14 +288,12 @@ def test_sun_geometry_helpers_have_expected_directions_and_scaling():
     assert sun_mpl.auto_sun_radius(100.0) == pytest.approx(4.5)
     np.testing.assert_allclose(
         sun_render.light_direction_from_positions([2.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-        [1.0, 0.0, 0.0],
-    )
+        [1.0, 0.0, 0.0], rtol=0, atol=1e-14)
     np.testing.assert_allclose(
         sun_render.light_direction_from_positions([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-        [1.0, 0.0, 0.0],
-    )
+        [1.0, 0.0, 0.0], rtol=0, atol=1e-14)
     sun_pos = sun_render.background_sun_position([0.0, 1.0, 0.0], 100.0, distance_factor=3.0)
-    np.testing.assert_allclose(sun_pos, [0.0, 300.0, 0.0])
+    np.testing.assert_allclose(sun_pos, [0.0, 300.0, 0.0], rtol=0, atol=1e-12)
     assert sun_render.background_sun_radius(100.0, distance_factor=3.0) == pytest.approx(
         max(100.0 * 3.0 * SUN_RADIUS_KM / SUN_EARTH_AVERAGE_DISTANCE_KM, 1.0)
     )

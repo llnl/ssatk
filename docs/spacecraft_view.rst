@@ -133,7 +133,11 @@ resolve the intended motion; quaternions alone cannot encode full revolutions
 between adjacent samples. A one-sample input supports stills only.
 
 Default ephemerides are reevaluated at output epochs. Caller-supplied Sun/Moon
-tracks interpolate linearly. GIF delay is quantized to 10 ms by its format;
+tracks interpolate linearly. GIF delays distribute 10 ms ticks across the
+frames, keeping total timing within one tick of ``frame_count / fps`` instead
+of accumulating per-frame rounding error. GIF rates are limited to 100 fps;
+very short animations still contain at least two frames. Some players impose
+additional minimum delays. The MP4 format has no GIF timing constraint;
 MP4 requires ``imageio-ffmpeg`` (included in ``ssatk[video]``) and even image
 dimensions. GIF export retains palette frames in memory; use MP4 for long or
 large animations, whose frames stream to the encoder.
@@ -151,7 +155,7 @@ The camera looks toward the spacecraft. ``camera_up`` is a GCRF up direction
 and ``fov_deg`` is the vertical field of view. Camera and spacecraft positions
 inside Earth or Moon are rejected. Body and Sun arrows have an illustrative
 length of 1.75 mesh radii; their directions are physical. The arrows are
-annotation overlays and remain visible through the mesh.
+annotation overlays and remain visible through the mesh and foreground bodies.
 
 Rendering limits and validation
 -------------------------------
@@ -169,7 +173,8 @@ uses a point source and spherical bodies; no penumbra fraction, self-shadowing,
 terrain relief, atmospheric refraction, or multiple reflection is modeled.
 Mesh visibility uses a CPU depth buffer with perspective-correct reciprocal
 depth interpolation at pixel centers. Polygon outlines exclude artificial
-fan-triangulation diagonals. Only opaque surfaces are supported; exact coplanar
+fan-triangulation diagonals. Displayed Earth/Moon spheres occlude the mesh
+using the same pixel-center rays and physical distances. Only opaque surfaces are supported; exact coplanar
 faces have ambiguous visibility, and sub-pixel features can alias. Celestial
 backgrounds are ray-sampled at up to 720 pixels high
 and enlarged for export; output dimensions are not a claim of surface detail.
@@ -181,7 +186,8 @@ Missing stars raise an error unless ``stars=False`` is chosen explicitly.
 mesh size, a 3-4-5 Sun-direction triangle, spherical occultations, the 30-degree
 limb of a radius-one sphere at distance two, pinhole projection, lunar origin
 translation, and analytic constant-rate motion on nonuniform epochs. Image
-decoding and timing tests are labeled export contracts, not physical validation.
+decoding, timing, and foreground occlusion checks run separately in
+``scripts/tests/test_spacecraft_exports.py`` as workflow contracts.
 Preset tests compare envelopes and surface areas with the stated rectangular
 prisms and panels, including squared area scaling. These checks validate the
 template geometry, not its agreement with real spacecraft measurements.

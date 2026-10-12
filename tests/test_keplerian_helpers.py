@@ -1,3 +1,4 @@
+# Angle/unit conversion: 2e-14 relative; circular loop reference: 1e-6 m and 1e-9 m/s.
 import numpy as np
 import pytest
 
@@ -6,8 +7,8 @@ from ssatk.orbital_mechanics import keplerian
 
 
 def test_hkoe_period_longitude_and_anomaly_helpers(capsys):
-    np.testing.assert_allclose(keplerian.hkoe([RGEO, 0.1, 30.0, 40.0, 50.0, 60.0]), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3])
-    np.testing.assert_allclose(keplerian.hkoe(RGEO, 0.1, 30.0, 40.0, 50.0, 60.0), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3])
+    np.testing.assert_allclose(keplerian.hkoe([RGEO, 0.1, 30.0, 40.0, 50.0, 60.0]), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3], rtol=2e-14, atol=0)
+    np.testing.assert_allclose(keplerian.hkoe(RGEO, 0.1, 30.0, 40.0, 50.0, 60.0), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3], rtol=2e-14, atol=0)
 
     with pytest.raises(ValueError, match="6-element"):
         keplerian.hkoe([1, 2, 3])
@@ -29,8 +30,8 @@ def test_kepler_state_conversions_for_circular_equatorial_case():
     np.testing.assert_allclose(v, [0.0, np.sqrt(EARTH_MU / RGEO), 0.0], rtol=1e-12, atol=0)
 
     r_loop, v_loop = keplerian.kepler_to_state_loop(a=RGEO, e=0.0, i=0.0, pa=0.0, raan=0.0, nu=0.0)
-    np.testing.assert_allclose(r_loop, r)
-    np.testing.assert_allclose(v_loop, v)
+    np.testing.assert_allclose(r_loop, r, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(v_loop, v, rtol=0, atol=1e-9)
 
     r_many, v_many = keplerian.kepler_to_state_loop(
         a=np.array([RGEO, RGEO * 1.1]),

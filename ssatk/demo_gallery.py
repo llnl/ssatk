@@ -216,48 +216,31 @@ def _write_text_if_nonempty(path: Path, text: str) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def _invoke_demo(module, path: Path, output_root: Path, cwd: Path | None = None, *, fast: bool = True):
-    if hasattr(module, "run"):
-        function = module.run
-        variants = [
-            ((), {"output_dir": output_root, "fast": fast}),
-            ((), {"output_dir": output_root}),
-            ((output_root,), {}),
-            ((), {}),
-        ]
-    elif hasattr(module, "main"):
-        function = module.main
-        variants = [((), kwargs) for kwargs in (
-            {"make_figures": True, "fast": fast, "verbose": True},
-            {"make_figures": True, "fast": fast},
-            {"make_figures": True},
-            {"fast": fast, "verbose": True},
-            {"fast": fast},
-            {},
-        )]
-    else:
-        function = None
-    if function is not None:
-        signature = inspect.signature(function)
-        for args, kwargs in variants:
-            try:
-                signature.bind(*args, **kwargs)
-            except TypeError:
-                continue
-            # A TypeError raised *inside* a demo is a failure, not a reason to
-            # execute it again with different arguments and hide the defect.
-            return function(*args, **kwargs)
-        raise TypeError(f"Unsupported demo entry point: {signature}")
+def _has_function_entrypoint(path: Path) -> bool:
+    """Inspect without executing top-level code twice for standalone scripts."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return any(isinstance(node, ast.FunctionDef) and node.name in {"run", "main"}
+               for node in tree.body)
 
-    env = os.environ.copy()
-    env["SSAPY_DEMO_OUTPUT_DIR"] = str(output_root)
-    return subprocess.run(
-        [sys.executable, str(path.resolve())],
-        cwd=str((cwd or path.parent).resolve()),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+
+def _invoke_demo(module, output_root: Path, *, fast: bool = True):
+    function = getattr(module, "run", None) or getattr(module, "main", None)
+    signature = inspect.signature(function)
+    values = {"output_dir": output_root, "output_root": output_root,
+              "make_figures": True, "fast": fast, "verbose": True}
+    args, kwargs = [], {}
+    for name, parameter in signature.parameters.items():
+        if parameter.kind == inspect.Parameter.POSITIONAL_ONLY:
+            if name in values:
+                args.append(values[name])
+            elif parameter.default is not inspect.Parameter.empty:
+                args.append(parameter.default)
+        elif name in values and parameter.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+            kwargs[name] = values[name]
+    # Bind before executing: an internal TypeError must remain a single failure.
+    signature.bind(*args, **kwargs)
+    return function(*args, **kwargs)
 
 
 def _demo_relative_path(path: Path, demos_dir: Path | None) -> Path:
@@ -300,34 +283,30 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
     stderr_text = ""
     demo_cwd = Path(demos_dir).resolve().parent if demos_dir is not None else path.parent.resolve()
 
+    stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
     try:
-        module = import_module_from_path(path)
-        if hasattr(module, "GALLERY_CATEGORY"):
-            category = str(module.GALLERY_CATEGORY).strip() or category
-        if hasattr(module, "TITLE"):
-            title = str(module.TITLE)
-        if hasattr(module, "DESCRIPTION"):
-            description = str(module.DESCRIPTION)
-
-        stdout_buf = io.StringIO()
-        stderr_buf = io.StringIO()
-        with demo_timeout(timeout_seconds), redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-            result = _invoke_demo(module, path, output_root, cwd=demo_cwd, fast=fast)
-
-        captured_stdout = stdout_buf.getvalue()
-        captured_stderr = stderr_buf.getvalue()
-
-        if isinstance(result, subprocess.CompletedProcess):
-            stdout_text = _filter_console_text((captured_stdout or "") + (result.stdout or ""))
-            stderr_text = _filter_console_text((captured_stderr or "") + (result.stderr or ""))
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"Subprocess exited with code {result.returncode}\n\n"
-                    f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
-                )
+        if _has_function_entrypoint(path):
+            # Import is part of demo execution: include its output and deadline.
+            with demo_timeout(timeout_seconds), redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                module = import_module_from_path(path)
+                category = str(getattr(module, "GALLERY_CATEGORY", category)).strip() or category
+                title = str(getattr(module, "TITLE", title))
+                description = str(getattr(module, "DESCRIPTION", description))
+                result = _invoke_demo(module, output_root, fast=fast)
         else:
-            stdout_text = _filter_console_text(captured_stdout)
-            stderr_text = _filter_console_text(captured_stderr)
+            # A script without a declared entry point executes only as __main__.
+            # subprocess.run also enforces the deadline on platforms without SIGALRM.
+            result = subprocess.run(
+                [sys.executable, str(path.resolve())], cwd=str(demo_cwd),
+                env=os.environ.copy(), capture_output=True, text=True,
+                timeout=timeout_seconds or None,
+            )
+            stdout_buf.write(result.stdout or "")
+            stderr_buf.write(result.stderr or "")
+            if result.returncode != 0:
+                raise RuntimeError(f"Subprocess exited with code {result.returncode}")
+        stdout_text = _filter_console_text(stdout_buf.getvalue())
+        stderr_text = _filter_console_text(stderr_buf.getvalue())
 
         if isinstance(result, dict):
             title = str(result.get("title", title))
@@ -363,7 +342,14 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
             stderr=stderr_text,
             category=category,
         )
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            # TimeoutExpired can hold bytes even when text=True.
+            for buffer, value in ((stdout_buf, exc.stdout), (stderr_buf, exc.stderr)):
+                if value:
+                    buffer.write(value.decode(errors="replace") if isinstance(value, bytes) else value)
+        stdout_text = _filter_console_text(stdout_buf.getvalue())
+        stderr_text = _filter_console_text(stderr_buf.getvalue())
         err = traceback.format_exc()
         log_dir = output_root / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -739,12 +725,23 @@ def run_all_demos(
     demos_dir = Path(demos_dir).expanduser().resolve()
     output_root = Path(output_root).expanduser().resolve()
 
+    # Cleaning the source or its parent irreversibly deletes user code.
+    source_root = Path(__file__).resolve().parents[1]
+    if (demos_dir.is_relative_to(output_root) or output_root.is_relative_to(demos_dir)
+            or source_root.is_relative_to(output_root)):
+        raise ValueError("Gallery output overlaps demo sources or contains the package source")
+    paths = discover_demo_files(demos_dir)
+    if not paths:
+        raise ValueError(f"No enabled demos found in {demos_dir}")
+    archive_path = output_root.parent / (output_root.name + ".zip")
+    archive_path.unlink(missing_ok=True)
+
     if clean and output_root.exists():
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
     results: list[DemoResult] = []
-    for path in discover_demo_files(demos_dir):
+    for path in paths:
         rel = path.relative_to(demos_dir)
         print(f"[demo] running {rel.as_posix()}")
         result = run_demo_script(
@@ -760,8 +757,7 @@ def run_all_demos(
     build_html_report(results, output_root)
     validate_gallery(output_root)
 
-    import shutil as _shutil
-    bundle_base = output_root.parent / output_root.name
-    _shutil.make_archive(str(bundle_base), "zip", root_dir=str(output_root))
+    if all(result.status != "failed" for result in results):
+        shutil.make_archive(str(output_root), "zip", root_dir=str(output_root))
 
     return results

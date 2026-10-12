@@ -1,3 +1,4 @@
+# Literal bounding-box arithmetic below is exact; compare without numerical slack.
 """Spectral, chaos-indicator, statistics, sampling and geometry helpers against references."""
 
 import numpy as np
@@ -102,8 +103,8 @@ def test_bounding_cube_is_centred_and_sized_by_the_longest_extent():
     # R1: points spanning 10 x 4 x 2 about (1, 2, 3) give a cube of side 10 + 2 pad.
     points = np.array([[-4.0, 0.0, 2.0], [6.0, 4.0, 4.0], [1.0, 2.0, 3.0]])
     lower, upper = find_smallest_bounding_cube(points, pad=1.0)
-    np.testing.assert_allclose(lower, [1.0 - 6.0, 2.0 - 6.0, 3.0 - 6.0])
-    np.testing.assert_allclose(upper, [1.0 + 6.0, 2.0 + 6.0, 3.0 + 6.0])
+    np.testing.assert_array_equal(lower, [1.0 - 6.0, 2.0 - 6.0, 3.0 - 6.0])
+    np.testing.assert_array_equal(upper, [1.0 + 6.0, 2.0 + 6.0, 3.0 + 6.0])
 
 
 @pytest.mark.parametrize("distribution", ["uniform", "random"])

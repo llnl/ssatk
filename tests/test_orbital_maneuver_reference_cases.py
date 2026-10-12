@@ -1,3 +1,4 @@
+# The copied initial trajectory position must equal the initial state exactly.
 """Reference checks for orbital maneuver solvers.
 
 These tests use closed-form two-body maneuver equations from standard
@@ -81,7 +82,7 @@ def test_300km_leo_to_geo_hohmann_matches_textbook_reference():
 
     assert result["diagnostics"]["radius1"] == pytest.approx(radius_leo)
     assert result["diagnostics"]["radius2"] == pytest.approx(radius_geo)
-    np.testing.assert_allclose(result["trajectory"]["r"][0], result["initial"]["r"])
+    np.testing.assert_array_equal(result["trajectory"]["r"][0], result["initial"]["r"])
     np.testing.assert_allclose(result["trajectory"]["r"][-1], result["final"]["r"], atol=1e-6, rtol=0)
 
 

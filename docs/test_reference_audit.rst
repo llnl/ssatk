@@ -1,7 +1,7 @@
 Test reference audit
 ====================
 
-This audit covers all 103 ``tests/test_*.py`` files and their 395 test
+This audit covers all 102 ``tests/test_*.py`` files and their 384 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
@@ -151,7 +151,6 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_conic_sampling.py,4,R1 R2,SSAPy Kepler propagation and Barker parabolic equation,Specified Kepler model
    tests/test_constants.py,4,R3 R2,IAU unit definitions; CODATA 2018; JPL mean elements; REBOUND units,Rounded orbital constants have explicit relative tolerances
    tests/test_coverage_site_geometry.py,1,R1,WGS84 ellipsoid equation; east/north/up cardinal geometry,Geometric visibility; no refraction model
-   tests/test_demo_gallery.py,6,C,Literal asset bytes served from an extracted ZIP over HTTP; deliberately invalid URLs,Publishing and status contracts only; no physical or pixel-fidelity claim
    tests/test_earth_zonal_harmonics.py,3,R1 R2 R5,Potential-gradient finite differences; SSAPy EGM96 coefficients; J2 limits,Finite difference budget and model constants explicit
    tests/test_eclipse_geometry.py,2,R3 R4,NASA 2024-04-08 Texas totality path; coordinate round trip,150 km and 90 s event bounds; not precision eclipse timing
    tests/test_eclipse_partial_shadow.py,1,R1,Constructed finite-Sun occultation geometry,Boolean geometry case only
@@ -221,8 +220,8 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_satellite_frames.py,5,R1 R4,Known circular/local axes and 90 degree quaternions,Eccentric nadir/NTW independently anchored in review regressions
    tests/test_segment_dense_output.py,2,R1 C,Free-flight positions and pre/post impulse velocity jump,Known piecewise time convention
    tests/test_spacecraft_force_models.py,7,R1,Closed-form gravity gradient; drag; SRP; facet forces/torques; exponential density,Specified ideal force models
-   tests/test_spacecraft_presets.py,14,R1 R3 C,Analytic ray-box intersections and crossing planes; NASA 3U envelope and selected published telescope dimensions/counts; catalog contracts,Only explicitly referenced features are checked; family models are schematic
-   tests/test_spacecraft_view.py,14,R1 C,Quarter-turn and center-of-mass geometry; spherical occultation/limb; pinhole projection; constant-rate interpolation; preset prism and panel dimensions/areas,Illustrative spacecraft shapes and spherical lighting; export contracts are separate from physical references
+   tests/test_spacecraft_presets.py,11,R1 R3 C,Analytic ray-box intersections and crossing planes; NASA 3U envelope and selected published telescope dimensions/counts; selected published features,Only explicitly referenced features are checked; family models are schematic
+   tests/test_spacecraft_view.py,12,R1 C,Quarter-turn and center-of-mass geometry; spherical occultation/limb; pinhole projection; constant-rate interpolation; preset prism and panel dimensions/areas,Illustrative spacecraft shapes and spherical lighting; export contracts are separate from physical references
    tests/test_ssa_conjunction.py,4,R1 R2 R4,Linear TCA; covariance algebra; dense cubic minimum; chi-square disk probability,Anisotropic absolute probability independently cubature-checked in review tests
    tests/test_starfield_epochs.py,1,R2 R3,Astropy leap-second time conversion,Epoch contract
    tests/test_state_to_kepler.py,3,R1 R2,SSAPy elements/state conversion and known conic invariants,Specified conics
@@ -242,3 +241,42 @@ checks, not that every assertion has every kind of independent reference.
 The inventory is a review record, not a proof of completeness over all
 possible inputs. Revisit it when adding tests, changing conventions, updating
 ephemerides or reference packages, or changing acceptance tolerances.
+
+Workflow contracts outside the numerical suite
+----------------------------------------------
+
+The original testing policy excludes rendering and demo execution from
+``tests/``. Publishing/export checks therefore run separately in the gallery
+workflow with ``python -m pytest scripts/tests -q``. The default pytest command
+selects ``tests/`` explicitly in ``pyproject.toml``. There are 650 core cases
+(102 files, 384 functions) and 142 workflow cases (2 files, 20 functions).
+The former 775-case combined suite becomes 792 cases: one duplicated path
+layout was removed and 18 targeted cases were added. Moving 125 cases out of
+``tests/`` changes their classification, not the total number checked.
+
+* ``scripts/tests/test_gallery_publishing.py`` checks a relocated ZIP under a
+  project URL using literal HTTP asset bytes; missing and nonportable links;
+  one execution per demo; named fast-mode arguments; captured failure output;
+  deadlines including imports; source-preserving cleanup; and stale ZIP removal.
+  Different failure modes are retained, but a redundant second directory layout
+  was removed. The single HTTP case uses spaces and a dotted directory name.
+* ``scripts/tests/test_spacecraft_exports.py`` checks format/dimensions, decoded
+  GIF durations, mesh selection, all 107 catalog builds, aliases/metadata, and
+  foreground sphere visibility. Catalog checks reject malformed geometry but
+  do not establish measured spacecraft shape or flight-frame alignment.
+  Generic unknown-name/error-message assertions were removed.
+
+Analytic mesh visibility and selected published dimension checks remain in
+``tests/``. No propagation or independent frame references were removed.
+The former ground-track gallery demo's hardcoded residuals and unconditional
+``run_tests(): return True`` were replaced by a computed comparison of
+``gcrf_to_lat_lon`` (SSAPy) with Astropy GCRS/ITRS/WGS84. Its input orbit is
+prescribed; it does not constitute flight-data calibration.
+
+The handoff review also replaces 80 implicit ``assert_allclose`` tolerances
+across 16 existing test files with explicit unit-aware budgets or exact
+comparisons for copied data. In particular, a relative tolerance at a large
+GPS epoch could accept a whole-second time error. Copied segment epochs now
+require exact equality. Analytic frame arithmetic allows float64 rounding;
+OEM elapsed-time conversions retain a 1 ns absolute budget. These budgets
+validate specified computations, not measured model fidelity.

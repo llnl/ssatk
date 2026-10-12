@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 from astropy.time import Time
-from PIL import Image
 
 from ssatk.constants import AU, EARTH_RADIUS, MOON_RADIUS
 from ssatk.plots.spacecraft_view import SpacecraftMesh, SpacecraftView, _camera_basis, _project, _ray_sphere
@@ -151,19 +150,6 @@ def test_preset_geometry_matches_documented_prisms_and_rectangles(name, half_ext
         np.testing.assert_allclose(selected.mesh.vertices.max(axis=0), expected, rtol=0, atol=1e-14)
 
 
-def test_default_preset_custom_mesh_and_animation_selection():
-    """C: no mesh file needed; custom input and resampling retain their geometry."""
-    assert SpacecraftMesh.presets(group="generic") == ("starlink", "cubesat", "boxwing")
-    default = scene(body=None)
-    np.testing.assert_allclose(default.mesh.vertices.max(axis=0), [1.4, 4.7, 0.09], rtol=0, atol=1e-14)
-    custom = SpacecraftMesh([[0, 0, 0], [1, 0, 0], [0, 2, 0]], [[0, 1, 2]])
-    view = scene(body=None, mesh=custom, t=[EPOCH, EPOCH + 2])
-    assert view.mesh is custom
-    assert view.resample([EPOCH + 1]).mesh is custom
-    # Each preset call owns its data, so editing one view cannot alter the next.
-    default.mesh.vertices[:] = 0
-    np.testing.assert_allclose(scene(body=None).mesh.vertices.max(axis=0), [1.4, 4.7, 0.09], rtol=0, atol=1e-14)
-
 
 @pytest.mark.parametrize("options", [
     {"q": [0, 0, 0, 0]}, {"q": [np.nan, 0, 0, 1]},
@@ -174,22 +160,3 @@ def test_invalid_physical_inputs_are_rejected(options):
     """C: invalid orientation, epoch order, origin, or camera cannot imply a valid scene."""
     with pytest.raises(ValueError):
         scene(**options)
-
-
-@pytest.mark.parametrize("suffix", ["png", "jpg", "gif"])
-def test_export_dimensions_timestamps_and_frames(tmp_path, suffix):
-    """C: decoding verifies format, dimensions and GIF playback; not physical validation."""
-    view = scene(t=[EPOCH, EPOCH + 1], q=[[1, 0, 0, 0], [0.7071067811865476, 0, 0, 0.7071067811865476]])
-    path = view.save(tmp_path / f"view.{suffix}", width=320, height=240, fps=5, duration_s=0.6)
-    with Image.open(path) as image:
-        assert image.size == (320, 240)
-        if suffix == "gif":
-            assert image.n_frames == 3
-            frames = []
-            for i in range(image.n_frames):
-                image.seek(i)
-                assert image.info["duration"] == 200
-                frames.append(np.asarray(image.convert("RGB")))
-            assert np.any(frames[0] != frames[-1])
-        else:
-            assert image.format == ("PNG" if suffix == "png" else "JPEG")

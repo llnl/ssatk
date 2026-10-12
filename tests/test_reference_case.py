@@ -1,3 +1,4 @@
+# Literal SI-scaled OEM state/covariance/acceleration fixtures are exact; elapsed epochs allow 1e-9 s.
 import json
 from io import StringIO
 from types import SimpleNamespace
@@ -75,9 +76,9 @@ def test_read_oem_supports_inline_orekit_style_multi_segment_and_si_conversion()
     assert loaded.metadata["ORIGINATOR"] == "OREKIT"
     assert loaded.segments[0].comments == ("first segment",)
     assert loaded.segments[1].comments == ("second segment",)
-    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0])
-    np.testing.assert_allclose(loaded.r[:, 0], [1.0e6, 1.001e6, 1.002e6, 1.003e6])
-    np.testing.assert_allclose(loaded.v[0], [4.0e3, 5.0e3, 6.0e3])
+    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.r[:, 0], [1.0e6, 1.001e6, 1.002e6, 1.003e6])
+    np.testing.assert_array_equal(loaded.v[0], [4.0e3, 5.0e3, 6.0e3])
     assert loaded.acceleration is None
 
 
@@ -145,9 +146,9 @@ def test_read_oem_preserves_covariance_epochs_frames_and_si_units():
     source += _covariance_block("2025-001T00:00:03.000000", diagonal=3.0)
     loaded = read_oem(source)
 
-    np.testing.assert_allclose(loaded.covariance_t, [0.5, 3.0])
-    np.testing.assert_allclose(np.diag(loaded.covariance[0]), np.full(6, 2.0e6))
-    np.testing.assert_allclose(np.diag(loaded.covariance[1]), np.full(6, 3.0e6))
+    np.testing.assert_allclose(loaded.covariance_t, [0.5, 3.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(np.diag(loaded.covariance[0]), np.full(6, 2.0e6))
+    np.testing.assert_array_equal(np.diag(loaded.covariance[1]), np.full(6, 3.0e6))
     assert loaded.covariance_reference_frame == "RTN"
     assert loaded.segments[0].covariance_reference_frame == "RTN"
     assert loaded.segments[1].covariance_reference_frame == "RTN"
@@ -170,8 +171,8 @@ def test_write_reference_case_round_trips_covariance_and_sidecar_offsets(tmp_pat
     )
 
     loaded = read_reference_case(files.metadata_path)
-    np.testing.assert_allclose(loaded.covariance_t, [10.0, 12.5])
-    np.testing.assert_allclose(loaded.covariance, covariance)
+    np.testing.assert_allclose(loaded.covariance_t, [10.0, 12.5], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.covariance, covariance)
     assert loaded.covariance_reference_frame == "RIC"
     metadata = json.loads(files.metadata_path.read_text())
     assert metadata["covariance_count"] == 2
@@ -185,8 +186,8 @@ def _acceleration_multi_segment_oem():
 def test_read_oem_preserves_acceleration_across_segments_in_si_units():
     loaded = read_oem(_acceleration_multi_segment_oem())
 
-    np.testing.assert_allclose(loaded.acceleration_t, [0.0, 1.0, 2.0, 3.0])
-    np.testing.assert_allclose(loaded.acceleration, np.tile([1.0, 2.0, 3.0], (4, 1)))
-    np.testing.assert_allclose(loaded.segments[0].acceleration_t, [0.0, 1.0])
-    np.testing.assert_allclose(loaded.segments[1].acceleration, [[1.0, 2.0, 3.0]] * 2)
+    np.testing.assert_allclose(loaded.acceleration_t, [0.0, 1.0, 2.0, 3.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.acceleration, np.tile([1.0, 2.0, 3.0], (4, 1)))
+    np.testing.assert_allclose(loaded.segments[0].acceleration_t, [0.0, 1.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.segments[1].acceleration, [[1.0, 2.0, 3.0]] * 2)
     assert loaded.metadata["acceleration_count"] == 4
