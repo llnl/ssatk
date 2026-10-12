@@ -47,8 +47,12 @@ jobs:
       - name: Build demo gallery
         env:
           MPLBACKEND: Agg
+          SSATK_CACHE: ${{ runner.temp }}/ssatk-cache
         run: |
           ssatk-demo-gallery --output site
+
+      - name: Check published asset links
+        run: python -m ssatk.gallery_validation site
 
       - name: Upload GitHub Pages artifact
         if: github.event_name != 'pull_request'

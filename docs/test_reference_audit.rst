@@ -1,7 +1,7 @@
 Test reference audit
 ====================
 
-This audit covers all 102 ``tests/test_*.py`` files and their 389 test
+This audit covers all 103 ``tests/test_*.py`` files and their 395 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
@@ -58,6 +58,11 @@ Changes from the audit
   and angular rates. Export checks are software contracts. The browser star
   catalog is compared with Astropy's GCRS-to-TEME chain at two epochs to reject
   a duplicate frame rotation. See :doc:`spacecraft_view` for rendering limits.
+
+* Gallery publishing now routes all standard outputs into the selected site
+  directory and validates local links. ZIP relocation tests compare HTTP-served
+  bytes with literal assets. These are software contracts; they make no claim
+  about physical models or the fidelity of rendered images.
 
 Tolerance interpretation
 ------------------------
@@ -146,6 +151,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_conic_sampling.py,4,R1 R2,SSAPy Kepler propagation and Barker parabolic equation,Specified Kepler model
    tests/test_constants.py,4,R3 R2,IAU unit definitions; CODATA 2018; JPL mean elements; REBOUND units,Rounded orbital constants have explicit relative tolerances
    tests/test_coverage_site_geometry.py,1,R1,WGS84 ellipsoid equation; east/north/up cardinal geometry,Geometric visibility; no refraction model
+   tests/test_demo_gallery.py,6,C,Literal asset bytes served from an extracted ZIP over HTTP; deliberately invalid URLs,Publishing and status contracts only; no physical or pixel-fidelity claim
    tests/test_earth_zonal_harmonics.py,3,R1 R2 R5,Potential-gradient finite differences; SSAPy EGM96 coefficients; J2 limits,Finite difference budget and model constants explicit
    tests/test_eclipse_geometry.py,2,R3 R4,NASA 2024-04-08 Texas totality path; coordinate round trip,150 km and 90 s event bounds; not precision eclipse timing
    tests/test_eclipse_partial_shadow.py,1,R1,Constructed finite-Sun occultation geometry,Boolean geometry case only
