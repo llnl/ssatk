@@ -1,3 +1,4 @@
+# Exact cardinal angles: 1e-14 rad; 3-4-5 range-rate Jacobian: 1e-14 per SI derivative component.
 import numpy as np
 import pytest
 
@@ -18,7 +19,7 @@ def test_range_and_range_rate_use_relative_si_geometry(station, monkeypatch):
     assert station.predict(state, 0.0, "range").value == pytest.approx(5.0)
     prediction = station.predict(state, 0.0, "range_rate")
     assert prediction.value == pytest.approx(1.2)
-    np.testing.assert_allclose(prediction.jacobian, [[0.256, -0.192, 0, 0.6, 0.8, 0]])
+    np.testing.assert_allclose(prediction.jacobian, [[0.256, -0.192, 0, 0.6, 0.8, 0]], rtol=0, atol=1e-14)
 
 
 def test_az_el_and_ra_dec_wrap_and_visibility(station, monkeypatch):
@@ -39,8 +40,8 @@ def test_az_el_and_ra_dec_wrap_and_visibility(station, monkeypatch):
     state = np.array([1.0, -1.0, 1.0, 0.0, 0.0, 0.0])
     az_el = station.predict(state, 0.0, "az_el")
     ra_dec = station.predict(state, 0.0, "ra_dec")
-    np.testing.assert_allclose(az_el.value, [7 * np.pi / 4, 0.0])
-    np.testing.assert_allclose(ra_dec.value, [3 * np.pi / 2, np.pi / 4])
+    np.testing.assert_allclose(az_el.value, [7 * np.pi / 4, 0.0], rtol=0, atol=1e-14)
+    np.testing.assert_allclose(ra_dec.value, [3 * np.pi / 2, np.pi / 4], rtol=0, atol=1e-14)
     assert az_el.visible
     assert np.all(az_el.jacobian[:, 3:] == 0.0)
 

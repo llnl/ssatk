@@ -1,3 +1,4 @@
+# Prescribed linear interpolant: 1e-14 in each stated coordinate unit for float64 arithmetic.
 import importlib
 from types import SimpleNamespace
 import unittest
@@ -28,4 +29,4 @@ class RK4InputTests(unittest.TestCase):
             return np.array([t, 2 * t, 3 * t])
         with patch('ssapy.get_body', return_value=SimpleNamespace(position=position), create=True):
             interpolant = precompute_third_body_positions([0., 2.], 'moon')
-        np.testing.assert_allclose(interpolant([0.5, 1.5]), [[0.5, 1., 1.5], [1.5, 3., 4.5]])
+        np.testing.assert_allclose(interpolant([0.5, 1.5]), [[0.5, 1., 1.5], [1.5, 3., 4.5]], rtol=0, atol=1e-14)

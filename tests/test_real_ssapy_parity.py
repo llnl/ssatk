@@ -1,3 +1,4 @@
+# Direct acceleration-adapter comparisons allow 1e-15 m/s^2 absolute rounding only.
 """Final-behavior parity checks against the installed SSAPy implementation."""
 
 import numpy as np
@@ -28,7 +29,7 @@ def test_real_ssapy_accel_const_ntw_matches_ssatk_adapter():
     ssapy_accel = AccelConstNTW([2.5e-6, -1.25e-6, 3.0e-6])
     adapter = wrap_ssapy_acceleration(ssapy_accel)
 
-    np.testing.assert_allclose(adapter(r, v, 123.0), ssapy_accel(r, v, 123.0))
+    np.testing.assert_allclose(adapter(r, v, 123.0), ssapy_accel(r, v, 123.0), rtol=0, atol=1e-15)
     np.testing.assert_array_equal(adapter.time_breakpoints, ssapy_accel.time_breakpoints)
 
 

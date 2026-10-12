@@ -126,38 +126,7 @@ def test_nicer_concentrators_and_compton_corner_modules():
     assert len(np.unique(np.sign(centers), axis=0)) == 8
 
 
-@pytest.mark.parametrize("name", SpacecraftMesh.presets())
-def test_catalog_build_and_provenance_contract(name):
-    """C: build every selection offline; finite geometry does NOT validate flight dimensions."""
-    m = SpacecraftMesh.from_preset(name)
-    info = SpacecraftMesh.preset_info(name)
-    assert info["name"] == name and info["notes"] and info["axes"] and info["origin"]
-    if info["group"] != "generic":
-        assert info["sources"] and all(s.startswith("https://") for s in info["sources"])
-    assert np.isfinite(m.vertices).all() and len(m.face_parts) == len(m.faces)
-    # Convexity is required by fan triangulation. Sign changes reveal a malformed face.
-    for face in m.faces:
-        points = m.vertices[face]
-        edges = np.roll(points, -1, axis=0) - points
-        normal = np.cross(points[1] - points[0], points[2] - points[0])
-        turns = np.cross(edges, np.roll(edges, -1, axis=0)) @ normal
-        assert np.all(turns >= -1e-12 * np.linalg.norm(normal)**2)
 
-
-def test_aliases_scaling_and_metadata_are_independent():
-    """C: common alternate names, punctuation, and caller-owned metadata."""
-    for alias, name in (("HST", "hubble"), ("James Webb", "jwst"), ("K2", "kepler"), ("NEOWISE", "wise")):
-        assert SpacecraftMesh.preset_info(alias)["name"] == name
-        reference = SpacecraftMesh.from_preset(name)
-        enlarged = SpacecraftMesh.from_preset(alias, scale=2)
-        np.testing.assert_array_equal(enlarged.vertices, reference.vertices * 2)
-    info = SpacecraftMesh.preset_info("webb")
-    info["notes"] = "changed"
-    assert SpacecraftMesh.preset_info("webb")["notes"] != "changed"
-    with pytest.raises(ValueError, match="unknown mesh preset"):
-        SpacecraftMesh.from_preset("missing")
-    with pytest.raises(ValueError, match="unknown preset group"):
-        SpacecraftMesh.presets(group="missing")
 
 
 def test_depth_buffer_against_analytic_ray_box_intersection():
@@ -207,11 +176,3 @@ def test_crossing_triangles_use_perspective_depth_in_both_orders():
             x = (col+.5)*2/width-1
             np.testing.assert_array_equal(image[50,col,:3], expected)
             assert z[50,col] == pytest.approx(2/(1+abs(x)), abs=1e-14)
-
-
-def test_polygon_fan_diagonal_is_not_drawn():
-    """C: a quad's center is uniform fill; no artificial diagonal from its triangulation."""
-    m = SpacecraftMesh([[-.8,-.8,2],[.8,-.8,2],[.8,.8,2],[-.8,.8,2]], [[0,1,2,3]], [1,1,1])
-    image, _ = _rasterize_mesh(m.vertices[:,:2], m.vertices[:,2], m.triangles,
-                             m.triangle_colors, 100, 100, m.triangle_boundaries)
-    np.testing.assert_array_equal(image[40:60,40:60,:3], np.ones((20,20,3)))

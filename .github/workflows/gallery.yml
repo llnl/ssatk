@@ -44,6 +44,11 @@ jobs:
           node --check ssatk/plots/satellite_viewer_scene.js
           node --check ssatk/plots/satellite_viewer_smoketest.js
 
+      - name: Check publishing and export contracts
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest scripts/tests -q
+
       - name: Build demo gallery
         env:
           MPLBACKEND: Agg

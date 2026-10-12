@@ -27,8 +27,7 @@ def _demo(folder, source):
     return path
 
 
-@pytest.mark.parametrize("directory", ["site", "custom output/documents"])
-def test_published_zip_serves_real_assets_under_project_url(tmp_path, monkeypatch, directory):
+def test_published_zip_serves_real_assets_under_project_url(tmp_path, monkeypatch):
     """C: relocate the ZIP alone; HTTP bytes must equal literal fixture assets."""
     old_output = tmp_path / "unrelated-output"
     old_output.mkdir()
@@ -44,7 +43,7 @@ def main(make_figures=True, fast=False):
     Path(figpath("linked/view.html")).write_text('<link rel="stylesheet" href="style.css"><img src="image%20space%231.svg">')
     Path(figpath("linked/style.css")).write_text('body {{ background: url("image%20space%231.svg"); }}')
 ''')
-    output = tmp_path / directory
+    output = tmp_path / "custom output/documents.v1"
     results = run_all_demos(demos, output)
     assert [r.status for r in results] == ["success"]
     assert "figures/linked/image%20space%231.svg" in results[0].files
@@ -55,7 +54,7 @@ def main(make_figures=True, fast=False):
     # Serve only the archive at /ssatk/, with no access to the build tree.
     published = tmp_path / "published"
     relocated = published / "ssatk"
-    with zipfile.ZipFile(output.with_suffix(".zip")) as archive:
+    with zipfile.ZipFile(Path(str(output) + ".zip")) as archive:
         archive.extractall(relocated)
     validate_gallery(relocated)
     handler = partial(SimpleHTTPRequestHandler, directory=str(published))
@@ -152,3 +151,87 @@ def run(output_root):
     with pytest.raises(ValueError, match="missing-texture.png"):
         run_all_demos(demos, tmp_path / "site")
     assert not (tmp_path / "site.zip").exists()
+
+
+@pytest.mark.parametrize("entry", ["top_level", "run"])
+def test_demo_executes_once_with_named_fast_argument(tmp_path, entry):
+    """C: one append per execution; a path must never be passed as the fast flag."""
+    body = 'with (Path(os.environ["SSATK_OUTPUT_DIR"]) / "calls.txt").open("a") as f:\n    f.write("one call\\n")\n'
+    if entry == "run":
+        body = 'def run(fast=False):\n    assert fast is False\n' + ''.join('    '+line+'\n' for line in body.splitlines())
+    demo = _demo(tmp_path / "demos", 'from pathlib import Path\nimport os\n'+body)
+    result = run_demo_script(demo, tmp_path / "site", fast=False)
+    assert result.status == "success", result.error
+    assert (tmp_path / "site/calls.txt").read_text() == "one call\n"
+
+
+@pytest.mark.parametrize("stage", ["import", "entry"])
+def test_failure_preserves_output_for_diagnosis(tmp_path, stage):
+    """C: the message emitted before a failure must survive in the report/log."""
+    source = 'print("before failure")\nraise RuntimeError("fixture defect")\n'
+    if stage == "entry":
+        source = 'def main():\n' + ''.join('    '+line+'\n' for line in source.splitlines())
+    else:
+        source += 'def main(): pass\n'
+    result = run_demo_script(_demo(tmp_path / "demos", source), tmp_path / "site")
+    assert result.status == "failed" and "fixture defect" in result.error
+    assert result.stdout == "before failure"
+    assert (tmp_path / "site/logs/demo_portable_stdout.txt").read_text() == "before failure"
+
+
+@pytest.mark.parametrize("entry", [False, True])
+def test_timeout_includes_module_execution(tmp_path, entry):
+    """C: a slow top-level statement must be bounded before the entry is called."""
+    import signal
+    if entry and not hasattr(signal, "SIGALRM"):
+        pytest.skip("In-process entrypoint deadlines require Unix SIGALRM")
+    source = 'import time\ntime.sleep(10)\n' + ('def main(): pass\n' if entry else '')
+    result = run_demo_script(_demo(tmp_path / "demos", source), tmp_path / "site", timeout_seconds=.1)
+    assert result.status == "failed" and "Timeout" in result.error
+    assert result.runtime_seconds < 5  # generous scheduler margin; fixture sleeps 10 s
+
+
+@pytest.mark.parametrize("level", ["same", "parent"])
+def test_clean_build_cannot_delete_demo_sources(tmp_path, level):
+    """C: output/source overlap must be rejected before deleting user files."""
+    demos = tmp_path / "source/demos"
+    demo = _demo(demos, 'pass\n')
+    output = demos if level == "same" else demos.parent
+    with pytest.raises(ValueError, match="overlap|contains"):
+        run_all_demos(demos, output)
+    assert demo.read_text() == 'pass\n'
+
+
+def test_failed_rebuild_removes_stale_publishable_archive(tmp_path):
+    """C: a previous successful ZIP must not masquerade as the new failed build."""
+    demos, site = tmp_path / "demos", tmp_path / "site"
+    _demo(demos, 'def main(): pass\n')
+    run_all_demos(demos, site)
+    assert (tmp_path / "site.zip").is_file()
+    _demo(demos, 'def main(): raise RuntimeError("new defect")\n')
+    results = run_all_demos(demos, site)
+    assert results[0].status == "failed"
+    assert not (tmp_path / "site.zip").exists()
+
+
+@pytest.mark.parametrize("css_url", ['"image space.png"', r"image\ space.png", r"image\20 space.png"])
+def test_css_quoted_spaces_and_comments_are_handled(tmp_path, css_url):
+    """C: CSS permits whitespace in quoted URLs and ignores comments."""
+    (tmp_path / "index.html").write_text('<style>/* url("ignored.png") */ body {content: "url(also-ignored.png)"; background:url(' + css_url + ')}</style>')
+    with pytest.raises(ValueError, match="Missing asset"):
+        validate_gallery(tmp_path)
+    (tmp_path / "image space.png").write_bytes(b'fixture')
+    assert validate_gallery(tmp_path)["local_references_checked"] == 1
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="Symlink privileges are not assumed on Windows")
+def test_validator_rejects_directory_symlinks_omitted_by_zip(tmp_path):
+    """C: a linked directory is accessible locally but is not traversed by make_archive."""
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "assets").mkdir()
+    (site / "assets/image.png").write_bytes(b"fixture")
+    (site / "alias").symlink_to(site / "assets", target_is_directory=True)
+    (site / "index.html").write_text('<img src="alias/image.png">')
+    with pytest.raises(ValueError, match="Symlink"):
+        validate_gallery(site)

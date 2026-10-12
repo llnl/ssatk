@@ -15,7 +15,22 @@ import re
 from urllib.parse import unquote, urlsplit
 
 
-_CSS_URL = re.compile(r"url\(\s*['\"]?([^\s)'\"]+)['\"]?\s*\)", re.I)
+_CSS_URL = re.compile(r"""url\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|((?:\\(?:[0-9a-fA-F]{1,6}\s?|[^\r\n\f])|[^\s)'"\\])+))\s*\)""", re.I)
+_CSS_TOKEN = re.compile(
+    r"/\*.*?\*/|" + _CSS_URL.pattern + r"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""", re.S | re.I)
+_CSS_ESCAPE = re.compile(r"\\([0-9a-fA-F]{1,6}\s?|[^\r\n\f])")
+
+
+def _css_urls(css):
+    # Tokenize comments/ordinary strings too, so their text is never read as a URL.
+    def unescape(match):
+        value = match[1]
+        if re.fullmatch(r"[0-9a-fA-F]{1,6}\s?", value):
+            code = int(value.strip(), 16)
+            return chr(code) if 0 < code <= 0x10ffff else "\ufffd"
+        return value
+    return [_CSS_ESCAPE.sub(unescape, next(group for group in match.groups() if group is not None))
+            for match in _CSS_TOKEN.finditer(css) if any(group is not None for group in match.groups())]
 
 
 class _Links(HTMLParser):
@@ -34,7 +49,7 @@ class _Links(HTMLParser):
                 self.urls.append(attrs[key])
         if tag == "object" and attrs.get("data"):
             self.urls.append(attrs["data"])
-        self.urls.extend(_CSS_URL.findall(attrs.get("style", "")))
+        self.urls.extend(_css_urls(attrs.get("style", "")))
         if tag == "style":
             self.in_style = True
 
@@ -44,7 +59,7 @@ class _Links(HTMLParser):
 
     def handle_data(self, data):
         if self.in_style:
-            self.urls.extend(_CSS_URL.findall(data))
+            self.urls.extend(_css_urls(data))
 
 
 def validate_gallery(root: str | Path) -> dict:
@@ -82,7 +97,11 @@ def validate_gallery(root: str | Path) -> dict:
 
     if not (root / "index.html").is_file():
         errors.append("Missing site entry point: index.html")
-    files = sorted(p for p in root.rglob("*") if p.is_file())
+    entries = sorted(root.rglob("*"))
+    for path in entries:
+        if path.is_symlink():
+            errors.append(f"Symlinks are not portable gallery assets: {path.relative_to(root)}")
+    files = [p for p in entries if p.is_file()]
     for path in files:
         if not path.resolve().is_relative_to(root):
             errors.append(f"File escapes site through a symlink: {path.relative_to(root)}")
@@ -96,7 +115,7 @@ def validate_gallery(root: str | Path) -> dict:
             for url in parser.urls:
                 check(path, url)
         elif path.suffix.lower() == ".css":
-            for url in _CSS_URL.findall(path.read_text(encoding="utf-8")):
+            for url in _css_urls(path.read_text(encoding="utf-8")):
                 check(path, url)
     manifest = root / "manifest.json"
     if manifest.is_file():

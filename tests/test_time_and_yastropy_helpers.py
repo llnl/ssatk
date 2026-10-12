@@ -1,3 +1,4 @@
+# Specified rigid-Earth cross product: 1e-10 m/s absolute arithmetic budget; not measured velocity.
 import numpy as np
 from astropy.time import Time
 
@@ -20,4 +21,4 @@ def test_astropy_llh_gcrf_roundtrip_and_surface_velocity():
     assert r_surface.shape == (3,)
     assert v_surface.shape == (3,)
     assert np.isclose(np.linalg.norm(r_surface), 6_378_137.0, rtol=0, atol=1e-6)
-    np.testing.assert_allclose(v_surface, np.cross([0.0, 0.0, 7.2921150e-5], r_surface))
+    np.testing.assert_allclose(v_surface, np.cross([0.0, 0.0, 7.2921150e-5], r_surface), rtol=0, atol=1e-10)

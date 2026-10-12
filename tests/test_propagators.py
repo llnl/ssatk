@@ -1,3 +1,4 @@
+# Central-gravity Jacobian: 2e-14 relative; copied epochs and initial wheel momentum: exact.
 
 import numpy as np
 
@@ -74,7 +75,7 @@ def test_kepler_stm_jacobian_matches_central_gravity_derivative():
         np.eye(3) / radius**3 - 3.0 * np.outer(r, r) / radius**5
     )
 
-    np.testing.assert_allclose(_kepler_jacobian(r, EARTH_MU), expected)
+    np.testing.assert_allclose(_kepler_jacobian(r, EARTH_MU), expected, rtol=2e-14, atol=0)
 
 
 def test_high_accuracy_spacecraft_segments_chain_state_and_mass(gps_epoch):
@@ -106,7 +107,7 @@ def test_high_accuracy_spacecraft_segments_chain_state_and_mass(gps_epoch):
         ],
     )
 
-    np.testing.assert_allclose(trajectory.t, gps_epoch + np.array([0.0, 1.0, 2.0]))
+    np.testing.assert_array_equal(trajectory.t, gps_epoch + np.array([0.0, 1.0, 2.0]))
     assert trajectory.mass is not None
     # SI standard gravity is defined as 9.80665 m/s^2. A one-second 1 N burn
     # consumes F/(Isp*g0) kg; the rocket equation supplies the velocity oracle.
@@ -142,7 +143,7 @@ def test_high_accuracy_spacecraft_segments_preserve_wheel_momentum(gps_epoch):
     )
 
     assert trajectory.wheel_momentum.shape == (3, 3)
-    np.testing.assert_allclose(trajectory.wheel_momentum[0], [0.0, 0.0, 0.0])
+    np.testing.assert_array_equal(trajectory.wheel_momentum[0], [0.0, 0.0, 0.0])
     # The internal actuator transfers equal and opposite angular momentum.
     np.testing.assert_allclose(trajectory.wheel_momentum[-1], [0, 0, -.03], atol=1e-10, rtol=0)
     # A 0.1 m cubic bus of mass 10 kg has Izz=m*a^2/6.

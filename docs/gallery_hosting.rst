@@ -10,6 +10,12 @@ installed, including the ``dev`` and ``all-data`` extras:
    python -m ssatk.gallery_validation site
    python -m http.server --directory site 8000
 
+The output directory must be separate from the demo source tree; a build
+refuses to clean a source directory or one of its parents. Use a dedicated
+output directory: existing contents are removed unless ``--no-clean`` is set.
+A rebuild removes the previous adjacent ZIP first and creates a replacement
+only if all demos and link checks succeed (explicit optional skips are allowed).
+
 Open ``http://localhost:8000/`` to preview. Upload the entire ``site`` directory,
 or extract the adjacent ``site.zip`` onto a static host. The gallery includes
 search and category filters, image previews, animation controls, downloadable
@@ -45,20 +51,26 @@ Generation checks local references before writing the ZIP, and CI repeats the
 check before uploading the Pages artifact. The validator checks HTML
 ``href``, ``src`` and ``poster`` attributes, object data, CSS ``url(...)``
 references and the manifest. Missing files, paths escaping the site, and
-root-relative URLs fail validation. Nested HTML exports are checked as well.
+root-relative URLs and symbolic links fail validation. Nested HTML exports are checked as well.
 This supports hosting under a project subpath such as ``/ssatk/``.
 
 The validator does not execute JavaScript, check dynamically constructed URLs,
 resolve ``srcset`` or CSS imports, or contact external services. External URL
 dependencies are listed in its report and can still require Internet access.
 It is a packaging check, not validation of rendered pixels or physical results.
-The regression suite also serves an extracted ZIP from a different directory
+The separate workflow suite, ``python -m pytest scripts/tests -q``, also serves an extracted ZIP from a different directory
 under ``/ssatk/`` and checks actual HTTP responses against literal asset bytes.
 
 Demos that explicitly report missing optional data or software are labeled
 ``skipped`` with their reason. Failed demos remain failures and make the CLI
 return a nonzero status, preventing publication. Internal exceptions are never
-used to retry a demo with different arguments. Missing high-resolution Moon
+used to retry a demo with different arguments. Demos with a top-level ``def run``
+or ``def main`` are imported once and called using recognized parameter names
+(``output_dir``/``output_root``, ``make_figures``, ``fast``, ``verbose``).
+Other scripts execute once as ``__main__``. Their subprocess deadlines work
+across platforms; imported function demos use Unix SIGALRM, including imports,
+and must run on the main thread. That deadline is unavailable on Windows.
+Output preceding an exception remains in the diagnostic logs. Missing high-resolution Moon
 maps or external benchmark tools are not evidence of successful rendering or
 physical validation.
 

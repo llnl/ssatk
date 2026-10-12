@@ -499,8 +499,19 @@ class SpacecraftView:
         if not geom["sun_center_visible"]:
             light *= 0
         colors = np.clip(self.mesh.triangle_colors * (0.28 + 0.72 * light[:, None]), 0, 1)
-        pixels, _ = _rasterize_mesh(uv, depth, tri, colors, width, height,
+        pixels, mesh_depth = _rasterize_mesh(uv, depth, tri, colors, width, height,
                                     self.mesh.triangle_boundaries)
+        # Compare distance along each mesh pixel's ray with foreground bodies.
+        # Raster depth is camera Z; sphere intersections are distance along a unit ray.
+        rows, cols = np.nonzero(pixels[..., 3])
+        rays = np.column_stack((((cols + .5) * 2 / width - 1) * tan_x,
+                                (1 - (rows + .5) * 2 / height) * tan_y,
+                                np.ones(len(rows)))) @ basis
+        lengths = np.linalg.norm(rays, axis=1)
+        distances = mesh_depth[rows, cols] * lengths
+        for _, center, radius in self._bodies(i):
+            hidden = _ray_sphere(rays / lengths[:, None], center - eye, radius) < distances
+            pixels[rows[hidden], cols[hidden], 3] = 0
         ax.imshow(pixels, extent=(-1, 1, -1, 1), aspect="auto",
                   interpolation="nearest", zorder=3)
         origin = _project(-offset, basis, tan_x, tan_y)[0]
@@ -573,7 +584,8 @@ class SpacecraftView:
 
         Still images use ``index``. Animations resample uniformly in physical time
         to ``round(fps * duration_s)`` frames, including both endpoints. Duration is
-        playback seconds, not simulated seconds. GIF timing has 10 ms quantization.
+        playback seconds, not simulated seconds. GIF delays distribute 10 ms ticks
+        without cumulative rounding drift; GIF fps must be <= 100.
         MP4 requires the optional imageio-ffmpeg package and even image dimensions.
         """
         from PIL import Image
@@ -589,13 +601,17 @@ class SpacecraftView:
         if (not np.isfinite(fps) or not np.isfinite(duration_s)
                 or fps <= 0 or duration_s <= 0 or len(self.gps) < 2):
             raise ValueError("animations need at least two samples and positive fps/duration_s")
+        if suffix == ".gif" and fps > 100:
+            raise ValueError("GIF supports at most 100 fps (10 ms minimum frame delay)")
         count = max(2, int(round(fps * duration_s)))
         sequence = self.resample(np.linspace(self.gps[0], self.gps[-1], count))
         if suffix == ".gif":
             frames = [Image.fromarray(sequence.render(j, **render_kwargs)).convert(
                 "P", palette=Image.Palette.ADAPTIVE) for j in range(count)]
+            ticks = np.rint(np.arange(count + 1) * 100 / fps).astype(int)
+            delays = (np.diff(ticks) * 10).tolist()
             frames[0].save(path, save_all=True, append_images=frames[1:], loop=0,
-                           duration=round(1000 / fps), disposal=2, optimize=False)
+                           duration=delays, disposal=2, optimize=False)
         else:
             import imageio.v2 as imageio
             if any(render_kwargs.get(key, default) % 2 for key, default in (("width", 1200), ("height", 800))):

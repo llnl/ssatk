@@ -1,3 +1,4 @@
+# Literal encounter velocity/covariance algebra: 1e-14 m/s or m^2 absolute float64 budget.
 from types import SimpleNamespace
 
 import numpy as np
@@ -48,7 +49,7 @@ def test_screen_and_refine_constant_relative_motion():
     assert refined.time == pytest.approx(refined.tca)
     assert refined.distance == pytest.approx(refined.miss_distance)
     np.testing.assert_allclose(refined.relative_position, 0.0, atol=1e-8, rtol=0)
-    np.testing.assert_allclose(refined.relative_velocity, [-1, 0, 0])
+    np.testing.assert_allclose(refined.relative_velocity, [-1, 0, 0], rtol=0, atol=1e-14)
 
 
 def test_relative_encounter_covariance_projection_and_cross_covariance():
@@ -56,14 +57,12 @@ def test_relative_encounter_covariance_projection_and_cross_covariance():
     covariance_a = np.diag([1.0, 2.0, 3.0])
     covariance_b = np.diag([4.0, 5.0, 6.0])
     np.testing.assert_allclose(
-        relative_encounter_covariance(covariance_a, covariance_b, basis), np.diag([5.0, 7.0])
-    )
+        relative_encounter_covariance(covariance_a, covariance_b, basis), np.diag([5.0, 7.0]), rtol=0, atol=1e-14)
     np.testing.assert_allclose(
         relative_encounter_covariance(
             covariance_a, covariance_b, basis, cross_covariance=np.diag([0.5, 0.5, 0.5])
         ),
-        np.diag([4.0, 6.0]),
-    )
+        np.diag([4.0, 6.0]), rtol=0, atol=1e-14)
     with pytest.raises(ValueError, match="orthonormal"):
         relative_encounter_covariance(covariance_a, covariance_b, np.ones((3, 2)))
     with pytest.raises(ValueError, match="positive semidefinite"):

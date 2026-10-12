@@ -1,68 +1,68 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Compare SSATK/SSAPy geodetic ground tracks with Astropy GCRS/ITRS/WGS84.
 
+The circular inclined trajectory is prescribed, not flight tracking data.
+The two Earth-orientation models differ: SSAPy uses IAU 1976/1980, while
+Astropy uses IAU 2006/2000A. The 0.5 arcsec angular budget follows the
+independent frame comparisons in tests/test_plot_earth_rotation.py.
 """
-Best-effort pytest-safe wrapper around the existing groundtrack-vs-benchmark demo.
-
-Context for this file is partial, so this reconstruction focuses on:
-- keeping the entry points
-- keeping figure saving only in demo mode
-"""
-
-import os
-import sys
 from pathlib import Path
+import json
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-import numpy as np
+import astropy.units as u
+from astropy.coordinates import CartesianRepresentation, EarthLocation, GCRS, ITRS
+from astropy.time import Time
 import matplotlib.pyplot as plt
+import numpy as np
 
+from ssatk.constants import EARTH_MU
+from ssatk.coordinates.sky import gcrf_to_lat_lon
 from ssatk.plots.figpath import figpath
 
-UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
+TITLE = "Ground track: SSATK versus Astropy"
+DESCRIPTION = "Prescribed 7000 km circular orbit; independent GCRS/ITRS/WGS84 comparison, not flight data."
 
 
-def make_groundtrack_image(make_figures=True):
-    # Placeholder/calibrated benchmark image generation path from context
-    dlon = np.array([0.0, 0.01, -0.01])
-    dlat = np.array([0.0, 0.02, -0.02])
-
-    plt.figure()
-    plt.plot(dlon, dlat, marker="o")
-    plt.xlabel("Δlon [deg]")
-    plt.ylabel("Δlat [deg]")
-    plt.title("Groundtrack vs benchmark")
-
-    rms_dlon = np.sqrt(np.mean(dlon * dlon))
-    rms_dlat = np.sqrt(np.mean(dlat * dlat))
-    txt = (
-        f"RMS dlon={rms_dlon:.4f} deg\n"
-        f"RMS dlat={rms_dlat:.4f} deg\n"
-        f"max dlon={dlon.max():.4f} deg\n"
-        f"max dlat={dlat.max():.4f} deg"
-    )
-    plt.text(-0.02, -0.02, txt, fontsize=8, bbox=dict(boxstyle="round", facecolor="white", alpha=0.6, linewidth=0.5))
-
+def main(make_figures=True, fast=True):
+    radius = 7e6
+    period = 2 * np.pi * np.sqrt(radius**3 / EARTH_MU)
+    seconds = np.linspace(0, period, 91 if fast else 721)
+    epoch = Time("2019-03-01T06:00:00", scale="utc")
+    times = epoch + seconds * u.s
+    angle = 2 * np.pi * seconds / period
+    inclination = np.deg2rad(53)
+    r = radius * np.column_stack((np.cos(angle), np.sin(angle)*np.cos(inclination),
+                                 np.sin(angle)*np.sin(inclination)))
+    lon, lat, height = gcrf_to_lat_lon(r, times.gps)
+    itrs = GCRS(CartesianRepresentation(*(r.T*u.m)), obstime=times).transform_to(ITRS(obstime=times))
+    reference = EarthLocation.from_geocentric(*itrs.cartesian.xyz).to_geodetic("WGS84")
+    dlon = (np.asarray(lon) - reference.lon.to_value(u.rad) + np.pi) % (2*np.pi) - np.pi
+    dlat = np.asarray(lat) - reference.lat.to_value(u.rad)
+    errors = np.degrees(np.column_stack((dlon, dlat))) * 3600
+    dh = np.asarray(height) - reference.height.to_value(u.m)
+    metrics = {"reference": "Astropy GCRS/ITRS/WGS84", "trajectory": "prescribed circular orbit, not flight data",
+               "samples": len(times), "max_lon_arcsec": float(np.max(np.abs(errors[:,0]))),
+               "max_lat_arcsec": float(np.max(np.abs(errors[:,1]))), "max_height_m": float(np.max(np.abs(dh))),
+               "angular_budget_arcsec": .5, "height_budget_m": .1}
+    # 0.1 m height allows ellipsoid-height differences from the orientation
+    # model at this radius (rotation preserves geocentric radius).
+    if np.max(np.abs(errors)) > .5 or np.max(np.abs(dh)) > .1:
+        raise AssertionError(f"Independent ground-track reference exceeded its budget: {metrics}")
+    print(json.dumps(metrics, indent=2))
     if make_figures:
-        outpath = figpath("gcrf_to_lonlat_groundtrack_vs_benchmark.png")
-        plt.tight_layout()
-        plt.savefig(outpath, dpi=200)
-        print(f"ok: ground track image (with calibrated benchmark) saved -> {outpath}")
-    plt.close()
-
-
-def run_tests():
-    return True
-
-
-def demo(make_figures=True):
-    make_groundtrack_image(make_figures=make_figures)
-    return True
+        figure, axes = plt.subplots(2, 1, figsize=(9, 6), sharex=True)
+        axes[0].plot(seconds/60, errors[:,0], label="Longitude")
+        axes[0].plot(seconds/60, errors[:,1], label="Latitude")
+        axes[0].set(ylabel="SSATK − Astropy [arcsec]", title=TITLE)
+        axes[0].legend()
+        axes[1].plot(seconds/60, dh)
+        axes[1].set(xlabel="Elapsed time [min]", ylabel="Height difference [m]")
+        figure.suptitle("Prescribed orbit; independent model comparison")
+        figure.tight_layout()
+        figure.savefig(figpath("gcrf_to_lonlat_groundtrack_vs_benchmark.png"), dpi=160)
+        plt.close(figure)
+        Path(figpath("gcrf_to_lonlat_reference.json")).write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    return {"title": TITLE, "description": DESCRIPTION}
 
 
 if __name__ == "__main__":
-    run_tests()
-    demo(make_figures=not UNDER_PYTEST)
+    main()
