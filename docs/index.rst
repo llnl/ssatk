@@ -30,6 +30,7 @@ body and component model.
    :caption: Contents:
 
    usage
+   spacecraft_view
    benchmarking_ssatk
    test_reference_audit
    design/6dof_architecture

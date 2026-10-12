@@ -1,7 +1,7 @@
 Test reference audit
 ====================
 
-This audit covers all 99 ``tests/test_*.py`` files and their 360 test
+This audit covers all 101 ``tests/test_*.py`` files and their 373 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
@@ -53,6 +53,11 @@ Changes from the audit
 * Earth orientation and CDM frame conversion gain independent ERFA matrix
   comparisons. Nadir and ecliptic tests check actual axis directions as well
   as orthogonality or inverse round trips.
+* Spacecraft-view geometry is checked against exact rotations, translations,
+  pinhole projection, spherical limbs and occultations, and prescribed linear
+  and angular rates. Export checks are software contracts. The browser star
+  catalog is compared with Astropy's GCRS-to-TEME chain at two epochs to reject
+  a duplicate frame rotation. See :doc:`spacecraft_view` for rendering limits.
 
 Tolerance interpretation
 ------------------------
@@ -210,6 +215,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_satellite_frames.py,5,R1 R4,Known circular/local axes and 90 degree quaternions,Eccentric nadir/NTW independently anchored in review regressions
    tests/test_segment_dense_output.py,2,R1 C,Free-flight positions and pre/post impulse velocity jump,Known piecewise time convention
    tests/test_spacecraft_force_models.py,7,R1,Closed-form gravity gradient; drag; SRP; facet forces/torques; exponential density,Specified ideal force models
+   tests/test_spacecraft_view.py,12,R1 C,Quarter-turn and center-of-mass geometry; spherical occultation/limb; pinhole projection; constant-rate interpolation,Illustrative spherical lighting; export contracts are separate from physical references
    tests/test_ssa_conjunction.py,4,R1 R2 R4,Linear TCA; covariance algebra; dense cubic minimum; chi-square disk probability,Anisotropic absolute probability independently cubature-checked in review tests
    tests/test_starfield_epochs.py,1,R2 R3,Astropy leap-second time conversion,Epoch contract
    tests/test_state_to_kepler.py,3,R1 R2,SSAPy elements/state conversion and known conic invariants,Specified conics
@@ -224,6 +230,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_tle_iter_pairs.py,1,C,Literal validated-checksum TLE line/name records,Serialization contract only
    tests/test_transfer_optimal.py,1,R1,Analytic Hohmann cost and transfer time,Selected coplanar circular case; not proof of general global optimality
    tests/test_two_body_closed_forms.py,2,R1,Vis-viva apsidal speeds and haversine great-circle distance,Ideal two-body/spherical models
+   tests/test_viewer_star_reference.py,1,R2 R6,Astropy GCRS-to-TEME sky at 2008 and 2026 epochs,0.5 arcsec transform/serialization budget; catalog astrometry itself is not recalibrated
 
 The inventory is a review record, not a proof of completeness over all
 possible inputs. Revisit it when adding tests, changing conventions, updating
