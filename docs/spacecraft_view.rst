@@ -19,7 +19,7 @@ Input conventions
 * ``q``: body-to-GCRF quaternions ``[w, x, y, z]``, shape ``(N, 4)``, or
   one constant quaternion. Nonzero finite inputs are normalized. Attitude is
   supplied by the caller; the view does not infer it from orbital velocity.
-* ``mesh``: an optional preset name (``"starlink"``, ``"cubesat"``, ``"boxwing"``),
+* ``mesh``: an optional preset name (e.g. ``"starlink"``, ``"cubesat"``, ``"hubble"``),
   or ``SpacecraftMesh`` with body-frame vertices in **metres**, indexed
   faces, and optional per-face RGB colors. Mesh origin and scale are preserved.
   Triangular and convex polygon faces are supported. Alternatively, pass a
@@ -54,6 +54,10 @@ Built-in meshes and custom geometry
 No mesh file is required. Omitting both ``mesh`` and ``body`` uses the
 ``starlink`` preset. Select another shape with ``mesh="cubesat"`` or
 ``mesh="boxwing"``. ``SpacecraftMesh.presets()`` lists the available names.
+The complete :doc:`spacecraft_presets` includes historical observatories, small
+missions, NASA partner missions and hosted instruments, with sources and
+per-model approximation notes. ``SpacecraftMesh.preset_info(name)`` exposes
+those notes in Python; ``presets(group="small")`` filters the catalog.
 
 .. list-table:: Illustrative preset geometry (body-frame metres)
    :header-rows: 1
@@ -65,8 +69,8 @@ No mesh file is required. Omitting both ``mesh`` and ``body`` uses the
      - 2.8 x 1.4 x 0.18
      - Two 2.8 x 4.0 wings extending along +/-Y
    * - ``cubesat``
-     - 0.10 x 0.10 x 0.30
-     - Colored body-mounted panels; no deployed wings
+     - 0.10 x 0.10 x 0.3405
+     - Four corner rails and recessed body-mounted cells; no deployed wings
    * - ``boxwing``
      - 1.2 x 1.0 x 0.8
      - Two 2.0 x 1.4 wings extending along +/-X
@@ -75,12 +79,18 @@ These are schematic viewing templates. The ``starlink`` silhouette is inspired
 by the flat bus and dual arrays shown in `SpaceX's Starlink technology overview
 <https://www.starlink.com/technology>`_; the dimensions above are chosen for this
 illustration, not measured or manufacturer-validated dimensions for a Starlink
-generation. The CubeSat shape uses SSATK's simple ``SpacecraftBody.cubesat(3)``
-box convention, not a detailed deployer specification. Presets do not define
-flight mass, inertia, drag, or radiation-pressure parameters.
+generation. The revised CubeSat uses the 100 x 100 x 340.5 mm 3U envelope
+from `NASA's SmallSat structures table
+<https://www.nasa.gov/smallsat-institute/sst-soa/structures-materials-and-mechanisms/>`_.
+Its rails and solar-cell details remain illustrative; this is not a qualified
+deployer design. The physical ``SpacecraftBody.cubesat`` constructor is unchanged.
+Presets do not define flight mass, inertia, drag, or radiation-pressure parameters.
 
-The preset origin is the bus center. Deployed arrays lie in the body XY plane
-with +Z normals; they remain rigid and do not automatically track the Sun.
+The three generic templates use the bus center as origin. Their deployed
+arrays lie in the body XY plane with +Z normals. Telescope presets have
+mission-specific visual axes and construction origins documented in the catalog;
+none provides a measured center of mass or flight attitude frame. All shapes
+remain rigid and do not automatically track the Sun.
 The supplied quaternion rotates the whole mesh. Selection of a preset does not
 change the supplied orbit or attitude. To resize a preset, pass
 ``SpacecraftMesh.from_preset("starlink", scale=2.0)`` as ``mesh``; this doubles
@@ -157,8 +167,11 @@ Lighting is illustrative Lambertian shading with an ambient floor, not a
 calibrated radiance or solar-radiation-pressure result. Sun-center occultation
 uses a point source and spherical bodies; no penumbra fraction, self-shadowing,
 terrain relief, atmospheric refraction, or multiple reflection is modeled.
-Mesh triangles use depth sorting, so intersecting geometry may render
-incorrectly. Celestial backgrounds are ray-sampled at up to 720 pixels high
+Mesh visibility uses a CPU depth buffer with perspective-correct reciprocal
+depth interpolation at pixel centers. Polygon outlines exclude artificial
+fan-triangulation diagonals. Only opaque surfaces are supported; exact coplanar
+faces have ambiguous visibility, and sub-pixel features can alias. Celestial
+backgrounds are ray-sampled at up to 720 pixels high
 and enlarged for export; output dimensions are not a claim of surface detail.
 The star catalog uses GCRF directions evaluated at the first input epoch;
 proper motion across the animation and relativistic light effects are omitted.
@@ -172,6 +185,11 @@ decoding and timing tests are labeled export contracts, not physical validation.
 Preset tests compare envelopes and surface areas with the stated rectangular
 prisms and panels, including squared area scaling. These checks validate the
 template geometry, not its agreement with real spacecraft measurements.
+``tests/test_spacecraft_presets.py`` separately checks the NASA 3U envelope and
+selected published observatory dimensions/component counts. The depth buffer
+is compared with independent analytic ray-box intersections and intersecting
+planes in both drawing orders. Catalog build tests are software contracts,
+not physical validation of the schematic mission family models.
 ``tests/test_viewer_star_reference.py`` compares the existing browser viewer's
 exported sky with Astropy's independent GCRS-to-TEME transformation to 0.5 arcsec
 at two epochs. It rejects the former duplicate TEME rotation.
@@ -187,3 +205,8 @@ The demo exports Earth and Moon PNG/GIF scenes with the default Starlink-like
 mesh using specified circular arcs and body spin. ``example_view(mesh="cubesat")``
 selects another preset; ``example_view(mesh=example_mesh())`` demonstrates a
 custom bus and panels. These are analytic illustrations, not measured flight data.
+
+.. toctree::
+   :maxdepth: 1
+
+   spacecraft_presets

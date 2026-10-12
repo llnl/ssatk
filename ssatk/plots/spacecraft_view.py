@@ -51,12 +51,14 @@ class SpacecraftMesh:
 
     Coordinates retain their physical size and origin: no centering or automatic
     normalization is applied. ``colors`` is one RGB triple per face, or one
-    shared triple. Convex polygons are triangulated as a fan for rendering.
+    shared triple. ``face_parts`` optionally supplies a name for each face.
+    Convex polygons are triangulated as a fan for rendering.
     """
 
     vertices: np.ndarray
     faces: object
     colors: object = (0.64, 0.72, 0.79)
+    face_parts: object = None
 
     def __post_init__(self):
         self.vertices = np.asarray(self.vertices, dtype=float).copy()
@@ -73,11 +75,17 @@ class SpacecraftMesh:
         if not faces:
             raise ValueError("mesh must have faces")
         self.faces = tuple(faces)
+        if self.face_parts is None:
+            self.face_parts = ("surface",) * len(faces)
+        else:
+            self.face_parts = tuple(self.face_parts)
+            if len(self.face_parts) != len(faces) or not all(isinstance(p, str) for p in self.face_parts):
+                raise ValueError("face_parts must contain one string per face")
         self.colors = _track(self.colors, len(faces), 3, "colors")
         if np.any((self.colors < 0) | (self.colors > 1)):
             raise ValueError("RGB colors must lie in [0, 1]")
-        triangles, colors = [], []
-        for face, color in zip(self.faces, self.colors):
+        triangles, colors, boundaries, triangle_faces = [], [], [], []
+        for face_index, (face, color) in enumerate(zip(self.faces, self.colors)):
             for j in range(1, len(face) - 1):
                 triangle = [face[0], face[j], face[j + 1]]
                 a, b, c = self.vertices[triangle]
@@ -85,38 +93,43 @@ class SpacecraftMesh:
                     raise ValueError("mesh contains a degenerate triangle")
                 triangles.append(triangle)
                 colors.append(color)
+                # Edges opposite each triangle vertex. Hide fan diagonals.
+                boundaries.append((True, j == len(face) - 2, j == 1))
+                triangle_faces.append(face_index)
         self.triangles = np.asarray(triangles, dtype=int)
         self.triangle_colors = np.asarray(colors)
+        self.triangle_boundaries = np.asarray(boundaries, dtype=bool)
+        self.triangle_faces = np.asarray(triangle_faces, dtype=int)
 
     @staticmethod
-    def presets():
+    def presets(group=None):
         """Return the built-in visual mesh names; no files are required."""
-        return ("starlink", "cubesat", "boxwing")
+        from .spacecraft_presets import preset_names
+        return preset_names(group)
+
+    @staticmethod
+    def preset_info(name):
+        """Return source links, fidelity, visual axes and approximation notes."""
+        from .spacecraft_presets import preset_info
+        return preset_info(name)
 
     @classmethod
     def from_preset(cls, name="starlink", *, scale=1.0):
         """Build an illustrative mesh in metres, optionally scaled uniformly.
 
-        ``starlink`` is a schematic flat bus with two deployed solar wings;
-        ``cubesat`` is a simple 3U-shaped bus; ``boxwing`` has a rectangular
-        bus and two wings. These are visual templates, not measured vehicle
-        dimensions or mass/force models. The origin is the bus center, +Z is
-        the panel normal, and the arrays are rigid. See the guide for sizes.
+        These rigid visual templates are not engineering, optical or force
+        models. ``preset_info(name)`` documents sources, approximation limits
+        and visual body axes for each mission. No assets are downloaded.
         """
         from ssatk.satellites import SpacecraftBody
+        from .spacecraft_presets import build_preset
 
-        if not isinstance(name, str) or name.strip().lower() not in cls.presets():
-            raise ValueError(f"unknown mesh preset {name!r}; choose from {', '.join(cls.presets())}")
+        name = cls.preset_info(name)["name"]
         if not np.isfinite(scale) or scale <= 0:
             raise ValueError("scale must be a positive dimensionless factor")
-        name = name.strip().lower()
-        if name == "cubesat":
-            mesh = cls.from_body(SpacecraftBody.cubesat(units=3))
-            # Four long faces represent body-mounted solar panels.
-            for i, face in enumerate(mesh.faces):
-                if np.ptp(mesh.vertices[face, 2]) > 0:
-                    mesh.colors[i] = (0.12, 0.27, 0.48)
-            return cls(mesh.vertices * scale, mesh.faces, mesh.colors)
+        if name not in ("starlink", "boxwing"):
+            model = build_preset(name)
+            return cls(np.asarray(model.vertices) * scale, model.faces, model.colors, model.parts)
 
         size = (2.8, 1.4, 0.18) if name == "starlink" else (1.2, 1.0, 0.8)
         bus = cls.from_body(SpacecraftBody.box(mass=1.0, size=size))
@@ -211,6 +224,53 @@ def _ray_sphere(directions, center, radius):
     discriminant = radius**2 - np.sum(perpendicular**2, axis=-1)
     distance = along - np.sqrt(np.maximum(discriminant, 0))
     return np.where((discriminant >= 0) & (distance > 0), distance, np.inf)
+
+
+def _rasterize_mesh(uv, depth, triangles, colors, width, height, boundaries=None):
+    """CPU depth-buffer rasterization at pixel centers; camera depth is in metres.
+
+    Interpolate reciprocal depth in screen space to obtain perspective-correct
+    visibility. Mean triangle distance cannot resolve even a long convex box.
+    Optional boundary edges exclude artificial polygon triangulation diagonals.
+    The view's camera restrictions keep all mesh vertices in front of the eye.
+    """
+    pixels = (np.asarray(uv) * [1, -1] + 1) * [width / 2, height / 2]
+    image = np.zeros((height, width, 4), dtype=np.float32)
+    zbuffer = np.full((height, width), np.inf)
+    for i, triangle in enumerate(triangles):
+        z = depth[triangle]
+        if np.any(z <= 0):
+            continue
+        a, b, c = pixels[triangle]
+        denominator = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+        if abs(denominator) < 1e-12:
+            continue  # Edge-on or sub-pixel area.
+        lo = np.maximum(np.floor(np.min([a, b, c], axis=0)).astype(int), 0)
+        hi = np.minimum(np.ceil(np.max([a, b, c], axis=0)).astype(int), [width, height])
+        if np.any(hi <= lo):
+            continue
+        x, y = np.meshgrid(np.arange(lo[0], hi[0]) + 0.5, np.arange(lo[1], hi[1]) + 0.5)
+        u = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / denominator
+        v = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / denominator
+        w = 1 - u - v
+        reciprocal = u / z[0] + v / z[1] + w / z[2]
+        distance = np.divide(1.0, reciprocal, out=np.full_like(u, np.inf), where=reciprocal > 0)
+        section = np.s_[lo[1]:hi[1], lo[0]:hi[0]]
+        visible = (u >= -1e-12) & (v >= -1e-12) & (w >= -1e-12) & (distance < zbuffer[section])
+        if not np.any(visible):
+            continue
+        tile = image[section]
+        tile[visible, :3] = colors[i]
+        tile[visible, 3] = 1
+        zbuffer[section][visible] = distance[visible]
+        if boundaries is not None:
+            lengths = np.linalg.norm([b - c, c - a, a - b], axis=1)
+            edge = np.zeros_like(visible)
+            for weight, length, draw in zip((u, v, w), lengths, boundaries[i]):
+                if draw and length > 0:
+                    edge |= weight * abs(denominator) / length < 0.55
+            tile[visible & edge, :3] *= 0.65
+    return image, zbuffer
 
 
 @lru_cache(maxsize=2)
@@ -406,7 +466,6 @@ class SpacecraftView:
     def figure(self, index=0, *, width=1200, height=800, dpi=100):
         """Return a Matplotlib Figure for an exact input sample (no GUI needed)."""
         from matplotlib.figure import Figure
-        from matplotlib.collections import PolyCollection
 
         i = self._index(index)
         if (not isinstance(width, int) or not isinstance(height, int)
@@ -440,10 +499,10 @@ class SpacecraftView:
         if not geom["sun_center_visible"]:
             light *= 0
         colors = np.clip(self.mesh.triangle_colors * (0.28 + 0.72 * light[:, None]), 0, 1)
-        order = np.argsort(-np.mean(depth[tri], axis=1))
-        order = order[np.all(depth[tri[order]] > 0, axis=1)]
-        ax.add_collection(PolyCollection(uv[tri[order]], facecolors=colors[order],
-                                        edgecolors="#728fa4", linewidths=0.35, zorder=3))
+        pixels, _ = _rasterize_mesh(uv, depth, tri, colors, width, height,
+                                    self.mesh.triangle_boundaries)
+        ax.imshow(pixels, extent=(-1, 1, -1, 1), aspect="auto",
+                  interpolation="nearest", zorder=3)
         origin = _project(-offset, basis, tan_x, tan_y)[0]
         arrows = [(geom["body_axes_gcrf"][:, j], label, color)
                   for j, (label, color) in enumerate(zip(("+X body", "+Y body", "+Z body"),
