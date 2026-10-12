@@ -41,7 +41,7 @@ def find_default_demos_dir() -> Path | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run all SSAPy demos and build a local gallery report."
+        description="Run SSATK demos and build a portable gallery site."
     )
     parser.add_argument(
         "--demos-dir",
@@ -106,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
     success = sum(r.status == "success" for r in results)
     failed = sum(r.status == "failed" for r in results)
+    skipped = sum(r.status == "skipped" for r in results)
     report = output_root / "index.html"
 
     print()
@@ -114,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  output : {output_root}")
     print(f"  report : {report}")
     print(f"  success: {success}")
+    print(f"  skipped: {skipped}")
     print(f"  failed : {failed}")
 
     # report is already written by run_all_demos before we get here

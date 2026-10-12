@@ -42,6 +42,9 @@ test cases, but must not be described as measured flight or laboratory data.
   independently referenced geometry tests. Those format checks make no
   physical-validation claim. Demos run in the
   gallery workflow, on pull requests and on pushes to `main`.
+  `test_demo_gallery.py` additionally checks publishing contracts against an
+  extracted ZIP served over HTTP and deliberately broken links. Those checks
+  validate deployment behavior, not astrodynamics or rendering fidelity.
 - Import paths and aliases are compatibility checks, isolated in
   `test_legacy_import_name.py`, rather than physical reference tests.
 - Argument validation and error messages, unless the rejected input is
