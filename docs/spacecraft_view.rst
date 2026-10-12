@@ -19,7 +19,8 @@ Input conventions
 * ``q``: body-to-GCRF quaternions ``[w, x, y, z]``, shape ``(N, 4)``, or
   one constant quaternion. Nonzero finite inputs are normalized. Attitude is
   supplied by the caller; the view does not infer it from orbital velocity.
-* ``mesh``: ``SpacecraftMesh`` with body-frame vertices in **metres**, indexed
+* ``mesh``: an optional preset name (``"starlink"``, ``"cubesat"``, ``"boxwing"``),
+  or ``SpacecraftMesh`` with body-frame vertices in **metres**, indexed
   faces, and optional per-face RGB colors. Mesh origin and scale are preserved.
   Triangular and convex polygon faces are supported. Alternatively, pass a
   ``SpacecraftBody`` with ``vertices_body`` on every facet through ``body=``.
@@ -38,15 +39,59 @@ Usage with a supplied time series
 
    from ssatk.plots.spacecraft_view import SpacecraftMesh, spacecraft_view
 
-   mesh = SpacecraftMesh.from_obj("spacecraft.obj", scale=1.0)  # m per OBJ unit
    view = spacecraft_view(
-       r, t, q, mesh=mesh, environment="auto", units="m",
+       r, t, q, environment="auto", units="m",  # Built-in Starlink-like mesh.
        title="Spacecraft attitude history",
    )
    view.save("spacecraft.png", index=0, width=1600, height=1000)
    view.save("spacecraft.jpg", index=10)
    view.save("attitude.gif", fps=15, duration_s=8, width=900, height=600)
    view.save("attitude.mp4", fps=30, duration_s=12, width=1600, height=1000)
+
+Built-in meshes and custom geometry
+----------------------------------------
+
+No mesh file is required. Omitting both ``mesh`` and ``body`` uses the
+``starlink`` preset. Select another shape with ``mesh="cubesat"`` or
+``mesh="boxwing"``. ``SpacecraftMesh.presets()`` lists the available names.
+
+.. list-table:: Illustrative preset geometry (body-frame metres)
+   :header-rows: 1
+
+   * - Name
+     - Bus dimensions X x Y x Z
+     - Solar arrays
+   * - ``starlink`` (default)
+     - 2.8 x 1.4 x 0.18
+     - Two 2.8 x 4.0 wings extending along +/-Y
+   * - ``cubesat``
+     - 0.10 x 0.10 x 0.30
+     - Colored body-mounted panels; no deployed wings
+   * - ``boxwing``
+     - 1.2 x 1.0 x 0.8
+     - Two 2.0 x 1.4 wings extending along +/-X
+
+These are schematic viewing templates. The ``starlink`` silhouette is inspired
+by the flat bus and dual arrays shown in `SpaceX's Starlink technology overview
+<https://www.starlink.com/technology>`_; the dimensions above are chosen for this
+illustration, not measured or manufacturer-validated dimensions for a Starlink
+generation. The CubeSat shape uses SSATK's simple ``SpacecraftBody.cubesat(3)``
+box convention, not a detailed deployer specification. Presets do not define
+flight mass, inertia, drag, or radiation-pressure parameters.
+
+The preset origin is the bus center. Deployed arrays lie in the body XY plane
+with +Z normals; they remain rigid and do not automatically track the Sun.
+The supplied quaternion rotates the whole mesh. Selection of a preset does not
+change the supplied orbit or attitude. To resize a preset, pass
+``SpacecraftMesh.from_preset("starlink", scale=2.0)`` as ``mesh``; this doubles
+all lengths, including thickness. Custom geometry replaces the default:
+
+.. code-block:: python
+
+   view = spacecraft_view(r, t, q, mesh="boxwing")
+   mesh = SpacecraftMesh.from_obj("spacecraft.obj", scale=1.0)  # m per OBJ unit
+   view = spacecraft_view(r, t, q, mesh=mesh)
+   view = spacecraft_view(r, t, q, body=spacecraft.body)
 
 ``SpacecraftMesh.from_body(spacecraft.body)`` uses the actual facet vertices
 relative to ``body.current_center_of_mass``, so a propagated center-of-mass
@@ -55,8 +100,8 @@ articulation and a changing center of mass are not animated. For raw arrays or
 OBJ files, ``r`` locates the supplied mesh origin; center those vertices on the
 center of mass yourself when ``r`` represents the mass center.
 It rejects facets defined only by area and normal, since those quantities do
-not uniquely specify their shape. If no mesh or body is supplied, the view
-uses an illustrative SSATK box-wing model, not inferred vehicle geometry.
+not uniquely specify their shape. Supplying both ``mesh`` and ``body`` is an
+error; a custom body alone always overrides the automatic preset.
 OBJ materials and texture files are not imported.
 
 ``view.figure(index)`` returns a Matplotlib figure for further annotation.
@@ -124,6 +169,9 @@ mesh size, a 3-4-5 Sun-direction triangle, spherical occultations, the 30-degree
 limb of a radius-one sphere at distance two, pinhole projection, lunar origin
 translation, and analytic constant-rate motion on nonuniform epochs. Image
 decoding and timing tests are labeled export contracts, not physical validation.
+Preset tests compare envelopes and surface areas with the stated rectangular
+prisms and panels, including squared area scaling. These checks validate the
+template geometry, not its agreement with real spacecraft measurements.
 ``tests/test_viewer_star_reference.py`` compares the existing browser viewer's
 exported sky with Astropy's independent GCRS-to-TEME transformation to 0.5 arcsec
 at two epochs. It rejects the former duplicate TEME rotation.
@@ -135,5 +183,7 @@ Generate examples
 
    python -m demos.six_dof.demo_spacecraft_view
 
-The demo exports Earth and Moon PNG/GIF scenes using specified circular arcs
-and body spin. These are analytic illustrations, not measured spacecraft data.
+The demo exports Earth and Moon PNG/GIF scenes with the default Starlink-like
+mesh using specified circular arcs and body spin. ``example_view(mesh="cubesat")``
+selects another preset; ``example_view(mesh=example_mesh())`` demonstrates a
+custom bus and panels. These are analytic illustrations, not measured flight data.

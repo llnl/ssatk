@@ -121,6 +121,51 @@ def test_body_mesh_is_relative_to_the_propagated_mass_center():
     np.testing.assert_allclose(mesh.vertices, reference, rtol=0, atol=1e-15)
 
 
+@pytest.mark.parametrize("scale", [1.0, 2.0])
+@pytest.mark.parametrize("name, half_extent, area", [
+    ("starlink", [1.4, 4.7, 0.09], 31.752),
+    ("cubesat", [0.05, 0.05, 0.15], 0.14),
+    ("boxwing", [2.6, 0.7, 0.4], 11.52),
+])
+def test_preset_geometry_matches_documented_prisms_and_rectangles(name, half_extent, area, scale):
+    """C/R1: illustrative dimensions, not observed vehicles; 1e-14 m bounds.
+
+    Surface area = 2(ab+bc+ca) plus the single-sided area of two wings:
+    Starlink 9.352+22.4 m², CubeSat 0.14 m², boxwing 5.92+5.6 m².
+    Scaling lengths by two must scale every area by four.
+    Area permits 32 float64 eps relative error for rounded grid coordinates,
+    cross products, norms, and the sum of up to 140 triangular areas.
+    """
+    mesh = SpacecraftMesh.from_preset(name, scale=scale)
+    expected = np.asarray(half_extent) * scale
+    np.testing.assert_allclose(mesh.vertices.min(axis=0), -expected, rtol=0, atol=1e-14)
+    np.testing.assert_allclose(mesh.vertices.max(axis=0), expected, rtol=0, atol=1e-14)
+    triangles = mesh.vertices[mesh.triangles]
+    cross = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    assert np.linalg.norm(cross, axis=1).sum() / 2 == pytest.approx(
+        area * scale**2, rel=32 * np.finfo(float).eps, abs=0)
+    panels = np.all(triangles[:, :, 2] == 0, axis=1)
+    assert np.all(cross[panels, 2] > 0)  # Both deployed wings face body +Z.
+    if scale == 1:
+        # The simple string selector preserves the documented metre geometry.
+        selected = scene(body=None, mesh=name)
+        np.testing.assert_allclose(selected.mesh.vertices.max(axis=0), expected, rtol=0, atol=1e-14)
+
+
+def test_default_preset_custom_mesh_and_animation_selection():
+    """C: no mesh file needed; custom input and resampling retain their geometry."""
+    assert SpacecraftMesh.presets() == ("starlink", "cubesat", "boxwing")
+    default = scene(body=None)
+    np.testing.assert_allclose(default.mesh.vertices.max(axis=0), [1.4, 4.7, 0.09], rtol=0, atol=1e-14)
+    custom = SpacecraftMesh([[0, 0, 0], [1, 0, 0], [0, 2, 0]], [[0, 1, 2]])
+    view = scene(body=None, mesh=custom, t=[EPOCH, EPOCH + 2])
+    assert view.mesh is custom
+    assert view.resample([EPOCH + 1]).mesh is custom
+    # Each preset call owns its data, so editing one view cannot alter the next.
+    default.mesh.vertices[:] = 0
+    np.testing.assert_allclose(scene(body=None).mesh.vertices.max(axis=0), [1.4, 4.7, 0.09], rtol=0, atol=1e-14)
+
+
 @pytest.mark.parametrize("options", [
     {"q": [0, 0, 0, 0]}, {"q": [np.nan, 0, 0, 1]},
     {"r": [EARTH_RADIUS - 1, 0, 0]}, {"frame": "lunar_fixed"},
