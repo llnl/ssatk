@@ -81,9 +81,9 @@ def quickint(orbit=None, r0=None, v0=None, t=None, max_period_days=30):
     orbit : Orbit, optional
         ssapy Orbit instance
     r0 : array_like, optional
-        Initial position vector [km]
+        Initial position vector [m]
     v0 : array_like, optional
-        Initial velocity vector [km/s]
+        Initial velocity vector [m/s]
     t : Time or array of Time, optional
         Time instances for integration
     max_period_days : float, optional
@@ -158,7 +158,6 @@ def quickint(orbit=None, r0=None, v0=None, t=None, max_period_days=30):
                 valid_time = True
     
     if not valid_time:
-        t0 = Time(0, format='gps')
         # Create orbit if not originally given as Orbit object
         if not orbit_given_as_object:
             orbit = Orbit(r=r0, v=v0, t=t0)

@@ -52,4 +52,4 @@ def test_right_ascension_and_sidereal_time_path_matches_hour_angle_path():
     assert le.hms_to_dd(le.rightascension2hourangle("22:00:00", "01:00:00")) == pytest.approx(45.0)
     via_ra = le.equatorial_to_horizontal(LATITUDE_DEG, 20.0, right_ascension="06:00:00", local_time="08:00:00")
     via_ha = le.equatorial_to_horizontal(LATITUDE_DEG, 20.0, hour_angle=30.0)
-    np.testing.assert_allclose(via_ra, via_ha, atol=1e-9)
+    np.testing.assert_allclose(via_ra, via_ha, atol=1e-9, rtol=0)

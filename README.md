@@ -124,9 +124,10 @@ code imports the module it needs, for example
 ## Validation
 
 SSATK's test policy ([`docs/testing_policy.md`](docs/testing_policy.md))
-requires every test to compare against an independent reference with a stated
-tolerance; tests that only show code runs are not accepted. Representative
-results:
+requires numerical tests to identify their reference and tolerance. The
+[test reference audit](docs/test_reference_audit.rst) distinguishes independent
+physical references from consistency and compatibility checks, and records
+remaining validation limits. Representative results:
 
 | Quantity | Reference | Result |
 |---|---|---|
@@ -149,7 +150,7 @@ The first five rows are reproduced by
 
 The `demos/` directory holds runnable examples in 13 categories, from getting
 started and orbit visualization to 6-DoF dynamics, eclipses, photometry and
-sensor coverage. Build the full gallery (55 demos) as an HTML report:
+sensor coverage and spacecraft mesh views. Build the full gallery as an HTML report:
 
 ```bash
 ssatk-demo-gallery --open
@@ -157,7 +158,11 @@ ssatk-demo-gallery --open
 
 The report is written to `~/ssatk_output/documents/index.html`. Use
 `--output PATH` to choose another directory, or `--demos-dir PATH` to run the
-demos from a source checkout. CI also publishes the gallery to GitHub Pages.
+demos from a source checkout. The selected directory contains the report and
+all generated assets; the adjacent ZIP can be moved or shared on its own.
+CI publishes this directory to GitHub Pages after checking local asset links.
+See the [gallery hosting guide](docs/gallery_hosting.rst) for preview and
+deployment instructions, validation scope, and optional-demo skips.
 
 ---
 

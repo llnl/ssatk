@@ -9,14 +9,14 @@ def test_unit_conversions_match_their_si_and_iau_definitions():
     # 1 pc = (648000 / pi) au; the Julian year is 365.25 d of 86400 s; a radian
     # is 180/pi deg. Exact to 1e-12 relative.
     assert constants.au_to_m == 149_597_870_700
-    assert constants.pc_to_au == pytest.approx(648000.0 / np.pi, rel=1e-12)
-    assert constants.pc_to_m == pytest.approx(3.0856775814913673e16, rel=1e-12)
-    assert constants.rad_to_deg == pytest.approx(57.29577951308232, rel=1e-12)
-    assert constants.rad_to_arcsecond == pytest.approx(206264.80624709636, rel=1e-12)
+    assert constants.pc_to_au == pytest.approx(648000.0 / np.pi, rel=1e-12, abs=0)
+    assert constants.pc_to_m == pytest.approx(3.0856775814913673e16, rel=1e-12, abs=0)
+    assert constants.rad_to_deg == pytest.approx(57.29577951308232, rel=1e-12, abs=0)
+    assert constants.rad_to_arcsecond == pytest.approx(206264.80624709636, rel=1e-12, abs=0)
     assert constants.year_to_second == 365.25 * 86400
     assert constants.year_to_day == 365.25
     assert constants.year_to_month == 12
-    assert constants.year_to_week == pytest.approx(365.25 / 7, rel=1e-12)
+    assert constants.year_to_week == pytest.approx(365.25 / 7, rel=1e-12, abs=0)
 
 
 def test_au_per_year_and_rebound_velocity_units():
@@ -25,10 +25,10 @@ def test_au_per_year_and_rebound_velocity_units():
     # so its velocity unit is 29784.69 m/s. 1e-9 relative, plus REBOUND's own
     # yr2pi as an independent check.
     rebound = pytest.importorskip("rebound")
-    assert constants.aupyr_to_mps == pytest.approx(4740.470463533348, rel=1e-9)
-    assert constants.v_rebound_to_si == pytest.approx(149_597_870_700 * 0.01720209895 / 86400, rel=1e-9)
+    assert constants.aupyr_to_mps == pytest.approx(4740.470463533348, rel=1e-9, abs=0)
+    assert constants.v_rebound_to_si == pytest.approx(149_597_870_700 * 0.01720209895 / 86400, rel=1e-9, abs=0)
     assert constants.v_rebound_to_si == pytest.approx(
-        constants.au_to_m / rebound.units.times_SI["yr2pi"], rel=1e-9
+        constants.au_to_m / rebound.units.times_SI["yr2pi"], rel=1e-9, abs=0
     )
 
 
@@ -59,4 +59,4 @@ def test_physical_constants_match_codata_2018():
 def test_planet_semi_major_axes_match_jpl_mean_elements(name, semi_major_axis_au):
     # R3: four-figure values, held to 5e-4 relative (Saturn's rounded 9.5388
     # differs by 2.3e-4; the former Mars value 1.5273 differed by 2.4e-3).
-    assert getattr(constants, name) == pytest.approx(semi_major_axis_au, rel=5e-4)
+    assert getattr(constants, name) == pytest.approx(semi_major_axis_au, rel=5e-4, abs=0)

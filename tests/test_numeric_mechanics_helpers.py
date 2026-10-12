@@ -1,3 +1,4 @@
+# Cross-product magnitude: 2e-14 relative; angle/vector arithmetic: 1e-14 rad or coordinate units.
 
 import numpy as np
 
@@ -27,8 +28,8 @@ def test_orbital_misc_formula_helpers():
     assert np.isclose(misc.circular_velocity(mu, r), v_circ)
     assert np.isclose(misc.vis_viva(mu, r, r), v_circ)
     assert np.isclose(misc.specific_orbital_energy(mu, r, v_circ), -mu / (2 * r))
-    np.testing.assert_allclose(misc.specific_angular_momentum([r, 0, 0], [0, v_circ, 0]), [0, 0, r * v_circ])
-    np.testing.assert_allclose(misc.eccentricity_vector(np.array([r, 0, 0]), np.array([0, v_circ, 0]), mu), [0, 0, 0], atol=1e-12)
+    np.testing.assert_allclose(misc.specific_angular_momentum([r, 0, 0], [0, v_circ, 0]), [0, 0, r * v_circ], rtol=2e-14, atol=0)
+    np.testing.assert_allclose(misc.eccentricity_vector(np.array([r, 0, 0]), np.array([0, v_circ, 0]), mu), [0, 0, 0], atol=1e-12, rtol=0)
 
     a, e, inc, raan, argp, nu, M = misc.orbital_elements_from_state(np.array([r, 0, 0]), np.array([0, v_circ, 0]), mu)
     assert np.isclose(a, r)
@@ -63,7 +64,7 @@ def test_coordinate_conversion_helpers():
 
     assert np.isclose(dms_to_rad("180d"), np.pi)
     assert dms_to_deg(["0d", "90d"]) == [0.0, 90.0]
-    np.testing.assert_allclose(rad0to2pi([-np.pi, 3 * np.pi]), [np.pi, np.pi])
+    np.testing.assert_allclose(rad0to2pi([-np.pi, 3 * np.pi]), [np.pi, np.pi], rtol=0, atol=1e-14)
     assert deg0to360(-90) == 270.0
     assert deg0to360array([-1, 360]) == [359.0, 0.0]
     assert deg90to90(100) == -80.0
@@ -72,15 +73,15 @@ def test_coordinate_conversion_helpers():
     r_vec = np.array([1.0, 0.0, 0.0])
     v_vec = np.array([0.0, 1.0, 0.0])
     matrix = ntw_to_gcrf_matrix(r_vec, v_vec)
-    np.testing.assert_allclose(matrix, np.eye(3), atol=1e-12)
-    np.testing.assert_allclose(ntw_to_gcrf([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12)
-    np.testing.assert_allclose(gcrf_to_ntw([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12)
+    np.testing.assert_allclose(matrix, np.eye(3), atol=1e-12, rtol=0)
+    np.testing.assert_allclose(ntw_to_gcrf([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(gcrf_to_ntw([1, 2, 3], r_vec, v_vec), [1, 2, 3], atol=1e-12, rtol=0)
 
     assert equatorial_ecliptic.equatorial_to_ecliptic is eqecl.equatorial_to_ecliptic
 
     xq, yq, zq = eqecl.ecliptic_xyz_to_equatorial_xyz(1.0, 2.0, 3.0)
     xc, yc, zc = eqecl.equatorial_xyz_to_ecliptic_xyz(xq, yq, zq)
-    np.testing.assert_allclose([xc, yc, zc], [1.0, 2.0, 3.0])
+    np.testing.assert_allclose([xc, yc, zc], [1.0, 2.0, 3.0], rtol=0, atol=1e-14)
     lon, lat = eqecl.xyz_to_ecliptic(1.0, 0.0, 0.0, degrees=True)
     assert np.isclose(lon, 0.0)
     assert np.isclose(lat, 0.0)

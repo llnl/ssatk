@@ -23,7 +23,7 @@ def test_read_3le_matches_sgp4_twoline2rv(tmp_path):
     assert row["argp_rad"] == pytest.approx(sat.argpo, abs=1e-12)
     assert row["ecc"] == sat.ecco
     assert row["drag"] == pytest.approx(sat.bstar, rel=1e-12, abs=0)
-    assert row["n_rad_s"] == pytest.approx(sat.no_kozai / 60.0, rel=1e-12)
+    assert row["n_rad_s"] == pytest.approx(sat.no_kozai / 60.0, rel=1e-12, abs=0)
     epoch = Time(sat.jdsatepoch, sat.jdsatepochF, format="jd", scale="utc").gps
     assert row["epoch_gps"] == pytest.approx(epoch, abs=1e-6)
     assert row["mean_anomaly_deg"] == pytest.approx(np.degrees(sat.mo), abs=1e-10)

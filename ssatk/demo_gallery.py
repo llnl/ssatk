@@ -2,6 +2,7 @@ from __future__ import annotations
 import html
 import ast
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -12,11 +13,13 @@ import subprocess
 import sys
 import time
 import traceback
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from urllib.parse import quote, unquote
 
-from ssatk.plots.figpath import figpath
+from ssatk._paths import SSATK_OUTPUT_ENV, output_root as default_output_root
+from ssatk.gallery_validation import validate_gallery
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 TEXT_EXTS = {".txt", ".md", ".json", ".csv", ".log", ".pdf", ".mp4", ".html"}
@@ -52,11 +55,24 @@ NOISE_REGEXES = [re.compile(p) for p in NOISE_PATTERNS]
 
 
 def get_figsave_root() -> Path:
-    probe = Path(figpath("probe.tmp")).expanduser().resolve()
-    return probe.parent
+    return default_output_root().expanduser().resolve() / "figures"
 
 
-FIGSAVE_ROOT = get_figsave_root()
+@contextmanager
+def _gallery_output(root: Path):
+    """Route plotting helpers and child processes to the portable site root."""
+    names = (SSATK_OUTPUT_ENV, "SSAPY_DEMO_OUTPUT_DIR")
+    previous = {name: os.environ.get(name) for name in names}
+    try:
+        for name in names:
+            os.environ[name] = str(root)
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 @dataclass
@@ -150,30 +166,24 @@ def import_module_from_path(path: Path):
     return module
 
 
-def snapshot_figsave_files() -> dict[Path, float]:
-    if not FIGSAVE_ROOT.exists():
-        return {}
+def snapshot_figsave_files(root: Path | None = None) -> dict[Path, tuple[int, int]]:
+    root = get_figsave_root() if root is None else root
     out = {}
-    for p in FIGSAVE_ROOT.rglob("*"):
+    for p in root.rglob("*"):
         if p.is_file():
-            try:
-                out[p.resolve()] = p.stat().st_mtime
-            except OSError:
-                pass
+            stat = p.stat()
+            out[p.resolve()] = (stat.st_mtime_ns, stat.st_size)
     return out
 
 
-def changed_files(before: dict[Path, float], after: dict[Path, float], slack: float = 1e-9) -> list[Path]:
-    changed = []
-    for p, m_after in after.items():
-        m_before = before.get(p)
-        if m_before is None or (m_after - m_before) > slack:
-            changed.append(p)
-    return sorted(changed)
+def changed_files(before: dict, after: dict) -> list[Path]:
+    return sorted(p for p, stamp in after.items() if before.get(p) != stamp)
 
 
 def relpath_for_report(target: Path, report_root: Path) -> str:
-    return os.path.relpath(str(target), str(report_root))
+    # A published site cannot serve a build-machine path outside its root.
+    relative = target.resolve().relative_to(report_root.resolve())
+    return quote(relative.as_posix(), safe="/")
 
 
 def _filter_console_text(text: str, max_lines: int = 120) -> str:
@@ -206,39 +216,31 @@ def _write_text_if_nonempty(path: Path, text: str) -> None:
         path.write_text(text, encoding="utf-8")
 
 
-def _invoke_demo(module, path: Path, output_root: Path, cwd: Path | None = None, *, fast: bool = True):
-    if hasattr(module, "run"):
-        try:
-            return module.run(output_root)
-        except TypeError:
-            return module.run()
-    if hasattr(module, "main"):
-        call_variants = [
-            {"make_figures": True, "fast": fast, "verbose": True},
-            {"make_figures": True, "fast": fast},
-            {"make_figures": True},
-            {"fast": fast, "verbose": True},
-            {"fast": fast},
-            {},
-        ]
-        last_exc = None
-        for kwargs in call_variants:
-            try:
-                return module.main(**kwargs)
-            except TypeError as ex:
-                last_exc = ex
-        if last_exc is not None:
-            raise last_exc
+def _has_function_entrypoint(path: Path) -> bool:
+    """Inspect without executing top-level code twice for standalone scripts."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return any(isinstance(node, ast.FunctionDef) and node.name in {"run", "main"}
+               for node in tree.body)
 
-    env = os.environ.copy()
-    env["SSAPY_DEMO_OUTPUT_DIR"] = str(output_root)
-    return subprocess.run(
-        [sys.executable, str(path.resolve())],
-        cwd=str((cwd or path.parent).resolve()),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+
+def _invoke_demo(module, output_root: Path, *, fast: bool = True):
+    function = getattr(module, "run", None) or getattr(module, "main", None)
+    signature = inspect.signature(function)
+    values = {"output_dir": output_root, "output_root": output_root,
+              "make_figures": True, "fast": fast, "verbose": True}
+    args, kwargs = [], {}
+    for name, parameter in signature.parameters.items():
+        if parameter.kind == inspect.Parameter.POSITIONAL_ONLY:
+            if name in values:
+                args.append(values[name])
+            elif parameter.default is not inspect.Parameter.empty:
+                args.append(parameter.default)
+        elif name in values and parameter.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+            kwargs[name] = values[name]
+    # Bind before executing: an internal TypeError must remain a single failure.
+    signature.bind(*args, **kwargs)
+    return function(*args, **kwargs)
 
 
 def _demo_relative_path(path: Path, demos_dir: Path | None) -> Path:
@@ -254,57 +256,6 @@ def _safe_log_name(name: str) -> str:
     return name.replace("/", "__").replace("\\", "__")
 
 
-def _safe_path_part(value: str, default: str = "uncategorized") -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip()).strip("._-")
-    return cleaned or default
-
-
-def _organized_figure_dir(output_root: Path, category: str, name: str) -> Path:
-    category_part = _safe_path_part(category or "misc", default="misc")
-    return _gallery_figures_root(output_root) / category_part
-
-
-def _gallery_figures_root(output_root: Path) -> Path:
-    local_root = output_root / "figures"
-    return local_root if local_root.exists() else output_root.parent / "figures"
-
-
-def _organize_demo_files(paths: list[Path], output_root: Path, category: str, name: str) -> list[Path]:
-    """Move flat gallery figure outputs into ``figures/<category>/``.
-
-    Demos historically saved everything under ``figures``.  Category
-    folders keep the gallery browsable without burying files under a second
-    per-demo directory.  Files already in subfolders, logs, and outputs outside
-    ``output_root`` are left untouched.
-    """
-    figures_root = _gallery_figures_root(output_root).resolve()
-    target_dir = _organized_figure_dir(output_root, category, name)
-    organized: list[Path] = []
-    for path in paths:
-        src = Path(path).resolve()
-        try:
-            rel = src.relative_to(figures_root)
-        except ValueError:
-            organized.append(src)
-            continue
-        if len(rel.parts) != 1:
-            organized.append(src)
-            continue
-        target_dir.mkdir(parents=True, exist_ok=True)
-        dest = target_dir / src.name
-        if dest.exists() and dest.resolve() != src:
-            stem = dest.stem
-            suffix = dest.suffix
-            counter = 2
-            while dest.exists() and dest.resolve() != src:
-                dest = target_dir / f"{stem}_{counter}{suffix}"
-                counter += 1
-        if dest.resolve() != src:
-            shutil.move(str(src), str(dest))
-        organized.append(dest.resolve())
-    return sorted(organized)
-
-
 def run_demo_script(
     path: Path,
     output_root: Path,
@@ -313,6 +264,13 @@ def run_demo_script(
     fast: bool = True,
     timeout_seconds: float | None = 180,
 ) -> DemoResult:
+    output_root = Path(output_root).expanduser().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    with _gallery_output(output_root):
+        return _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds)
+
+
+def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
     relative_path = _demo_relative_path(path, demos_dir)
     name = relative_path.with_suffix("").as_posix()
     category = "" if relative_path.parent == Path(".") else relative_path.parent.as_posix()
@@ -320,46 +278,44 @@ def run_demo_script(
     title = path.stem.replace("_", " ").title()
     description = f"Demo from {relative_path.as_posix()}"
     start = time.time()
-    before = snapshot_figsave_files()
+    before = snapshot_figsave_files(output_root)
     stdout_text = ""
     stderr_text = ""
     demo_cwd = Path(demos_dir).resolve().parent if demos_dir is not None else path.parent.resolve()
 
+    stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
     try:
-        module = import_module_from_path(path)
-        if hasattr(module, "GALLERY_CATEGORY"):
-            category = str(module.GALLERY_CATEGORY).strip() or category
-        if hasattr(module, "TITLE"):
-            title = str(module.TITLE)
-        if hasattr(module, "DESCRIPTION"):
-            description = str(module.DESCRIPTION)
-
-        stdout_buf = io.StringIO()
-        stderr_buf = io.StringIO()
-        with demo_timeout(timeout_seconds), redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-            result = _invoke_demo(module, path, output_root, cwd=demo_cwd, fast=fast)
-
-        captured_stdout = stdout_buf.getvalue()
-        captured_stderr = stderr_buf.getvalue()
-
-        if isinstance(result, subprocess.CompletedProcess):
-            stdout_text = _filter_console_text((captured_stdout or "") + (result.stdout or ""))
-            stderr_text = _filter_console_text((captured_stderr or "") + (result.stderr or ""))
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"Subprocess exited with code {result.returncode}\n\n"
-                    f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
-                )
+        if _has_function_entrypoint(path):
+            # Import is part of demo execution: include its output and deadline.
+            with demo_timeout(timeout_seconds), redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                module = import_module_from_path(path)
+                category = str(getattr(module, "GALLERY_CATEGORY", category)).strip() or category
+                title = str(getattr(module, "TITLE", title))
+                description = str(getattr(module, "DESCRIPTION", description))
+                result = _invoke_demo(module, output_root, fast=fast)
         else:
-            stdout_text = _filter_console_text(captured_stdout)
-            stderr_text = _filter_console_text(captured_stderr)
+            # A script without a declared entry point executes only as __main__.
+            # subprocess.run also enforces the deadline on platforms without SIGALRM.
+            result = subprocess.run(
+                [sys.executable, str(path.resolve())], cwd=str(demo_cwd),
+                env=os.environ.copy(), capture_output=True, text=True,
+                timeout=timeout_seconds or None,
+            )
+            stdout_buf.write(result.stdout or "")
+            stderr_buf.write(result.stderr or "")
+            if result.returncode != 0:
+                raise RuntimeError(f"Subprocess exited with code {result.returncode}")
+        stdout_text = _filter_console_text(stdout_buf.getvalue())
+        stderr_text = _filter_console_text(stderr_buf.getvalue())
 
         if isinstance(result, dict):
             title = str(result.get("title", title))
             description = str(result.get("description", description))
+            if result.get("skipped"):
+                description += " — " + str(result.get("reason", "Optional demo unavailable"))
 
-        after = snapshot_figsave_files()
-        touched = _organize_demo_files(changed_files(before, after), output_root, category, name)
+        after = snapshot_figsave_files(output_root)
+        touched = changed_files(before, after)
         files = sorted({relpath_for_report(p, output_root) for p in touched})
 
         log_dir = output_root / "logs"
@@ -378,7 +334,7 @@ def run_demo_script(
             name=name,
             title=title,
             description=description,
-            status="success",
+            status="skipped" if isinstance(result, dict) and result.get("skipped") else "success",
             runtime_seconds=time.time() - start,
             output_dir=str(output_root),
             files=files,
@@ -386,7 +342,14 @@ def run_demo_script(
             stderr=stderr_text,
             category=category,
         )
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            # TimeoutExpired can hold bytes even when text=True.
+            for buffer, value in ((stdout_buf, exc.stdout), (stderr_buf, exc.stderr)):
+                if value:
+                    buffer.write(value.decode(errors="replace") if isinstance(value, bytes) else value)
+        stdout_text = _filter_console_text(stdout_buf.getvalue())
+        stderr_text = _filter_console_text(stderr_buf.getvalue())
         err = traceback.format_exc()
         log_dir = output_root / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -400,8 +363,8 @@ def run_demo_script(
         _write_text_if_nonempty(stdout_file, stdout_text)
         _write_text_if_nonempty(stderr_file, stderr_text)
 
-        after = snapshot_figsave_files()
-        touched = _organize_demo_files(changed_files(before, after), output_root, category, name)
+        after = snapshot_figsave_files(output_root)
+        touched = changed_files(before, after)
         files = {relpath_for_report(p, output_root) for p in touched}
         files.add(relpath_for_report(err_file, output_root))
         if stdout_text:
@@ -426,14 +389,14 @@ def run_demo_script(
 
 def render_file_preview(file_rel: str) -> str:
     path = html.escape(file_rel)
-    name = html.escape(Path(file_rel).name)
+    name = html.escape(unquote(Path(file_rel).name))
     ext = Path(file_rel).suffix.lower()
 
     if ext in {".png", ".jpg", ".jpeg", ".svg", ".webp"}:
         return (
             f'<div class="asset">'
             f'<a href="{path}" target="_blank">'
-            f'<img src="{path}" alt="{name}"></a>'
+            f'<img src="{path}" alt="{name}" loading="lazy"></a>'
             f'<div class="caption">{html.escape(file_rel)}</div>'
             f'</div>'
         )
@@ -442,7 +405,7 @@ def render_file_preview(file_rel: str) -> str:
         return (
             f'<div class="asset">'
             f'<a href="{path}" target="_blank">'
-            f'<img src="{path}" alt="{name}"></a>'
+            f'<img src="{path}" alt="{name}" loading="lazy"></a>'
             f'<div class="caption">{html.escape(file_rel)}</div>'
             f'</div>'
         )
@@ -450,7 +413,7 @@ def render_file_preview(file_rel: str) -> str:
     if ext == ".mp4":
         return (
             f'<div class="asset">'
-            f'<video controls autoplay muted loop playsinline preload="metadata" '
+            f'<video controls muted loop playsinline preload="metadata" '
             f'style="width:100%; height:180px; object-fit:contain; background:#0a0f22; border-radius:8px;">'
             f'<source src="{path}" type="video/mp4">'
             f'</video>'
@@ -461,12 +424,19 @@ def render_file_preview(file_rel: str) -> str:
     if ext == ".webm":
         return (
             f'<div class="asset">'
-            f'<video controls autoplay muted loop playsinline preload="metadata" '
+            f'<video controls muted loop playsinline preload="metadata" '
             f'style="width:100%; height:180px; object-fit:contain; background:#0a0f22; border-radius:8px;">'
             f'<source src="{path}" type="video/webm">'
             f'</video>'
             f'<div class="caption">{html.escape(file_rel)}</div>'
             f'</div>'
+        )
+
+    if ext in {".html", ".htm"}:
+        return (
+            f'<div class="asset"><a class="file-link" href="{path}" '
+            f'target="_blank" rel="noopener">Open interactive viewer</a>'
+            f'<div class="caption">{name}</div></div>'
         )
 
     if ext in TEXT_EXTS:
@@ -488,13 +458,13 @@ def render_file_preview(file_rel: str) -> str:
 def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     cards = []
     for r in results:
-        badge_class = "ok" if r.status == "success" else "fail"
+        badge_class = {"success": "ok", "skipped": "skip"}.get(r.status, "fail")
         previews = "\n".join(render_file_preview(f) for f in r.files) or "<p>No output files found.</p>"
 
         stdout_block = ""
         if r.stdout:
             stdout_block = (
-                "<details open><summary>Console output</summary>"
+                "<details><summary>Console output</summary>"
                 f"<pre>{html.escape(r.stdout)}</pre></details>"
             )
 
@@ -518,7 +488,7 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
 
         cards.append(
             f"""
-            <section class="card">
+            <section class="card" data-category="{html.escape(r.category, quote=True)}">
               <div class="card-header">
                 <h2>{html.escape(r.title)}</h2>
                 <span class="badge {badge_class}">{html.escape(r.status)}</span>
@@ -540,13 +510,18 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     total = len(results)
     success = sum(r.status == "success" for r in results)
     failed = sum(r.status == "failed" for r in results)
+    skipped = sum(r.status == "skipped" for r in results)
     manifest = [asdict(r) for r in results]
+    category_options = ''.join(
+        f'<option value="{html.escape(category, quote=True)}">{html.escape(category)}</option>'
+        for category in sorted({r.category for r in results if r.category})
+    )
 
     html_text = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>SSAPy Demo Gallery</title>
+  <title>SSATK Demo Gallery</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {{
@@ -587,6 +562,12 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       padding: 16px 20px;
       min-width: 180px;
     }}
+    .filters {{ display: flex; flex-wrap: wrap; gap: 16px; margin: 24px 0; }}
+    .filters input, .filters select {{
+      background: #121a31; color: #e8ecf3; border: 1px solid #526692;
+      border-radius: 6px; padding: 10px; margin-left: 8px; max-width: 100%;
+    }}
+    [hidden] {{ display: none !important; }}
     .card {{
       background: #121a31;
       border: 1px solid #24345f;
@@ -614,6 +595,11 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       background: #16351f;
       color: #7CFC9A;
       border: 1px solid #2a6a3e;
+    }}
+    .badge.skip {{
+      background: #38311a;
+      color: #f0d583;
+      border: 1px solid #786a35;
     }}
     .badge.fail {{
       background: #3a1616;
@@ -682,21 +668,45 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
 </head>
 <body>
   <header>
-    <h1>SSAPy Demo Gallery</h1>
-    <p class="subtitle">Auto-generated demo report with artifacts and filtered console summaries.</p>
+    <h1>SSATK Demo Gallery</h1>
+    <p class="subtitle">Space Situational Awareness Toolkit — plots, animations and interactive viewers.</p>
   </header>
   <main>
+    <div class="filters">
+      <label>Search <input id="search" type="search" placeholder="Orbit, Moon, attitude…"></label>
+      <label>Category <select id="category"><option value="">All categories</option>{category_options}</select></label>
+    </div>
     <section class="summary">
       <div class="summary-box"><strong>Total demos</strong><br>{total}</div>
       <div class="summary-box"><strong>Successful</strong><br>{success}</div>
+      <div class="summary-box"><strong>Skipped</strong><br>{skipped}</div>
       <div class="summary-box"><strong>Failed</strong><br>{failed}</div>
       <div class="summary-box"><strong>Manifest</strong><br><a class="file-link" href="manifest.json">manifest.json</a></div>
     </section>
     {''.join(cards)}
+    <p id="no-matches" hidden>No demos match these filters.</p>
   </main>
   <footer>
     Generated at {html.escape(time.strftime("%Y-%m-%d %H:%M:%S"))}
   </footer>
+  <script>
+    const search = document.getElementById('search');
+    const category = document.getElementById('category');
+    const cards = [...document.querySelectorAll('.card')];
+    function filterCards() {{
+      const query = search.value.trim().toLowerCase();
+      let visible = 0;
+      for (const card of cards) {{
+        const matches = (!category.value || card.dataset.category === category.value)
+          && card.textContent.toLowerCase().includes(query);
+        card.hidden = !matches;
+        if (matches) visible++;
+      }}
+      document.getElementById('no-matches').hidden = visible > 0;
+    }}
+    search.addEventListener('input', filterCards);
+    category.addEventListener('change', filterCards);
+  </script>
 </body>
 </html>
 """
@@ -715,12 +725,23 @@ def run_all_demos(
     demos_dir = Path(demos_dir).expanduser().resolve()
     output_root = Path(output_root).expanduser().resolve()
 
+    # Cleaning the source or its parent irreversibly deletes user code.
+    source_root = Path(__file__).resolve().parents[1]
+    if (demos_dir.is_relative_to(output_root) or output_root.is_relative_to(demos_dir)
+            or source_root.is_relative_to(output_root)):
+        raise ValueError("Gallery output overlaps demo sources or contains the package source")
+    paths = discover_demo_files(demos_dir)
+    if not paths:
+        raise ValueError(f"No enabled demos found in {demos_dir}")
+    archive_path = output_root.parent / (output_root.name + ".zip")
+    archive_path.unlink(missing_ok=True)
+
     if clean and output_root.exists():
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
     results: list[DemoResult] = []
-    for path in discover_demo_files(demos_dir):
+    for path in paths:
         rel = path.relative_to(demos_dir)
         print(f"[demo] running {rel.as_posix()}")
         result = run_demo_script(
@@ -734,9 +755,9 @@ def run_all_demos(
         results.append(result)
 
     build_html_report(results, output_root)
+    validate_gallery(output_root)
 
-    import shutil as _shutil
-    bundle_base = output_root.parent / output_root.name
-    _shutil.make_archive(str(bundle_base), "zip", root_dir=str(output_root))
+    if all(result.status != "failed" for result in results):
+        shutil.make_archive(str(output_root), "zip", root_dir=str(output_root))
 
     return results

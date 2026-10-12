@@ -67,11 +67,12 @@ def best_prop(kwargs=None, ode_kwargs=None):
             term = AccelThirdBody(get_body(name))
             planets = term if planets is None else planets + term
 
-        nonConservative = AccelSolRad(**kwargs) + AccelEarthRad(**kwargs) + AccelDrag(**kwargs)
+        # Only gravity is shared. Radiation and drag retain each spacecraft's
+        # parameters in their SSAPy defaultkw dictionaries.
+        _accel_best_cache = aEarth + aMoon + aSun + planets
 
-        _accel_best_cache = aEarth + aMoon + aSun + planets + nonConservative
-
-    return SciPyPropagator(_accel_best_cache, ode_kwargs=ode_kwargs)
+    nonConservative = AccelSolRad(**kwargs) + AccelEarthRad(**kwargs) + AccelDrag(**kwargs)
+    return SciPyPropagator(_accel_best_cache + nonConservative, ode_kwargs=ode_kwargs)
 
 
 _accel_best_gravity_cache = None
@@ -79,7 +80,7 @@ _accel_best_gravity_cache = None
 
 def best_gravity_prop(kwargs=None, ode_kwargs=None):
     """
-    "Best-like" force model: Earth(Kepler+EGM2008 140x140) + Moon(point+20x20) + Sun + planets + SRP+EarthRad+Drag
+    "Best-like" force model: Earth(Kepler+EGM2008 140x140) + Moon(point+20x20) + Sun + planets + SRP+EarthRad
     """
     global _accel_best_gravity_cache
 
@@ -100,11 +101,10 @@ def best_gravity_prop(kwargs=None, ode_kwargs=None):
             term = AccelThirdBody(get_body(name))
             planets = term if planets is None else planets + term
 
-        nonConservative = AccelSolRad(**kwargs) + AccelEarthRad(**kwargs)
+        _accel_best_gravity_cache = aEarth + aMoon + aSun + planets
 
-        _accel_best_gravity_cache = aEarth + aMoon + aSun + planets + nonConservative
-
-    return SciPyPropagator(_accel_best_gravity_cache, ode_kwargs=ode_kwargs)
+    nonConservative = AccelSolRad(**kwargs) + AccelEarthRad(**kwargs)
+    return SciPyPropagator(_accel_best_gravity_cache + nonConservative, ode_kwargs=ode_kwargs)
 
 
 def ssapy_prop(propkw=None, ode_kwargs=None):

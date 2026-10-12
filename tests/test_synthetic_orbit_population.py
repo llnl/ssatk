@@ -14,8 +14,8 @@ def test_population_spread_and_trajectories():
     # its orbit (1e-6 m).
     orbits, r_list, v_list, t_list, mu = synthetic_orbit_population(M=401, N=5, dt=60.0, a_sigma=500.0, seed=4)
     a = np.array([o.a for o in orbits])
-    assert orbits[0].a == pytest.approx(7_000e3, rel=1e-12)
-    assert np.std(a[1:], ddof=1) == pytest.approx(500.0, rel=0.10)
+    assert orbits[0].a == pytest.approx(7_000e3, rel=1e-12, abs=0)
+    assert np.std(a[1:], ddof=1) == pytest.approx(500.0, rel=0.10, abs=0)
     for k in (0, 7, 400):
         r_ref, _ = ssapy.rv(orbits[k], orbits[k].t + t_list[k], propagator=ssapy.KeplerianPropagator())
         np.testing.assert_allclose(r_list[k], r_ref, rtol=0, atol=1e-6)

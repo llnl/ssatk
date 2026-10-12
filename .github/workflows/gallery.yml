@@ -44,11 +44,20 @@ jobs:
           node --check ssatk/plots/satellite_viewer_scene.js
           node --check ssatk/plots/satellite_viewer_smoketest.js
 
+      - name: Check publishing and export contracts
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest scripts/tests -q
+
       - name: Build demo gallery
         env:
           MPLBACKEND: Agg
+          SSATK_CACHE: ${{ runner.temp }}/ssatk-cache
         run: |
           ssatk-demo-gallery --output site
+
+      - name: Check published asset links
+        run: python -m ssatk.gallery_validation site
 
       - name: Upload GitHub Pages artifact
         if: github.event_name != 'pull_request'

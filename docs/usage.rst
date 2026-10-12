@@ -185,6 +185,24 @@ returns a GCRF vector.
    # "body", "nadir_velocity", "enu", "ned", "sez", "los", and "sun".
    thrust_ntw = transform_from_gcrf(thrust_gcrf, "ntw", r=r_gcrf, v=v_gcrf)
 
+   # Earth-fixed local axes require an epoch to express them in GCRF.
+   enu_to_gcrf = frame_to_gcrf_matrix("enu", lat=0.0, lon=0.0, t=1.4e9)
+
+For ``enu``, ``ned``, and ``sez``, ``t`` must be a scalar GPS epoch or
+Astropy ``Time``. These selectors use the same Earth-orientation chain as
+SSAPy's ``EarthObserver(fast=True)``. The dedicated ``enu_to_ecef_matrix``,
+``ned_to_ecef_matrix``, and ``sez_to_ecef_matrix`` functions still return
+Earth-fixed axes without an epoch. The ``nadir_velocity`` frame keeps +Z
+along nadir and +X along the transverse velocity; it remains orthonormal
+when the orbit has nonzero radial velocity.
+
+The lunar rotating-frame functions ``gcrf_to_lunar`` and
+``gcrf_to_lunar_fixed`` transform supplied velocities in metres per second,
+including the frame-rotation derivative and, for the Moon-centred function,
+the Moon's translational velocity. Their ``step_s`` argument sets the local
+ephemeris differencing interval (default 1 second). Velocity results do not
+depend on the spacing of the requested output epochs.
+
 High-accuracy propagation
 -------------------------
 
@@ -222,6 +240,12 @@ three-parameter body-frame error defined by
 ``propagate_6dof_covariance`` accepts either the raw quaternion covariance or
 the local covariance; use ``coordinates="attitude_error"`` to select the
 latter explicitly, or leave the default ``"auto"`` shape selection enabled.
+The input attitude basis is stored in ``reference_q`` and remains tied to
+the initial solver epoch even if the output times omit that epoch. When
+chaining a nonidentity ``stm0``, pass ``stm_reference_q`` from the preceding
+result to retain its original input basis. Without this information, the
+raw quaternion STM remains available, but attitude-error conversion raises
+an error rather than guessing a reference quaternion.
 
 Export an independent-tool reference case with
 :func:`ssatk.io.write_reference_case`. It writes a CCSDS Orbit

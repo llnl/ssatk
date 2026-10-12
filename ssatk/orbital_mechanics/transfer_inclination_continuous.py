@@ -24,6 +24,13 @@ def transfer_inclination_continuous(
     save_path=False,
     **save_kwargs,
 ):
+    """Burn along the instantaneous orbit normal until a target is reached.
+
+    Inclination is the standard unsigned angle in [0, pi], in radians.
+    Target mode stops at its first crossing in either direction; the fixed
+    positive normal thrust may increase or decrease inclination with orbital
+    phase. Delta-v mode retains its signed normal-thrust convention.
+    """
     save_path, save_kwargs = _pop_save_path_aliases(save_kwargs, save_path=save_path)
     _raise_unrecognized_kwargs(save_kwargs, "transfer_inclination_continuous")
     if initial is not None:
@@ -58,12 +65,10 @@ def transfer_inclination_continuous(
         if h_norm == 0:
             return np.inf
         inclination = np.arccos(np.clip(h[2] / h_norm, -1.0, 1.0))
-        if h[1] < 0:
-            inclination = -inclination
         return inclination - i_target
 
     inclination_event.terminal = True
-    inclination_event.direction = 1
+    inclination_event.direction = 0
 
     def deltav_event(t, y):
         return a_thrust * (t - t0) - abs(delta_v)

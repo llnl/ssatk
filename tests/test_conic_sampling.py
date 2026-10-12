@@ -38,7 +38,7 @@ def test_ellipse_from_rv_samples_lie_on_the_input_orbit(name):
     r0, v0 = _state(ORBITS[name])
     out = ellipse_from_rv(r0, v0, num=64)
     h_hat = np.cross(r0, v0) / np.linalg.norm(np.cross(r0, v0))
-    np.testing.assert_allclose(out["r"] @ h_hat, 0.0, atol=1e-3)
+    np.testing.assert_allclose(out["r"] @ h_hat, 0.0, atol=1e-3, rtol=0)
 
     # Samples start at periapsis; shift times so t = 0 is the input state.
     period = out["period"]
@@ -78,7 +78,7 @@ def test_rv_to_ellipse_follows_a_hyperbolic_flyby(gamma_deg):
     orbit = ssapy.Orbit(r=r0, v=v0, t=EPOCH, mu=EARTH_MU)
     r_ref, _ = ssapy.rv(orbit, EPOCH + out["t_rel"], propagator=ssapy.SciPyPropagator(ssapy.AccelKepler()))
     np.testing.assert_allclose(out["r"], r_ref, rtol=0, atol=1.0)
-    assert np.linalg.norm(out["r"][-1]) == pytest.approx(2 * radius, rel=1e-9)
+    assert np.linalg.norm(out["r"][-1]) == pytest.approx(2 * radius, rel=1e-9, abs=0)
 
 
 def test_ellipse_from_rv_parabola_obeys_barkers_equation():
@@ -92,4 +92,4 @@ def test_ellipse_from_rv_parabola_obeys_barkers_equation():
     f = np.linspace(-np.pi / 2, np.pi / 2, 401)
     t_from_periapsis = out["t_rel"] - out["t_rel"][200]
     assert f[-1] == pytest.approx(np.pi / 2)
-    assert t_from_periapsis[-1] == pytest.approx((2 / 3) * np.sqrt(p**3 / EARTH_MU), rel=1e-9)
+    assert t_from_periapsis[-1] == pytest.approx((2 / 3) * np.sqrt(p**3 / EARTH_MU), rel=1e-9, abs=0)

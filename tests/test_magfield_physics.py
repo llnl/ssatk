@@ -74,7 +74,7 @@ needs_spacepy = pytest.mark.skipif(not _HAS_SPACEPY, reason="spacepy/IRBEM not i
 @needs_geopack
 def test_gsm_matrix_is_a_rotation():
     M = mf._gsm_frame(DATE)
-    assert np.allclose(M @ M.T, np.eye(3), atol=1e-9), "GEO->GSM must be orthonormal"
+    assert np.allclose(M @ M.T, np.eye(3), atol=1e-9, rtol=0), "GEO->GSM must be orthonormal"
     assert abs(np.linalg.det(M) - 1.0) < 1e-9, "must be a proper rotation, not a reflection"
 
 
@@ -87,9 +87,9 @@ def test_gsm_matrix_orientation_against_geopack():
     M = mf._gsm_frame(DATE)
     v = np.array([0.3, -0.5, 0.81]); v /= np.linalg.norm(v)
     truth = np.array(gp.geogsm(*v, 1))
-    assert np.allclose(M @ v, truth, atol=1e-9), "M @ v_geo must equal geogsm(v_geo)"
+    assert np.allclose(M @ v, truth, atol=1e-9, rtol=0), "M @ v_geo must equal geogsm(v_geo)"
     # and the transpose must NOT satisfy it — guards against re-introducing the bug
-    assert not np.allclose(M.T @ v, truth, atol=1e-6)
+    assert not np.allclose(M.T @ v, truth, atol=1e-6, rtol=0)
 
 
 def test_sun_direction_matches_independent_solar_position():
@@ -108,7 +108,7 @@ def test_sun_direction_matches_independent_solar_position():
 
 
 @needs_geopack
-def test_t89_external_model_evaluates_at_the_right_place():
+def test_t89_external_model_evaluates_at_the_right_place(tmp_path, monkeypatch):
     """
     Decisive frame test: take a point defined in GSM, express it in GEO, and
     push it through the interpolating model.  The model converts back to
@@ -116,6 +116,9 @@ def test_t89_external_model_evaluates_at_the_right_place():
     original GSM point.  A transposed rotation cannot pass this.
     """
     from geopack import t89
+    # Build the reference grid afresh; a user's cached result must not supply
+    # the answer or make the test depend on writes to their home directory.
+    monkeypatch.setenv("SSATK_CACHE", str(tmp_path))
     grid = mf._get_external(DATE, kp=3, model="t89")
     M = grid.M
     for gsm in ([6.0, 1.0, 2.0], [-9.0, -2.0, 1.5], [4.0, -3.0, -2.0]):

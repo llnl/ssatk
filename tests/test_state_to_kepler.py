@@ -33,10 +33,10 @@ def test_state_to_kepler_inverts_ssapy_elements(elements):
     # must return the same a (1e-9 relative), e (1e-10), and angles (1e-9 rad).
     orbit = _ssapy_orbit(elements)
     a, e, inc, pa, raan, nu = state_to_kepler(orbit.r, orbit.v)
-    assert a == pytest.approx(elements[0], rel=1e-9)
+    assert a == pytest.approx(elements[0], rel=1e-9, abs=0)
     assert e == pytest.approx(elements[1], abs=1e-10)
     expected_angles = np.radians(elements[2:])
-    np.testing.assert_allclose(_angle_difference([inc, pa, raan, nu], expected_angles), 0.0, atol=1e-9)
+    np.testing.assert_allclose(_angle_difference([inc, pa, raan, nu], expected_angles), 0.0, atol=1e-9, rtol=0)
 
 
 def test_state_to_kepler_accepts_a_batch_of_states():
@@ -46,9 +46,9 @@ def test_state_to_kepler_accepts_a_batch_of_states():
     v = np.array([orbit.v for orbit in orbits])
     a, e, inc, pa, raan, nu = state_to_kepler(r, v)
     expected = np.array([orbit.keplerianElements for orbit in orbits])
-    np.testing.assert_allclose(a, expected[:, 0], rtol=1e-9)
+    np.testing.assert_allclose(a, expected[:, 0], rtol=1e-9, atol=0)
     np.testing.assert_allclose(e, expected[:, 1], rtol=0, atol=1e-10)
-    np.testing.assert_allclose(_angle_difference(np.column_stack([inc, pa, raan, nu]), expected[:, 2:]), 0.0, atol=1e-9)
+    np.testing.assert_allclose(_angle_difference(np.column_stack([inc, pa, raan, nu]), expected[:, 2:]), 0.0, atol=1e-9, rtol=0)
 
 
 @pytest.mark.parametrize("elements", ELEMENT_SETS)

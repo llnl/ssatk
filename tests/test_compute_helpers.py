@@ -1,3 +1,4 @@
+# Literal bounding-box arithmetic below is exact; compare without numerical slack.
 """Spectral, chaos-indicator, statistics, sampling and geometry helpers against references."""
 
 import numpy as np
@@ -21,9 +22,9 @@ def test_fft_frequency_axis_matches_numpy_and_finds_a_tone(n):
     dt = 0.25
     freqs, amplitude = FFT(np.sin(2 * np.pi * 7 / (n * dt) * np.arange(n) * dt), dt)
     np.testing.assert_allclose(freqs, np.fft.fftfreq(n, dt)[: n // 2], rtol=1e-12, atol=0)
-    assert freqs[np.argmax(amplitude)] == pytest.approx(7 / (n * dt), rel=1e-12)
+    assert freqs[np.argmax(amplitude)] == pytest.approx(7 / (n * dt), rel=1e-12, abs=0)
     periods, _ = FFTP(np.ones(n), dt)
-    np.testing.assert_allclose(periods[1:], n * dt / np.arange(1, n // 2), rtol=1e-12)
+    np.testing.assert_allclose(periods[1:], n * dt / np.arange(1, n // 2), rtol=1e-12, atol=0)
     assert periods[0] == pytest.approx(n * dt)
 
 
@@ -32,7 +33,7 @@ def test_megno_matches_closed_forms():
     # exactly (1e-12); delta = 1 + c t gives Y = 2 [1 - ln(1 + c t)/(c t)], -> 2,
     # matched to 2e-4 with 20,001 samples.
     t = np.linspace(0.0, 50.0, 2001)
-    assert megno(t, np.exp(0.7 * t)) == pytest.approx(0.7 * 50.0 / 2.0, rel=1e-12)
+    assert megno(t, np.exp(0.7 * t)) == pytest.approx(0.7 * 50.0 / 2.0, rel=1e-12, abs=0)
 
     t = np.linspace(0.0, 200.0, 20001)
     _mean, y, _y_mean = megno(t, 1.0 + 3.0 * t, return_series=True)
@@ -82,7 +83,7 @@ def test_lyapunov_estimator_recovers_the_cat_map_exponent():
     exponent, *_ = lyapunov_exponent_from_statevectors(
         r, np.zeros_like(r), dt=1.0, theiler_window=5, max_horizon=4, fit_window=(1 / 3, 1.0)
     )
-    assert exponent == pytest.approx(np.log((3 + np.sqrt(5)) / 2), rel=0.03)
+    assert exponent == pytest.approx(np.log((3 + np.sqrt(5)) / 2), rel=0.03, abs=0)
 
     *_, diagnostics = lyapunov_exponent_from_statevectors(
         r, np.zeros_like(r), dt=1.0, theiler_window=5, max_horizon=4, fit_window=(0.0, 0.5)
@@ -102,8 +103,8 @@ def test_bounding_cube_is_centred_and_sized_by_the_longest_extent():
     # R1: points spanning 10 x 4 x 2 about (1, 2, 3) give a cube of side 10 + 2 pad.
     points = np.array([[-4.0, 0.0, 2.0], [6.0, 4.0, 4.0], [1.0, 2.0, 3.0]])
     lower, upper = find_smallest_bounding_cube(points, pad=1.0)
-    np.testing.assert_allclose(lower, [1.0 - 6.0, 2.0 - 6.0, 3.0 - 6.0])
-    np.testing.assert_allclose(upper, [1.0 + 6.0, 2.0 + 6.0, 3.0 + 6.0])
+    np.testing.assert_array_equal(lower, [1.0 - 6.0, 2.0 - 6.0, 3.0 - 6.0])
+    np.testing.assert_array_equal(upper, [1.0 + 6.0, 2.0 + 6.0, 3.0 + 6.0])
 
 
 @pytest.mark.parametrize("distribution", ["uniform", "random"])
@@ -112,7 +113,7 @@ def test_sphere_vectors_are_area_uniform(distribution):
     # [-1, 1] and azimuth uniform on [0, 2 pi). Norms equal the magnitude to
     # 1e-12; KS p-values exceed 0.01 for 20,000 seeded draws.
     vectors = generate_sphere_vectors(20000, 13.0, seed=7, distribution=distribution)
-    np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 13.0, rtol=1e-12)
+    np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 13.0, rtol=1e-12, atol=0)
     z = vectors[:, 2] / 13.0
     azimuth = np.mod(np.arctan2(vectors[:, 1], vectors[:, 0]), 2 * np.pi)
     assert stats.kstest(z, stats.uniform(loc=-1, scale=2).cdf).pvalue > 0.01
