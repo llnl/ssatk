@@ -32,12 +32,53 @@ search and category filters, image previews, animation controls, downloadable
 artifacts and links to interactive HTML viewers. Images load lazily and videos
 start when the visitor requests playback.
 
+Browsing the demos
+------------------
+
+The gallery follows a topic sequence rather than alphabetical source-folder
+order. Each section has a description and a jump link with its demo count:
+
+#. Getting started
+#. Earth, Moon and Solar System views
+#. Orbit geometry and propagation
+#. Maneuvers and transfers
+#. Spacecraft attitude and dynamics
+#. Coverage and navigation
+#. Illumination and brightness
+#. Space environment
+#. Dashboards and uncertainty
+#. Coordinates and sampling
+#. Reference comparisons
+#. Animation export
+
+Within a topic, the built-in examples progress from introductory to specialized.
+For example, the attitude topic begins with the mesh/vector view before torque,
+control, radiation pressure and finite-burn dynamics. Reference comparisons
+remain labeled as comparisons, not blanket claims of physical validation.
+Empty sections are omitted. Search and the topic selector work together; empty
+sections and their jump links disappear, and the visible demo count updates.
+Search uses titles, descriptions, demo names and categories, excluding logs.
+``Clear filters`` restores all demos.
+
+The presentation catalog is ``ssatk/_gallery_layout.py``. New demos in known
+folders inherit the topic and appear after its curated examples, sorted by title
+and source name. Custom categories remain separate topics after the built-in
+topics; uncategorized examples remain visible in ``Other examples``. The
+manifest and page share the same demo and artifact order. Source paths and
+manifest ``category`` identifiers are retained, and demo execution order is
+unchanged. Authored titles are retained; generated filename titles are made
+readable without the redundant ``Demo`` prefix. No demo is duplicated across
+topics.
+
 Every demo lists animations and interactive HTML views first, static images
 next, other downloads (such as CSV and JSON) after images, and text logs last.
 Within each group, paths sort alphabetically without regard to case, with a
 stable tie-break for case variants. The manifest uses the same order, including
 when the report is rebuilt from existing results. Console output, warnings and
 error details follow the file previews.
+
+Data preparation
+----------------
 
 If the default user cache is read-only, set ``SSATK_CACHE`` to a writable
 directory outside the site before running the demos. The gallery workflow

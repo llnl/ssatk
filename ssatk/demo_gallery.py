@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from ssatk._paths import SSATK_OUTPUT_ENV, output_root as default_output_root
+from ssatk._gallery_layout import gallery_group, gallery_sort_key, gallery_title
 from ssatk.gallery_validation import validate_gallery
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
@@ -474,9 +475,17 @@ def render_file_preview(file_rel: str) -> str:
 def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     # Rebuilding an existing/externally supplied manifest must follow the same
     # order as a fresh run, without mutating the caller's DemoResult objects.
-    results = [replace(r, files=sorted(r.files, key=_file_preview_sort_key)) for r in results]
-    cards = []
+    results = sorted(
+        (replace(r, title=gallery_title(r.name, r.title),
+                 files=sorted(r.files, key=_file_preview_sort_key)) for r in results),
+        key=gallery_sort_key,
+    )
+    groups = {}
+    cards = {}
     for r in results:
+        group = gallery_group(r.name, r.category)
+        groups.setdefault(group.key, group)
+        cards.setdefault(group.key, [])
         badge_class = {"success": "ok", "skipped": "skip"}.get(r.status, "fail")
         previews = "\n".join(render_file_preview(f) for f in r.files) or "<p>No output files found.</p>"
 
@@ -501,20 +510,19 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
                 f"<pre>{html.escape(r.error)}</pre></details>"
             )
 
-        category_line = ""
-        if r.category:
-            category_line = f'<p class="meta"><strong>Category:</strong> {html.escape(r.category)}</p>'
-
-        cards.append(
+        # Search demo metadata, not captured logs, file paths or tracebacks.
+        search_text = " ".join((r.title, r.name, r.description, group.title, r.category))
+        description = "" if r.description == f"Demo from {r.name}.py" else f"<p>{html.escape(r.description)}</p>"
+        cards[group.key].append(
             f"""
-            <section class="card" data-category="{html.escape(r.category, quote=True)}">
+            <section class="card" data-category="{group.key}" data-demo="{html.escape(r.name, quote=True)}"
+                     data-search="{html.escape(search_text, quote=True)}">
               <div class="card-header">
-                <h2>{html.escape(r.title)}</h2>
+                <h3>{html.escape(r.title)}</h3>
                 <span class="badge {badge_class}">{html.escape(r.status)}</span>
               </div>
               <p class="meta"><strong>Demo:</strong> {html.escape(r.name)}</p>
-              {category_line}
-              <p>{html.escape(r.description)}</p>
+              {description}
               <p class="meta"><strong>Runtime:</strong> {r.runtime_seconds:.2f}s</p>
               <div class="gallery">
                 {previews}
@@ -532,8 +540,21 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     skipped = sum(r.status == "skipped" for r in results)
     manifest = [asdict(r) for r in results]
     category_options = ''.join(
-        f'<option value="{html.escape(category, quote=True)}">{html.escape(category)}</option>'
-        for category in sorted({r.category for r in results if r.category})
+        f'<option value="{group.key}">{html.escape(group.title)}</option>'
+        for group in groups.values()
+    )
+    navigation = ''.join(
+        f'<a class="topic-link" href="#group-{group.key}" data-group="{group.key}">'
+        f'<span>{html.escape(group.title)}</span><span class="topic-count">{len(cards[group.key])}</span></a>'
+        for group in groups.values()
+    )
+    sections = ''.join(
+        f'<section class="demo-group" id="group-{group.key}" aria-labelledby="heading-{group.key}">'
+        f'<div class="group-heading"><h2 id="heading-{group.key}">{html.escape(group.title)}</h2>'
+        f'<span class="group-count">{len(cards[group.key])} {"demo" if len(cards[group.key]) == 1 else "demos"}</span></div>'
+        f'<p class="group-description">{html.escape(group.description)}</p>'
+        f'{"".join(cards[group.key])}</section>'
+        for group in groups.values()
     )
 
     html_text = f"""<!doctype html>
@@ -586,6 +607,19 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       background: #121a31; color: #e8ecf3; border: 1px solid #526692;
       border-radius: 6px; padding: 10px; margin-left: 8px; max-width: 100%;
     }}
+    .browse-intro, .group-description {{ color: #c7d2e6; line-height: 1.5; }}
+    .topic-nav {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }}
+    .topic-link {{
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px; border: 1px solid #3b5284; border-radius: 8px;
+      background: #121a31; color: #b9d9ff; text-decoration: none;
+    }}
+    .topic-link:hover, .topic-link:focus-visible {{ background: #1c2d5a; border-color: #8ec5ff; }}
+    .topic-count, .group-count {{ color: #b8c3da; white-space: nowrap; }}
+    .demo-group {{ margin-top: 42px; scroll-margin-top: 20px; }}
+    .group-heading {{ display: flex; align-items: baseline; gap: 18px; border-bottom: 1px solid #3b5284; }}
+    .group-heading h2 {{ margin: 0 0 12px; }}
+    .card-header h3 {{ margin: 0; font-size: 1.25rem; }}
     [hidden] {{ display: none !important; }}
     .card {{
       background: #121a31;
@@ -658,6 +692,7 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     .file-link {{
       color: #8ec5ff;
       text-decoration: none;
+      overflow-wrap: anywhere;
     }}
     details {{
       margin-top: 12px;
@@ -683,6 +718,19 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       padding: 0 24px 40px 24px;
       color: #99a7c4;
     }}
+    @media (max-width: 600px) {{
+      header, main {{ padding: 18px; }}
+      .summary {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }}
+      .summary-box {{ min-width: 0; padding: 12px; }}
+      .filters {{ flex-direction: column; }}
+      .filters label {{ display: flex; flex-direction: column; gap: 6px; min-width: 0; }}
+      .filters input, .filters select {{ margin-left: 0; min-width: 0; width: 100%; box-sizing: border-box; }}
+      .card {{ padding: 12px; }}
+      .card-header {{ align-items: flex-start; flex-direction: column; }}
+      .meta {{ overflow-wrap: anywhere; }}
+      .gallery, .topic-nav {{ grid-template-columns: minmax(0, 1fr); }}
+      .group-heading {{ flex-wrap: wrap; gap: 8px; }}
+    }}
   </style>
 </head>
 <body>
@@ -691,10 +739,6 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     <p class="subtitle">Space Situational Awareness Toolkit — plots, animations and interactive viewers.</p>
   </header>
   <main>
-    <div class="filters">
-      <label>Search <input id="search" type="search" placeholder="Orbit, Moon, attitude…"></label>
-      <label>Category <select id="category"><option value="">All categories</option>{category_options}</select></label>
-    </div>
     <section class="summary">
       <div class="summary-box"><strong>Total demos</strong><br>{total}</div>
       <div class="summary-box"><strong>Successful</strong><br>{success}</div>
@@ -702,7 +746,17 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       <div class="summary-box"><strong>Failed</strong><br>{failed}</div>
       <div class="summary-box"><strong>Manifest</strong><br><a class="file-link" href="manifest.json">manifest.json</a></div>
     </section>
-    {''.join(cards)}
+    <p class="browse-intro">Start with the introductory workflows or jump to a topic below.
+      Within each topic, examples progress from basic views to specialized workflows.
+      Each demo shows animations and interactive views first, then images, downloads and logs.</p>
+    <div class="filters">
+      <label>Search <input id="search" type="search" placeholder="Orbit, Moon, attitude…"></label>
+      <label>Topic <select id="category"><option value="">All topics</option>{category_options}</select></label>
+      <button id="reset-filters" type="button" class="topic-link">Clear filters</button>
+    </div>
+    <p id="match-count" class="meta" role="status" aria-live="polite">Showing {total} of {total} demos</p>
+    <nav class="topic-nav" aria-label="Demo topics">{navigation}</nav>
+    {sections}
     <p id="no-matches" hidden>No demos match these filters.</p>
   </main>
   <footer>
@@ -712,19 +766,35 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     const search = document.getElementById('search');
     const category = document.getElementById('category');
     const cards = [...document.querySelectorAll('.card')];
+    const groups = [...document.querySelectorAll('.demo-group')];
     function filterCards() {{
       const query = search.value.trim().toLowerCase();
       let visible = 0;
       for (const card of cards) {{
         const matches = (!category.value || card.dataset.category === category.value)
-          && card.textContent.toLowerCase().includes(query);
+          && card.dataset.search.toLowerCase().includes(query);
         card.hidden = !matches;
         if (matches) visible++;
       }}
+      for (const group of groups) {{
+        const count = group.querySelectorAll('.card:not([hidden])').length;
+        group.hidden = count === 0;
+        group.querySelector('.group-count').textContent = `${{count}} demo${{count === 1 ? '' : 's'}}`;
+        const link = document.querySelector(`.topic-link[data-group="${{group.id.slice(6)}}"]`);
+        link.hidden = count === 0;
+        link.querySelector('.topic-count').textContent = count;
+      }}
+      document.getElementById('match-count').textContent = `Showing ${{visible}} of ${{cards.length}} demos`;
       document.getElementById('no-matches').hidden = visible > 0;
     }}
     search.addEventListener('input', filterCards);
     category.addEventListener('change', filterCards);
+    document.getElementById('reset-filters').addEventListener('click', () => {{
+      search.value = '';
+      category.value = '';
+      filterCards();
+    }});
+    filterCards();
   </script>
 </body>
 </html>
