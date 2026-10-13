@@ -595,10 +595,10 @@ def make_accel_ladder_dashboard_figures(
         axis.set_ylim(bottom=0)
         axis.margins(y=.20)
         axis.grid(True, which="major", alpha=.25)
-    a_final.annotate("reference = 0", (reference, 0), xytext=(0, 9),
-                     textcoords="offset points", ha="center", fontsize=8)
-    a_inc.text(.02, .96, "Model 0 has no predecessor", transform=a_inc.transAxes,
-               va="top", fontsize=8, color="0.35")
+    for axis, note in ((a_final, "reference = 0"),
+                       (a_inc, "Model 0 has no predecessor")):
+        axis.text(.02, .04, note, transform=axis.transAxes,
+                  ha="left", va="bottom", fontsize=8, color="0.35")
     heat = fig2.add_subplot(grid[2, :])
     if len(t_rel_s) < 2 or np.any(np.diff(t_rel_s) <= 0):
         raise ValueError("dashboard times must contain at least two increasing samples")
