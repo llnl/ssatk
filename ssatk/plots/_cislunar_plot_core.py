@@ -7,15 +7,14 @@ import matplotlib.pyplot as _plt
 from matplotlib.lines import Line2D as _Line2D
 from matplotlib.patches import Patch as _Patch
 from matplotlib.ticker import MaxNLocator as _MaxNLocator
-from matplotlib.ticker import MultipleLocator as _MultipleLocator
 import numpy as _np
 
-from ..compute import find_smallest_bounding_cube as _find_smallest_bounding_cube
 from ..constants import EARTH_RADIUS as _EARTH_RADIUS
 from ..constants import MOON_RADIUS as _MOON_RADIUS
 from ..constants import RGEO as _RGEO
 from ..coordinates import gcrf_to_lunar_fixed as _gcrf_to_lunar_fixed
 from ._legend_handlers import GradientLineHandler as _GradientLineHandler
+from ._globe_scene import visible_points as _visible_points
 from .plotutils import figsave as _figsave
 from .plotutils import valid_orbits as _valid_orbits
 
@@ -38,80 +37,90 @@ def _cislunar_plot_core(
     *,
     mode="combined",
     legend=True,
+    scene_pad=0.08,
 ):
     mode = mode.lower()
     if mode not in {"combined", "3d", "xy"}:
         raise ValueError("mode must be one of: combined, 3d, xy")
 
+    if not _np.isfinite(scene_pad) or scene_pad < 0:
+        raise ValueError("scene_pad must be a finite nonnegative fraction")
     r, t = _valid_orbits(r, t)
+    if not r or any(not _np.all(_np.isfinite(xyz)) for xyz in r):
+        raise ValueError("r must contain nonempty finite tracks")
     textcolor, plotcolor = _plot_colors(c)
+
+    # Compute every track before choosing limits or units. In particular, the
+    # Earth-centred distance of a lunar orbiter must not determine the scale of
+    # the Moon-centred panel, and input order must not change a panel's units.
+    moon_body = _get_body("moon")
+    lunar_tracks, moon_tracks, earth_tracks = [], [], []
+    for xyz, times in zip(r, t):
+        lunar_tracks.append(_gcrf_to_lunar_fixed(xyz, times))
+        moon_tracks.append(_np.asarray(moon_body.position(times)).reshape(3, -1).T)
+        earth_tracks.append(_gcrf_to_lunar_fixed(_np.zeros_like(xyz), times))
+    lunar_unit, lunar_label = _scene_units(lunar_tracks)
+    gcrf_unit, gcrf_label = _scene_units(r)
+    dimensions = 2 if mode == "xy" else 3
+    bounds_lunar = _scene_bounds(lunar_tracks, _MOON_RADIUS, lunar_unit, scene_pad, dimensions)
+    bounds_gcrf = _scene_bounds(r, _EARTH_RADIUS, gcrf_unit, scene_pad, dimensions)
     fig, axes = _create_cislunar_axes(mode, figsize, plotcolor)
-
-    bounds_gcrf = {
-        "lower": _np.array([_np.inf, _np.inf, _np.inf]),
-        "upper": _np.array([-_np.inf, -_np.inf, -_np.inf]),
-    }
-    bounds_lunar = {
-        "lower": _np.array([_np.inf, _np.inf, _np.inf]),
-        "upper": _np.array([-_np.inf, -_np.inf, -_np.inf]),
-    }
-
-    unit_label = "km"
-    unit_conversion = 1e3
+    earth_visible = mode != "3d"  # The GCRF panel always contains Earth.
     for orbit_index, xyz_raw in enumerate(r):
-        xyz = xyz_raw
-        t_current = t[orbit_index]
-        moon_body = _get_body("moon")
-        r_moon = moon_body.position(t_current).T
-        r_earth = _np.zeros(_np.shape(r_moon))
-
-        if max(_np.linalg.norm(xyz, axis=-1) >= 0.95 * _RGEO):
-            unit_conversion = _RGEO
-            unit_label = "GEO"
-        else:
-            unit_conversion = 1e3
-            unit_label = "km"
-
-        xyz_lunar = _gcrf_to_lunar_fixed(xyz, t_current) / unit_conversion
-        r_earth_lunar = _gcrf_to_lunar_fixed(r_earth, t_current) / unit_conversion
-        xyz = xyz / unit_conversion
-        r_moon = r_moon / unit_conversion
-
-        if mode != "3d":
-            lower_bound_temp, upper_bound_temp = _find_smallest_bounding_cube(xyz, pad=1)
-            bounds_gcrf["lower"] = _np.minimum(bounds_gcrf["lower"], lower_bound_temp)
-            bounds_gcrf["upper"] = _np.maximum(bounds_gcrf["upper"], upper_bound_temp)
-
-        lower_bound_lunar_temp, upper_bound_lunar_temp = _find_smallest_bounding_cube(xyz_lunar, pad=1)
-        bounds_lunar["lower"] = _np.minimum(bounds_lunar["lower"], lower_bound_lunar_temp)
-        bounds_lunar["upper"] = _np.maximum(bounds_lunar["upper"], upper_bound_lunar_temp)
-
-        mask_gcrf = _bounds_mask(r_moon, bounds_gcrf, dimensions=3 if mode == "combined" else 2)
-        mask_lunar = _bounds_mask(r_earth_lunar, bounds_lunar, dimensions=3 if mode != "xy" else 2)
+        xyz, xyz_lunar = xyz_raw/gcrf_unit, lunar_tracks[orbit_index]/lunar_unit
+        r_moon, r_earth_lunar = moon_tracks[orbit_index]/gcrf_unit, earth_tracks[orbit_index]/lunar_unit
+        mask_gcrf = _bounds_mask(r_moon, bounds_gcrf, dimensions)
+        mask_lunar = _bounds_mask(r_earth_lunar, bounds_lunar, dimensions)
+        earth_visible |= bool(_np.any(mask_lunar))
         grey_colors, blue_colors = _body_colors(r_moon, mask_gcrf, mask_lunar, mode)
         scatter_dot_colors = _scatter_colors(r, xyz, orbit_index)
-
         if mode == "combined":
-            _plot_cislunar_gcrf_3d(axes["gcrf"], xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize)
-            _plot_cislunar_lunar_3d(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize)
+            _plot_cislunar_gcrf_3d(axes["gcrf"], xyz, r_moon, mask_gcrf, grey_colors, gcrf_unit, gcrf_label, scatter_dot_colors, textcolor, fontsize)
+            _plot_cislunar_lunar_3d(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, lunar_unit, lunar_label, scatter_dot_colors, textcolor, fontsize)
         elif mode == "xy":
-            _plot_cislunar_gcrf_xy(axes["gcrf"], xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize)
-            _plot_cislunar_lunar_xy(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize)
+            _plot_cislunar_gcrf_xy(axes["gcrf"], xyz, r_moon, mask_gcrf, grey_colors, gcrf_unit, gcrf_label, scatter_dot_colors, textcolor, fontsize)
+            _plot_cislunar_lunar_xy(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, lunar_unit, lunar_label, scatter_dot_colors, textcolor, fontsize)
         else:
-            _plot_cislunar_lunar_3d(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize)
+            _plot_cislunar_lunar_3d(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, lunar_unit, lunar_label, scatter_dot_colors, textcolor, fontsize)
 
     _finish_cislunar_axes(axes, bounds_gcrf, bounds_lunar, mode, title, textcolor, plotcolor, fontsize)
-    _add_cislunar_legend(axes["lunar"], len(r), mode, legend, textcolor, plotcolor, fontsize)
+    lagrange_visible = any(_bounds_mask(_np.asarray(pos/lunar_unit).reshape(1, 3), bounds_lunar, dimensions)[0]
+                           for pos in _lagrange_points_lunar_fixed_frame().values())
+    _add_cislunar_legend(axes["lunar"], len(r), mode, legend, textcolor, plotcolor, fontsize,
+                         earth_visible=earth_visible, lagrange_visible=lagrange_visible)
 
     if save_path:
         _figsave(fig, save_path)
     if show:
         _plt.show()
-    _plt.close()
+    _plt.close(fig)
 
     if mode == "3d":
         return fig, axes["lunar"]
     return fig, [axes["gcrf"], axes["lunar"]]
+
+
+def _scene_units(tracks):
+    """Choose one distance unit for all tracks in the panel's own frame."""
+    if any(_np.max(_np.linalg.norm(xyz, axis=1)) >= .95*_RGEO for xyz in tracks):
+        return _RGEO, "GEO"
+    return 1e3, "km"
+
+
+def _scene_bounds(tracks, body_radius, unit, padding, dimensions):
+    """Tight equal-axis bounds for tracks plus the central body's true sphere.
+
+    Padding is a fraction of the largest displayed extent, on each side.
+    Bounds are computed in metres first; changing axis units cannot change
+    the physical field of view. XY panels ignore out-of-plane excursions.
+    """
+    lower, upper = _np.full(3, -body_radius), _np.full(3, body_radius)
+    for xyz in tracks:
+        lower = _np.minimum(lower, xyz.min(axis=0))
+        upper = _np.maximum(upper, xyz.max(axis=0))
+    center = (lower+upper)/2
+    half_span = max((upper-lower)[:dimensions])*(.5+padding)
+    return {"lower": (center-half_span)/unit, "upper": (center+half_span)/unit}
 
 
 def _plot_colors(c):
@@ -172,15 +181,18 @@ def _sphere_mesh(radius):
 
 
 def _plot_cislunar_gcrf_3d(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    ax.scatter3D(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=scatter_dot_colors, s=1)
+    ax.scatter3D(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=scatter_dot_colors, s=1, label="Orbit Path")
     ax.plot_surface(*_sphere_mesh(_EARTH_RADIUS / unit_conversion), color="blue", alpha=0.6, edgecolor="none")
     ax.scatter3D(r_moon[mask_gcrf, 0], r_moon[mask_gcrf, 1], r_moon[mask_gcrf, 2], color=grey_colors, s=(_MOON_RADIUS / unit_conversion))
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=True)
 
 
 def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    ax.scatter3D(xyz_lunar[:, 0], xyz_lunar[:, 1], xyz_lunar[:, 2], color=scatter_dot_colors, s=1)
-    ax.plot_surface(*_sphere_mesh(_MOON_RADIUS / unit_conversion), color="grey", alpha=0.6, edgecolor="none")
+    visible = _visible_points(xyz_lunar, _MOON_RADIUS/unit_conversion, ax.elev, ax.azim)
+    colors = scatter_dot_colors[visible] if _np.ndim(scatter_dot_colors) == 2 else scatter_dot_colors
+    ax.computed_zorder = False
+    ax.scatter3D(*xyz_lunar[visible].T, color=colors, s=1, label="Orbit Path", zorder=15)
+    ax.plot_surface(*_sphere_mesh(_MOON_RADIUS / unit_conversion), color="lightgrey", alpha=1., edgecolor="none", zorder=10)
     ax.scatter3D(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], r_earth_lunar[mask_lunar, 2], color=blue_colors, s=55)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=True)
     for point, pos in _lagrange_points_lunar_fixed_frame().items():
@@ -192,7 +204,7 @@ def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_color
 
 def _plot_cislunar_gcrf_xy(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
     earth_circle = _plt.Circle((0, 0), _EARTH_RADIUS / unit_conversion, color="lightblue", alpha=0.8, linestyle="dashed", fill=True)
-    ax.scatter(xyz[:, 0], xyz[:, 1], color=scatter_dot_colors, s=1)
+    ax.scatter(xyz[:, 0], xyz[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path")
     ax.add_patch(earth_circle)
     ax.scatter(r_moon[mask_gcrf, 0], r_moon[mask_gcrf, 1], color=grey_colors, s=(_MOON_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
@@ -200,7 +212,7 @@ def _plot_cislunar_gcrf_xy(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_convers
 
 def _plot_cislunar_lunar_xy(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
     moon_circle = _plt.Circle((0, 0), _MOON_RADIUS / unit_conversion, color="lightgrey", alpha=0.8, linestyle="dashed", fill=True)
-    ax.scatter(xyz_lunar[:, 0], xyz_lunar[:, 1], color=scatter_dot_colors, s=1)
+    ax.scatter(xyz_lunar[:, 0], xyz_lunar[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path")
     ax.add_patch(moon_circle)
     ax.scatter(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], color=blue_colors, s=(_EARTH_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
@@ -227,15 +239,20 @@ def _finish_cislunar_axes(axes, bounds_gcrf, bounds_lunar, mode, title, textcolo
 
     _set_cislunar_limits(axes["lunar"], bounds_lunar, three_d=(mode != "xy"))
     if mode == "3d":
-        axes["lunar"].set_title(f"Frame: Lunar Fixed\n{title}", color=textcolor, fontsize=fontsize + 2)
+        lunar_title = "Frame: Moon-centred Earth–Moon rotating"
+        if title:
+            lunar_title = f"{title}\n{lunar_title}"
+        axes["lunar"].set_title(lunar_title, color=textcolor, fontsize=fontsize + 2)
     else:
-        axes["lunar"].set_title("Frame: Lunar Fixed", color=textcolor, fontsize=fontsize + 2)
+        axes["lunar"].set_title("Frame: Moon-centred rotating", color=textcolor, fontsize=fontsize + 2)
         axes["lunar"].set_zorder(1)
 
     if mode == "combined":
-        _plt.subplots_adjust(left=0.0, right=1.5, bottom=0.05, top=0.95, wspace=-0.0)
+        fig = axes["lunar"].figure
+        fig.subplots_adjust(left=0.06, right=0.91, bottom=0.12, top=0.90, wspace=0.32)
     elif mode == "xy":
-        _plt.subplots_adjust(left=0.0, right=1.5, bottom=0.05, top=0.95, wspace=0.2)
+        fig = axes["lunar"].figure
+        fig.subplots_adjust(left=0.10, right=0.97, bottom=0.12, top=0.90, wspace=0.35)
 
     for ax in axes.values():
         _style_cislunar_axis(ax, plotcolor, textcolor, fontsize, three_d=(mode != "xy"))
@@ -247,6 +264,7 @@ def _set_cislunar_limits(ax, bounds, *, three_d):
     if three_d:
         ax.set_zlim(bounds["lower"][2], bounds["upper"][2])
         ax.set_box_aspect([1, 1, 1])
+        ax.set_proj_type("ortho")
     else:
         ax.set_aspect("equal")
 
@@ -260,29 +278,33 @@ def _style_cislunar_axis(ax, plotcolor, textcolor, fontsize, *, three_d):
     for spine in ax.spines.values():
         spine.set_edgecolor(textcolor)
 
-    if three_d:
-        ax.xaxis.set_major_locator(_MaxNLocator(integer=True))
-        ax.yaxis.set_major_locator(_MaxNLocator(integer=True))
-        ax.zaxis.set_major_locator(_MaxNLocator(integer=True))
-    else:
-        x_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-        y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
-        ax.xaxis.set_major_locator(_MultipleLocator(base=max(_np.ceil(x_range / 6), 1)))
-        ax.yaxis.set_major_locator(_MultipleLocator(base=max(_np.ceil(y_range / 6), 1)))
+    # Fractional GEO coordinates are useful on close views; integer-only
+    # locators or a minimum one-GEO tick step leave these axes nearly empty.
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis) if three_d else (ax.xaxis, ax.yaxis):
+        axis.set_major_locator(_MaxNLocator(nbins=4))
+        if three_d:
+            axis.set_pane_color((*_rgb(plotcolor), .12))
+            axis._axinfo["grid"]["color"] = (*_rgb(textcolor), .18)
 
 
-def _add_cislunar_legend(ax, orbit_count, mode, legend, textcolor, plotcolor, fontsize):
-    if mode == "3d" and not legend:
+def _rgb(color):
+    from matplotlib.colors import to_rgb
+    return to_rgb(color)
+
+
+def _add_cislunar_legend(ax, orbit_count, mode, legend, textcolor, plotcolor, fontsize, *, earth_visible, lagrange_visible):
+    if not legend:
         return
 
     rainbow_line = _Line2D([0], [0], color="w", linestyle="-", linewidth=2, label="Orbit Path")
-    markerfacecolor = "grey" if mode == "xy" else "black"
+    markerfacecolor = textcolor
     markersize = 10 if mode == "xy" else 6
-    legend_elements = [
-        _Patch(facecolor="lightblue", edgecolor=textcolor, label="Earth"),
-        _Patch(facecolor="lightgrey", edgecolor=textcolor, label="Moon"),
-        _Line2D([0], [0], marker="o", color="none", markerfacecolor=markerfacecolor, markersize=markersize, label="Lagrange Points"),
-    ]
+    legend_elements = [_Patch(facecolor="lightgrey", edgecolor=textcolor, label="Moon")]
+    if earth_visible:
+        legend_elements.insert(0, _Patch(facecolor="lightblue", edgecolor=textcolor, label="Earth"))
+    if lagrange_visible:
+        legend_elements.append(_Line2D([0], [0], marker="o", color="none", markerfacecolor=markerfacecolor,
+                                       markersize=markersize, label="Lagrange Points"))
     if orbit_count == 1:
         legend_elements.append(rainbow_line)
 

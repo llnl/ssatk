@@ -408,3 +408,20 @@ Separate C checks cover short-arc framing, visible/occluded raster pixels,
 standalone TT-to-UTC epochs, gnomonic sky projection and invalid inputs. These
 checks validate geometry and output contracts, not measured lunar flight states,
 terrain elevation or calibrated surface photometry.
+
+Cislunar framing follow-up
+--------------------------
+
+``scripts/tests/test_cislunar_framing.py`` adds three functions/seven cases.
+A specified linear Moon ephemeris puts the real rotating-frame transform in
+an exact Cartesian basis at the test epoch. Literal 3,000-km circles must
+produce +/-3,480-km limits under 8% padding, with a 1e-8-km floating-point
+budget and the physical 1,738.1-km Moon radius. Analytic orthographic visibility
+selects the expected samples behind the lunar disc. Mixed near-Earth and
+near-Moon tracks are checked in both input orders and all three layouts,
+against supplied metre positions with a 0.1-mm arithmetic budget. XY bounds
+must remain tied to the lunar radius despite a large vertical excursion.
+
+Canvas containment, legend suppression and fractional tick placement are
+explicit C contracts. These tests validate framing and coordinate/unit wiring;
+they do not provide an independent real lunar ephemeris or propagation oracle.

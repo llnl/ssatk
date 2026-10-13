@@ -187,3 +187,27 @@ orbital diagram, not a sensor measurement. The former finite star sphere is
 removed from this renderer. The Sun symbol is off by default; explicitly
 requesting ``show_sun_graphic=True`` draws a labelled direction symbol with
 schematic size and distance. Physical solar illumination remains enabled.
+
+Cislunar scene framing
+----------------------
+
+``orbit_plot(..., view="cislunar_3d")`` fits its Moon-centred tracks and the
+physical Moon with an 8% margin on each side. The former fixed one-GEO padding
+added 42,164 km on every side even for a 1,000-km-altitude lunar orbit. Use
+``scene_pad=0.05`` for a 5% margin. Bounds remain equal on all displayed axes;
+body radii and trajectory coordinates are not enlarged to create the zoom.
+
+All tracks are transformed before selecting the bounds and axis units.
+Each panel chooses one common km or GEO unit from positions in that panel's
+frame. This prevents both Earth-centred distances from inflating a lunar
+close-up and mixtures of km/GEO coordinates for near-Earth and near-Moon
+tracks of different lengths. Input order cannot change the axes. The entire
+central body stays inside the bounds, even for a short arc; XY views ignore
+out-of-plane excursions when choosing the displayed extent.
+
+Paired views default to a 12-by-7-inch figure and keep both panels within the
+canvas. Tick spacing supports fractional GEO values. Legends omit Earth and
+Lagrange markers when they are outside the shown panels, and ``legend=False``
+also applies to paired views. The Moon is an opaque sphere with its true
+radius; samples behind its projected disc are hidden for the static camera.
+This is an orthographic diagram, not a textured surface or photometric model.

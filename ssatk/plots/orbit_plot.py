@@ -192,6 +192,10 @@ def orbit_plot(
         synonyms per call. Supported aliases include GCRF/GCRS, ITRF/ITRS,
         lunar, lunar fixed, and lunar axis. ``lunar_*`` view selectors default
         to ``coordinate="lunar_fixed"`` unless this is explicitly overwritten.
+    scene_pad : float, optional
+        For cislunar views, fractional padding on each side of the track and
+        central-body bounds (default 0.08). Each panel chooses consistent km
+        or GEO units in its own frame. This does not change physical sizes.
     lunar_transform : {"standard", "fixed"}, optional
         Override how lunar-frame orbit views are transformed. If omitted,
         ``frame="lunar_fixed"`` and similar fixed-frame aliases use the fixed
@@ -204,10 +208,11 @@ def orbit_plot(
     if figsize == _DEFAULT_FIGSIZE:
         if plot_family == "orbit" and _is_single_alias(view, _ORBIT_DASHBOARD_ALIAS_KEYS):
             figsize = _ORBIT_DASHBOARD_FIGSIZE
-        elif plot_family == "cislunar" and _is_single_alias(view, _CISLUNAR_DASHBOARD_ALIAS_KEYS):
+        elif plot_family == "cislunar" and target in {"combined", "xy"}:
             figsize = _CISLUNAR_DASHBOARD_FIGSIZE
 
     if plot_family == "cislunar":
+        scene_pad = plot_kwargs.pop("scene_pad", 0.08)
         if plot_kwargs:
             unknown = ", ".join(sorted(plot_kwargs))
             raise TypeError(f"Unsupported cislunar orbit_plot keyword(s): {unknown}")
@@ -222,6 +227,7 @@ def orbit_plot(
             c=c,
             mode=target,
             legend=legend,
+            scene_pad=scene_pad,
         )
 
     if plot_family == "transfer":
