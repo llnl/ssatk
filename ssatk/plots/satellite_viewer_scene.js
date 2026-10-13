@@ -836,7 +836,7 @@ function buildStarfield() {
 }
 
 // ---------------------------------------------------------------------------
-// Earth -- custom day/night/specular shader on a smooth 128-segment sphere
+// Earth -- custom day/night/specular shader on a 256 x 128 sphere
 // ---------------------------------------------------------------------------
 function buildEarth() {
   const loader = new THREE.TextureLoader();
@@ -844,8 +844,13 @@ function buildEarth() {
   const nightTex = loader.load(NIGHT_TEXTURE_DATAURI);
   const specTex = loader.load(SPECULAR_TEXTURE_DATAURI);
   [dayTex, nightTex, specTex].forEach(t => { t.colorSpace = THREE.SRGBColorSpace; });
+  // Anisotropic filtering retains detail at grazing angles near the limb.
+  // Three.js also resizes textures to the GPU's maxTextureSize if necessary.
+  [dayTex, nightTex, specTex].forEach(t => {
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  });
 
-  const geom = new THREE.SphereGeometry(R_EARTH_KM, 128, 128);
+  const geom = new THREE.SphereGeometry(R_EARTH_KM, 256, 128);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       dayTexture: { value: dayTex },
@@ -927,6 +932,7 @@ function buildEarth() {
 function buildClouds() {
   const loader = new THREE.TextureLoader();
   const cloudTex = loader.load(CLOUDS_TEXTURE_DATAURI);
+  cloudTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   // Mipmaps are safe here now: the texture itself was reprocessed so every
   // pixel's RGB sits near true cloud-white, with only the alpha channel
   // varying to encode cloud shape. Previously, "transparent" pixels held a
@@ -936,7 +942,7 @@ function buildClouds() {
   // mipmaps entirely (the first fix attempted) removed that, but introduced
   // visible shimmer/aliasing when the cloud layer was minified at middle
   // zoom levels -- fixing the source texture avoids both problems at once.
-  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.006, 96, 96);
+  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.006, 256, 128);
   const mat = new THREE.MeshLambertMaterial({
     map: cloudTex, transparent: true, depthWrite: false, opacity: 0.85,
   });
@@ -950,7 +956,7 @@ function buildClouds() {
 // Atmosphere -- Fresnel rim glow, additive-blended, brighter on the day side
 // ---------------------------------------------------------------------------
 function buildAtmosphere() {
-  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.025, 96, 96);
+  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.025, 256, 128);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       glowColor: { value: new THREE.Color(0x4fa8ff) },

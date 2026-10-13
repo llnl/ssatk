@@ -7,7 +7,8 @@ Run:  python assemble.py
 
 Inlines scene.js, the vendored libraries (three.min.js and satellite.min.js) and
 the four Earth textures into a single standalone HTML file. The texture images
-come from the external core data package, not from this source repository.
+come from the external core data package, with an optional cached 8K NASA
+day map prepared by scripts.prepare_gallery_data, not from this source repository.
 
 Layout-agnostic on purpose: inputs are looked up next to this script first,
 then in an optional assets/ subfolder, then one directory up. That means the
@@ -71,20 +72,26 @@ def text(filename):
 def load_textures():
     """Return base64 strings for the four Earth textures.
 
-    Textures ship as individual files in the core data package. This avoids committing a
-    duplicated texture archive to SSATK while
-    still allowing installed users to build a self-contained HTML viewer.
+    Prefer the cached 8192 x 4096 NASA day map prepared by
+    ``scripts.prepare_gallery_data``. Otherwise use the core data package's
+    2048 x 1024 map. Night lights, specular mask and clouds remain at 2K.
+    All image bytes are embedded, so the exported viewer works offline.
     """
+    from ssatk.plots._textures import viewer_earth_day_path
+
     files = {
         "day": "earth_day_2048.jpg",
         "night": "earth_night_2048.jpg",
         "specular": "earth_specular_2048.jpg",
         "clouds": "earth_clouds_2048.png",
     }
-    return {
-        key: base64.b64encode(_read_texture_binary(filename, key)).decode("ascii")
-        for key, filename in files.items()
-    }
+    cached_day = viewer_earth_day_path()
+    textures = {}
+    for key, filename in files.items():
+        data = (cached_day.read_bytes() if key == "day" and cached_day.is_file()
+                else _read_texture_binary(filename, key))
+        textures[key] = base64.b64encode(data).decode("ascii")
+    return textures
 
 
 def _load_ssapy_plot_constants():
@@ -521,6 +528,12 @@ html = """<!DOCTYPE html>
     position: absolute; top: 14px; left: 18px; color: #cfd8e3; font: 13px/1.4 -apple-system, sans-serif;
     background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 8px; pointer-events: none;
   }
+  #earth-credit {
+    position: absolute; bottom: 12px; left: 18px; z-index: 6;
+    color: #cfd8e3; background: rgba(0,0,0,0.55); padding: 6px 9px;
+    border-radius: 6px; font: 11px/1.4 -apple-system, sans-serif;
+  }
+  #earth-credit a { color: inherit; }
   #label-layer {
     position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5;
   }
@@ -688,6 +701,7 @@ html = """<!DOCTYPE html>
 <div id="scene-container"></div>
 <div id="label-layer"></div>
 <div id="hint">Drag to rotate &middot; scroll / pinch to zoom</div>
+<div id="earth-credit">__EARTH_CREDIT__</div>
 <div id="sat-panel">
   <div id="time-section">
     <div id="time-clock-row">
@@ -844,6 +858,14 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         The path written.
     """
     propagator = _propagator_name(propagator)
+    from ssatk.plots._textures import viewer_earth_day_path
+
+    earth_credit = (
+        '<a href="https://science.nasa.gov/earth/earth-observatory/'
+        'blue-marble-next-generation/base-topography/">NASA Earth Observatory</a>'
+        ' &middot; Blue Marble, Jan 2004 &middot; 8192 &times; 4096'
+        if viewer_earth_day_path().is_file() else 'Earth textures: ssa-data-core (2K fallback)'
+    )
     _tex = load_textures()
     day_b64 = _tex["day"]
     night_b64 = _tex["night"]
@@ -868,6 +890,7 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     replacements = {
         "SATELLITE_JS": satellite_js,
         "DAY_B64": day_b64,
+        "EARTH_CREDIT": earth_credit,
         "NIGHT_B64": night_b64,
         "SPEC_B64": spec_b64,
         "CLOUDS_B64": clouds_b64,

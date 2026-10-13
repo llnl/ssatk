@@ -58,13 +58,13 @@ jobs:
         # Maven is provided by the ubuntu-latest runner image.
         run: mvn -B -q -f demos/benchmarks/orekit/pom.xml dependency:build-classpath
 
-      - name: Cache reference data and lunar source maps
+      - name: Cache reference data and Earth/Moon source maps
         uses: actions/cache@v4
         with:
           path: ${{ env.SSATK_CACHE }}
           key: gallery-reference-data-${{ hashFiles('scripts/prepare_gallery_data.py', 'ssatk/io/moon_maps.py') }}
 
-      - name: Prepare DE430 reference data and NASA lunar maps
+      - name: Prepare DE430 reference data and NASA Earth/Moon maps
         run: python -m scripts.prepare_gallery_data
 
       - name: Validate JavaScript plot assets

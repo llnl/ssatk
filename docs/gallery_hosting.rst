@@ -44,6 +44,27 @@ and LROC color products and bakes the Moon viewer's maps. Normals retain the
 shadows. The texture colors are intended for visualization, not radiometry.
 Credit: `NASA's Scientific Visualization Studio <https://svs.gsfc.nasa.gov/4720/>`_.
 
+It also prepares the satellite viewer's **8192 × 4096** Earth day texture from
+NASA's **21600 × 10800** Blue Marble Next Generation map. This is 16 times the
+pixel count of the packaged 2048 × 1024 texture. The January 2004 composite
+includes shaded topography; it does not depict current weather or terrain
+geometry. Credit: `NASA Earth Observatory
+<https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography/>`_.
+The source download is pinned by SHA-256. Both the source and derived JPEG
+remain in ``$SSATK_CACHE/earth`` (or ``~/.ssatk/earth``); no large binary is
+added to the source repository. To prepare just this texture, run
+``python -c "from scripts.prepare_gallery_data import prepare_earth_texture; prepare_earth_texture()"``
+from a source checkout.
+
+The viewer embeds the cached day map in its standalone HTML. Without that
+cache it keeps the packaged 2K fallback, with no implicit network download.
+Night lights, clouds and the ocean specular mask remain at 2048 × 1024.
+Earth, clouds and atmosphere use 256 × 128 sphere segments, with up to 8×
+anisotropic texture filtering. Three.js reduces oversized textures to the
+browser GPU's supported maximum; an 8K texture requires about 171 MiB of GPU
+storage including RGBA mipmaps. These are visualization settings, not changes
+to Earth's physical radius or orbit calculations.
+
 The same step installs JPL's Linux-format DE430 file and a pinned Orekit
 UTC–TAI history covering the benchmark's January 2026 epoch in
 ``OREKIT_DATA_DIR``. The DE430 bytes are unchanged; its local name is

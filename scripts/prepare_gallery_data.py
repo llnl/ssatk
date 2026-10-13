@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare real reference data and lunar maps for the published gallery.
+"""Prepare real reference data and Earth/Moon maps for the published gallery.
 
 Run from a source checkout after installing the gallery extras. Inputs and
 baked textures stay in SSATK_CACHE, outside the repository and published site.
@@ -14,6 +14,16 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from ssatk.io import moon_maps
+from ssatk.plots._textures import viewer_earth_day_path
+
+
+# NASA Earth Observatory, Blue Marble Next Generation, January 2004.
+# Global equirectangular map: west to east (-180..180), north at the top.
+EARTH_DAY_URL = (
+    "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/"
+    "bmng-topography/january/world.topo.200401.3x21600x10800.jpg"
+)
+EARTH_DAY_SHA256 = "da0b85bfeaeb2287a322b0a69375e96387e5e1da8ededd7a51352a5507c4821c"
 
 
 # Fixed NASA/JPL products and an immutable Orekit reference-data revision.
@@ -63,6 +73,40 @@ def _download(url: str, directory: Path, expected: str) -> Path:
     return target
 
 
+def prepare_earth_texture() -> Path:
+    """Cache an 8K day map from the checksummed 21600 x 10800 NASA source.
+
+    Downsample without rotating, flipping, or inventing geographic detail.
+    The source has baked relief shading and represents January 2004, not live
+    weather or the viewer's simulation epoch. No source assets enter Git.
+    """
+    from PIL import Image
+
+    target = viewer_earth_day_path()
+    source = _download(EARTH_DAY_URL, target.parent, EARTH_DAY_SHA256)
+    partial = target.with_suffix(".jpg.part")
+    # This particular trusted, hash-verified NASA product exceeds Pillow's
+    # default image-size limit. Bound the override to its documented size and
+    # restore the caller's limit even if decoding fails.
+    previous_limit = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = 21600 * 10800
+    try:
+        with Image.open(source) as image:
+            if image.size != (21600, 10800):
+                raise ValueError("Unexpected NASA Earth map dimensions")
+            # Decode JPEG at half resolution first to limit peak memory.
+            image.draft("RGB", (8192, 4096))
+            image.resize((8192, 4096), Image.Resampling.LANCZOS).save(
+                partial, format="JPEG", quality=93, subsampling=0,
+            )
+        partial.replace(target)
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous_limit
+        partial.unlink(missing_ok=True)
+    print(f"Prepared {target} (8192 x 4096, NASA Earth Observatory)", flush=True)
+    return target
+
+
 def main() -> None:
     directories = {
         "moon": Path(moon_maps.cache_dir()).expanduser().resolve(),
@@ -70,6 +114,7 @@ def main() -> None:
     }
     for kind, url, expected in INPUTS:
         _download(url, directories[kind], expected)
+    prepare_earth_texture()
     # Normals retain the native 5760x2880 LOLA grid. The gallery uses a 4K
     # albedo and 720x360 horizon grid to limit browser memory and build time.
     moon_maps.main([

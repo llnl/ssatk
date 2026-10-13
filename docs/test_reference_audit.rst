@@ -339,3 +339,13 @@ contracts. The simulation's approximate aberration correction uses a
 budget is retained even with zero centroid noise. Full-cycle DOP853
 positions must agree with the analytic circle within 2 mm. Rendering and
 file metadata contracts are not counted as physical validation.
+
+Satellite viewer Earth detail
+-----------------------------
+
+``scripts/tests/test_viewer_earth_assets.py`` adds two publishing contracts:
+byte-exact embedding and offline fallback for an asymmetric image fixture,
+and rejection of a checksum-mismatched source without replacing the previous
+cached asset. Neither test claims to validate geography or orbit dynamics.
+The prepared gallery uses a SHA-256-pinned NASA Blue Marble product, with
+browser inspection of the embedded dimensions and landmark UV alignment.
