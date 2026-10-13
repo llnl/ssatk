@@ -30,6 +30,8 @@ Dependencies
 
 from __future__ import annotations
 
+from .rendering import _with_low_spec
+
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -608,6 +610,7 @@ PRESETS = {
 }
 
 
+@_with_low_spec
 def quick_figure(preset="poster", epoch=None, save_path=None, **overrides):
     """
     One-line entry point.
@@ -700,6 +703,7 @@ def _model_provenance(date, external_field, kp, belt_style, sw_bz_nT, sw_dp_nPa,
     return "<br>".join(lines)
 
 
+@_with_low_spec
 def plot_magfield_3d(
     *,
     epoch=2025.0,
@@ -754,7 +758,7 @@ def plot_magfield_3d(
     t=None,
     r_units="auto",
     v_units="auto",
-    orbit_name="SSAPy orbit",
+    orbit_name="SSATK orbit",
     orbit_color="#ff4d4d",
     orbit_width=5,
     split_topology=True,

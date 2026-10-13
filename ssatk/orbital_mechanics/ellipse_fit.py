@@ -755,7 +755,7 @@ def ellipse_fit(
             lw=2.5,
             color="gray",
             alpha=0.6,
-            label="ssapy",
+            label="SSATK Kepler reference",
         )
         ax3d.scatter(0, 0, 0, marker="x", s=80, color="black", label="Earth")
         ax3d.scatter(*(F2_m / 1e3), marker="x", s=80, color="gray", alpha=0.5, label="focus")
@@ -768,11 +768,11 @@ def ellipse_fit(
         ax3d.set_xlim((-Rmax_km, Rmax_km))
         ax3d.set_ylim((-Rmax_km, Rmax_km))
         ax3d.set_zlim((-Rmax_km, Rmax_km))
-        ax3d.set_title("Kepler-sampled ellipse with ssapy overlay")
+        ax3d.set_title("Kepler-sampled ellipse with SSATK reference")
         ax3d.legend()
 
         ax_dist.plot(t_minutes, np.linalg.norm(arc3d_m, axis=1) / 1e3, lw=5, label="ellipse")
-        ax_dist.plot(t_minutes, np.linalg.norm(r_ss_m, axis=1) / 1e3, lw=5, ls="--", color="red", label="ssapy")
+        ax_dist.plot(t_minutes, np.linalg.norm(r_ss_m, axis=1) / 1e3, lw=5, ls="--", color="red", label="SSATK Kepler reference")
         ax_dist.set_xlabel("Time from P1 [min]")
         ax_dist.set_ylabel("Distance [km]")
         ax_dist.set_title("Distance from origin")
@@ -780,7 +780,7 @@ def ellipse_fit(
         ax_dist.legend()
 
         ax_speed.plot(t_minutes, np.linalg.norm(vel3d_m_s, axis=1) / 1e3, lw=5, label="ellipse")
-        ax_speed.plot(t_minutes, np.linalg.norm(v_ss_m_s, axis=1) / 1e3, lw=5, ls="--", color="red", label="ssapy")
+        ax_speed.plot(t_minutes, np.linalg.norm(v_ss_m_s, axis=1) / 1e3, lw=5, ls="--", color="red", label="SSATK Kepler reference")
         ax_speed.set_xlabel("Time from P1 [min]")
         ax_speed.set_ylabel("Speed [km/s]")
         ax_speed.set_title("Speed over time")

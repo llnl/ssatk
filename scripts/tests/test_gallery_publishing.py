@@ -4,16 +4,21 @@ These are deployment regressions, not astrodynamics or image-fidelity tests.
 """
 
 from functools import partial
+import html
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
 import threading
 from urllib.request import urlopen
 import zipfile
 
 import pytest
 
-from ssatk.demo_gallery import run_all_demos, run_demo_script
+from ssatk.demo_gallery import build_html_report, discover_demo_files, run_all_demos, run_demo_script
 from ssatk.gallery_validation import validate_gallery
 
 
@@ -104,6 +109,39 @@ def main(make_figures=True, fast=True, verbose=True):
     assert "SSAPY_DEMO_OUTPUT_DIR" not in __import__("os").environ
 
 
+@pytest.mark.parametrize("entry", ["main", "run", "script"])
+def test_displayed_demo_command_runs_the_standalone_entrypoint(tmp_path, entry):
+    """C: execute the rendered command; standalone defaults may differ from fast mode."""
+    demos = tmp_path / "demos"
+    category = demos / "sky"
+    category.mkdir(parents=True)
+    (demos / "__init__.py").write_text("")
+    (category / "__init__.py").write_text("")
+    if entry == "script":
+        source = 'print("standalone script")\n'
+        expected = "standalone script"
+    else:
+        source = (f'def {entry}(fast=False):\n    print(f"fast={{fast}}")\n'
+                  f'if __name__ == "__main__":\n    {entry}()\n')
+        expected = "fast=False"
+    demo = _demo(category, source)
+    site = tmp_path / "site"
+    result = run_demo_script(demo, site, demos_dir=demos, fast=True)
+    assert result.status == "success", result.error
+    build_html_report([result], site)
+    page = (site / "index.html").read_text()
+    calls = re.findall(r'class="demo-call".*?<code>(.*?)</code>', page, re.S)
+    assert len(calls) == 1
+    command = shlex.split(html.unescape(calls[0]))
+    assert command == ["python", "-m", "demos.sky.demo_portable"]
+    process = subprocess.run([sys.executable, *command[1:]], cwd=tmp_path,
+                             text=True, capture_output=True, timeout=20, check=True)
+    assert process.stdout.strip() == expected
+    if entry != "script":
+        assert result.stdout == "fast=True"
+    assert "standalone defaults" in page
+
+
 def test_skipped_demo_is_not_claimed_successful(tmp_path):
     """C: a missing optional dependency is visibly skipped, not successful."""
     demos = tmp_path / "demos"
@@ -115,6 +153,40 @@ def test_skipped_demo_is_not_claimed_successful(tmp_path):
     page = (site / "index.html").read_text()
     assert '<strong>Skipped</strong><br>1' in page
     assert '<strong>Successful</strong><br>0' in page
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_cli_skip_policy_blocks_publication_but_preserves_diagnostics(tmp_path, strict):
+    """C: execute the CLI with a real skipped fixture and a stale archive."""
+    from ssatk.run_all_demos import main
+
+    demos, site = tmp_path / "demos", tmp_path / "site"
+    _demo(demos, 'def main(): return {"skipped": True, "reason": "Missing reference data"}\n')
+    archive = tmp_path / "site.zip"
+    archive.write_bytes(b"stale previous build")
+    args = ["--demos-dir", str(demos), "--output", str(site)]
+    status = main(args + (["--strict"] if strict else []))
+    assert status == (1 if strict else 0)
+    assert archive.exists() is not strict
+    manifest = json.loads((site / "manifest.json").read_text())
+    assert manifest[0]["status"] == "skipped"
+    assert "Missing reference data" in (site / "index.html").read_text()
+    if not strict:
+        assert zipfile.is_zipfile(archive)
+
+
+def test_gallery_excludes_standalone_gmat_but_keeps_other_comparisons():
+    """C: discover real demo metadata without importing optional runtimes."""
+    demos = Path(__file__).resolve().parents[2] / "demos"
+    included = {p.relative_to(demos).as_posix() for p in discover_demo_files(demos)}
+    assert "benchmarks/demo_gmat_benchmark.py" not in included
+    assert {
+        "benchmarks/demo_orekit_benchmark.py",
+        "benchmarks/demo_long_term_propagation_benchmark.py",
+        "benchmarks/demo_nbody_propagation_benchmark.py",
+        "orbit_visualization/demo_moon_webgl.py",
+        "space_environment/demo_magfield_plot.py",
+    } <= included
 
 
 @pytest.mark.parametrize("url", [

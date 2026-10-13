@@ -50,7 +50,9 @@ def main(make_figures=None, fast=None):
     lunar_event = "2014-04-15-total-lunar-wisconsin"
 
     solar_strip_path = figpath("eclipse/demo_eclipse_2024_solar_strip.png") if make_figures else None
+    # gallery-call: demo_eclipse_2024_solar_strip.png
     solar_strip_fig = make_strip(kind="solar", n_panels=5 if fast else 11, save_path=solar_strip_path)
+    # gallery-end
     outputs["strip_fig"] = solar_strip_fig
     outputs["solar_strip_fig"] = solar_strip_fig
     if solar_strip_path:
@@ -58,6 +60,7 @@ def main(make_figures=None, fast=None):
         print(f"Saved: {solar_strip_path}")
 
     lunar_search_path = figpath("eclipse/demo_eclipse_2014_lunar_wisconsin.png") if make_figures else None
+    # gallery-call: demo_eclipse_2014_lunar_wisconsin.png
     lunar_search_fig, lunar_stats = find_and_plot_eclipse(
         mode="lunar",
         search_days=search_days,
@@ -65,6 +68,7 @@ def main(make_figures=None, fast=None):
         save_path=lunar_search_path,
         verbose=not fast,
     )
+    # gallery-end
     outputs["search_fig"] = lunar_search_fig
     outputs["lunar_search_fig"] = lunar_search_fig
     outputs["lunar_strip_fig"] = lunar_search_fig
@@ -76,6 +80,7 @@ def main(make_figures=None, fast=None):
 
     if make_figures:
         lunar_space_path = figpath("eclipse/demo_eclipse_space_2014_lunar_wisconsin.html")
+        # gallery-call: demo_eclipse_space_2014_lunar_wisconsin.html
         lunar_space_fig = plot_space_view_plotly(
             mode="lunar",
             search_days=search_days,
@@ -83,11 +88,13 @@ def main(make_figures=None, fast=None):
             save_path=lunar_space_path,
             verbose=not fast,
         )
+        # gallery-end
         outputs["space_fig"] = lunar_space_fig
         outputs["lunar_space_fig"] = lunar_space_fig
         outputs["files"].append(lunar_space_path)
 
         lunar_anim_path = figpath("eclipse/demo_eclipse_space_2014_lunar_wisconsin_animated.html")
+        # gallery-call: demo_eclipse_space_2014_lunar_wisconsin_animated.html
         lunar_space_anim_fig = plot_space_view_animated(
             mode="lunar",
             search_days=search_days,
@@ -98,11 +105,13 @@ def main(make_figures=None, fast=None):
             save_path=lunar_anim_path,
             verbose=not fast,
         )
+        # gallery-end
         outputs["space_anim_fig"] = lunar_space_anim_fig
         outputs["lunar_space_anim_fig"] = lunar_space_anim_fig
         outputs["files"].append(lunar_anim_path)
 
         solar_2024_path = figpath("eclipse/demo_eclipse_space_2024_solar_animated.html")
+        # gallery-call: demo_eclipse_space_2024_solar_animated.html
         solar_2024_fig, solar_2024_stats = plot_2024_solar_eclipse_animated(
             save_path=solar_2024_path,
             n_frames=8 if fast else 26,
@@ -111,6 +120,7 @@ def main(make_figures=None, fast=None):
             show_stars=not fast,
             verbose=not fast,
         )
+        # gallery-end
         outputs["solar_2024_fig"] = solar_2024_fig
         outputs["solar_2024_stats"] = solar_2024_stats
         outputs["files"].append(solar_2024_path)

@@ -1,10 +1,10 @@
 """
 ssatk/plots/solar_bodies.py
 =====================================
-Proper 3D planet sphere rendering for the Solar View tab.
+3D planet sphere rendering for Solar System views.
 
 Each planet is a Plotly go.Surface with:
-  - Correct relative proportions (exaggerated ~500× for visibility)
+  - Physical spherical radii by default (explicit scale factors are optional)
   - Axial tilt applied
   - Latitude/longitude-based coloring mimicking the real surface
   - Saturn rings as a flat annular Surface
@@ -29,6 +29,11 @@ flat marker.
 """
 
 from __future__ import annotations
+
+from .rendering import _with_low_spec
+
+from .rendering import is_low_spec
+from ._body_surfaces import body_mesh_plotly, body_rotation
 from io import BytesIO
 
 import numpy as np
@@ -39,17 +44,10 @@ from ssatk.data import read_data_binary
 from ssatk.plots.scene_primitives import earth_rotation_deg_from_time
 
 
-# ── Display radii in AU ──────────────────────────────────────────────────────
-# Planets and the Moon remain exaggerated for visibility in full-system views.
-# The Sun defaults to its physical AU radius; callers can pass a sun_scale if a
-# teaching/demo plot needs a deliberately enlarged Sun.
-_PLANET_DISPLAY_SCALE = 500.0
-_R_AU = {
-    name: PLANET_RADIUS_KM[name] / AU_KM * _PLANET_DISPLAY_SCALE
-    for name in PLANET_RADIUS_KM
-}
+# Physical spherical radii, in the same AU units as orbital distances.
+_R_AU = {name: radius / AU_KM for name, radius in PLANET_RADIUS_KM.items()}
 _R_AU["Sun"] = SUN_RADIUS_AU
-_R_AU["Moon"] = (MOON_RADIUS / 1000.0) / AU_KM * _PLANET_DISPLAY_SCALE
+_R_AU["Moon"] = (MOON_RADIUS / 1000.0) / AU_KM
 
 # Axial tilts (degrees, prograde unless noted)
 _TILT = {
@@ -414,6 +412,7 @@ def _earth_rotation_from_plot_time(time):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+@_with_low_spec
 def make_planet_traces(
     name: str,
     pos_au: tuple,
@@ -430,7 +429,7 @@ def make_planet_traces(
     ----------
     name     : planet name (key in _COLOR_FN)
     pos_au   : (x, y, z) heliocentric position in AU
-    scale_au : multiplier on the display radius (1.0 = default)
+    scale_au : multiplier on the physical radius (1.0 = physical scale)
     show_label : add a text label above the sphere
     n        : sphere mesh resolution (default 50)
     time     : optional time used to orient Earth's surface texture
@@ -440,6 +439,15 @@ def make_planet_traces(
     -------
     list of go.Surface / go.Scatter3d traces
     """
+    if name == "Moon":
+        traces = [body_mesh_plotly("moon", pos_au, _R_AU["Moon"]*scale_au,
+                  body_rotation("moon", time, "ecliptic"), n=n)]
+        if show_label:
+            traces.append(go.Scatter3d(x=[pos_au[0]], y=[pos_au[1]], z=[pos_au[2]],
+                          mode="text", text=["Moon"], hoverinfo="skip", showlegend=False))
+        return traces
+    if is_low_spec():
+        n = min(n, 24)
     r = _R_AU[name] * scale_au
     cx, cy, cz = pos_au
 
@@ -447,7 +455,10 @@ def make_planet_traces(
     xs, ys, zs = _apply_tilt(xs, ys, zs, _TILT[name])
 
     color_fn = _COLOR_FN.get(name)
-    if color_fn is None:
+    if is_low_spec() and name in {"Earth", "Moon"}:
+        color = "#1a4f8a" if name == "Earth" else "#ffffff"
+        surf_c, cs = np.zeros((n, n)), [[0, color], [1, color]]
+    elif color_fn is None:
         surf_c, cs = np.ones((n, n)) * 0.5, [[0, "#888"], [1, "#ccc"]]
     elif name == "Earth":
         earth_rot = _earth_rotation_from_plot_time(time) if rotation_deg is None else float(rotation_deg)
@@ -468,7 +479,8 @@ def make_planet_traces(
         showscale=False,
         name=name,
         hovertext=(f"<b>{name}</b><br>"
-                   f"r = {(cx**2+cy**2+cz**2)**0.5:.4f} AU<br>"
+                   f"Sun distance = {(cx**2+cy**2+cz**2)**0.5:.6f} AU<br>"
+                   f"Radius = {PLANET_RADIUS_KM[name]:,.1f} km; display ×{scale_au:g}<br>"
                    f"x={cx:.3f}  y={cy:.3f}  z={cz:.3f} AU"),
         hoverinfo="text",
         lighting=_planet_lighting(pos_au),
@@ -479,9 +491,9 @@ def make_planet_traces(
     # Floating label
     if show_label:
         traces.append(go.Scatter3d(
-            x=[cx], y=[cy], z=[cz + r * 2.4],
-            mode="text",
-            text=[name],
+            x=[cx], y=[cy], z=[cz],
+            mode="markers+text", marker=dict(size=4, symbol="cross", color="#C8D8E8"),
+            textposition="top center", text=[name],
             textfont=dict(color="#C8D8E8", size=10,
                           family="JetBrains Mono, monospace"),
             hoverinfo="skip",
@@ -557,9 +569,9 @@ def make_saturn_ring_traces(
     return traces
 
 
-def make_sun_traces(r_display_au: float = SUN_RADIUS_AU) -> list:
+def make_sun_traces(r_display_au: float = SUN_RADIUS_AU, *, show_glow: bool = False) -> list:
     """
-    Return traces for the Sun — a bright inner sphere + two soft glow layers.
+    Return the physical photosphere; optional glow is decorative, not a radius.
     """
     traces = []
     n = _N
@@ -590,7 +602,8 @@ def make_sun_traces(r_display_au: float = SUN_RADIUS_AU) -> list:
         cmin=0.0, cmax=1.0,
         showscale=False,
         name="Sun",
-        hovertext="<b>☀ Sun</b><br>G2V main sequence",
+        hovertext=(f"<b>Sun photosphere</b><br>Radius = {SUN_RADIUS_AU * AU_KM:,.0f} km"
+                   f"<br>Display ×{r_display_au / SUN_RADIUS_AU:g}"),
         hoverinfo="text",
         lighting=dict(ambient=0.9, diffuse=0.4, specular=0.6,
                       roughness=0.3, fresnel=0.1),
@@ -604,7 +617,7 @@ def make_sun_traces(r_display_au: float = SUN_RADIUS_AU) -> list:
     # camera. Adding diffuse (+ a little specular/fresnel) shades based on the
     # actual 3D normal, so the glow reads as a rounded shell instead of a
     # flat painted circle.
-    for glow_r, glow_op in [(1.6, 0.12), (2.4, 0.06)]:
+    for glow_r, glow_op in ([(1.6, 0.12), (2.4, 0.06)] if show_glow else []):
         traces.append(go.Surface(
             x=r_display_au * glow_r * xs,
             y=r_display_au * glow_r * ys,
@@ -680,60 +693,43 @@ def moon_geocentric_ecliptic(t_jd: float) -> tuple:
     return float(x), float(y), float(z)
 
 
-def _moon_offset_au(t_jd: float, orbit_scale: float = 1.0) -> np.ndarray:
-    """
-    Moon's Earth-relative offset in AU, direction always correct for t_jd.
-
-    The Moon's *true* orbital radius (~0.00257 AU) is smaller than Earth's
-    own *display* radius once Earth is exaggerated ~500× for visibility
-    (see _R_AU) — rendered at true scale the Moon would orbit inside the
-    Earth sphere. `orbit_scale` stretches only the distance (never the
-    direction) by a separate, much smaller factor than the ~500× used for
-    planet sizes, just enough to clear the Earth sphere.
-    """
-    x_km, y_km, z_km = moon_geocentric_ecliptic(t_jd)
-    return np.array([x_km, y_km, z_km]) / _AU_KM * orbit_scale
+def _moon_offset_au(t_jd: float, orbit_scale: float = 1.0, ephemeris="builtin") -> np.ndarray:
+    """Earth-relative geometric Moon position in J2000 ecliptic AU."""
+    from ._solar_scene import body_position_au
+    return body_position_au("moon", t_jd, ephemeris=ephemeris, origin="earth") * orbit_scale
 
 
+@_with_low_spec
 def make_moon_traces(
     earth_pos_au: tuple,
     t_jd: float,
-    orbit_scale: float = 20.0,
+    orbit_scale: float = 1.0,
     show_label: bool = True,
     n: int = _N,
+    *,
+    scale_au: float = 1.0,
+    ephemeris: str = "builtin",
 ) -> list:
     """
     Return traces for a properly shaded Moon sphere at its real position
     for t_jd, offset from Earth's centre (see _moon_offset_au for the
     orbit_scale caveat).
     """
-    offset = _moon_offset_au(t_jd, orbit_scale)
+    offset = _moon_offset_au(t_jd, orbit_scale, ephemeris=ephemeris)
     cx, cy, cz = earth_pos_au[0] + offset[0], earth_pos_au[1] + offset[1], earth_pos_au[2] + offset[2]
     pos = (cx, cy, cz)
 
-    xs, ys, zs = _unit_sphere(n)
-    xs, ys, zs = _apply_tilt(xs, ys, zs, _TILT["Moon"])
-    surf_c, cs = _color_moon(n)
-    r = _R_AU["Moon"]
-
-    real_dist_km = float(np.linalg.norm(offset) * _AU_KM / orbit_scale) if orbit_scale else 0.0
-
-    traces = [go.Surface(
-        x=cx + r * xs, y=cy + r * ys, z=cz + r * zs,
-        surfacecolor=surf_c, colorscale=cs, cmin=0.0, cmax=1.0,
-        showscale=False, name="Moon",
-        hovertext=f"<b>Moon</b><br>{real_dist_km:,.0f} km from Earth "
-                  f"(shown {orbit_scale:.0f}× farther out for visibility)",
-        hoverinfo="text",
-        lighting=_planet_lighting(pos),
-        lightposition=_sun_lightposition(pos),
-        opacity=1.0,
-    )]
+    from astropy.time import Time
+    rotation = body_rotation("moon", Time(t_jd, format="jd", scale="utc"), "ecliptic")
+    sun_hat = -np.asarray(pos) / np.linalg.norm(pos)
+    traces = [body_mesh_plotly("moon", pos, _R_AU["Moon"]*scale_au,
+                              rotation, n=n, sun_hat=sun_hat)]
 
     if show_label:
         traces.append(go.Scatter3d(
-            x=[cx + r * 2.8], y=[cy + r * 1.5], z=[cz + r * 0.8],
-            mode="text", text=["Moon"],
+            x=[cx], y=[cy], z=[cz],
+            mode="markers+text", text=["Moon"], textposition="bottom center",
+            marker=dict(size=3, symbol="cross", color="#AAB8C8"),
             textfont=dict(color="#AAB8C8", size=9,
                           family="JetBrains Mono, monospace"),
             hoverinfo="skip", showlegend=False,
@@ -743,17 +739,8 @@ def make_moon_traces(
 
 
 def make_moon_trace(earth_pos_au: tuple, t_jd: float = 2_451_545.0) -> go.Scatter3d:
-    """
-    Backward-compatible shim for older call sites expecting a single
-    Scatter3d marker. Previously placed the Moon at a fixed offset
-    (0.012 AU at a constant angle) regardless of date — that offset was
-    also *smaller* than Earth's own display radius, so the marker sat
-    inside the Earth sphere. Now uses the real ephemeris (defaulting to
-    J2000 if no date is passed) at a distance that clears the Earth sphere.
-    New call sites should prefer make_moon_traces(), which takes t_jd
-    directly and returns a shaded sphere instead of a flat marker.
-    """
-    offset = _moon_offset_au(t_jd, orbit_scale=20.0)
+    """Compatibility position marker at the unscaled geometric Moon location."""
+    offset = _moon_offset_au(t_jd)
     cx = earth_pos_au[0] + offset[0]
     cy = earth_pos_au[1] + offset[1]
     cz = earth_pos_au[2] + offset[2]

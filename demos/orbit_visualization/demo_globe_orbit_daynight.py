@@ -28,6 +28,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         save_path = figpath("demo_globe_orbit_daynight.html")
 
+    # gallery-call: *.html
     fig = plot_globe_orbit_daynight_plotly(
         a_km=7000.0,
         e=0.001,
@@ -41,6 +42,7 @@ def main(make_figures=None, fast=None):
         save_path=save_path,
         show_sun_body=False,
     )
+    # gallery-end
 
     if save_path:
         print(f"Saved: {save_path}")

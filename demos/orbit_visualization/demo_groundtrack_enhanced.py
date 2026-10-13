@@ -97,6 +97,7 @@ def main(make_figures=None, fast=None):
 
     r_km, t = make_circular_orbit(npts=npts, n_orbits=n_orbits)
 
+    # gallery-call: *.jpg
     fig, ax, stats = plot_enhanced_groundtrack(
         r_eci_km=r_km,
         t=t,
@@ -106,6 +107,7 @@ def main(make_figures=None, fast=None):
         sat_name=f"LEO {INC_DEG:.1f} deg, {ALT_KM:.0f} km",
         min_elev_deg=MIN_ELEV_DEG,
     )
+    # gallery-end
 
     vis = stats.get("site_visibility_pct")
     if vis is not None:
@@ -113,7 +115,7 @@ def main(make_figures=None, fast=None):
               f"{n_orbits:.0f}-orbit arc (>= {MIN_ELEV_DEG:.0f} deg elevation)")
 
     if make_figures:
-        figsave(fig, "demo_gallery/figures/demo_groundtrack_enhanced")
+        figsave(fig, "demo_groundtrack_enhanced")
     else:
         plt.close(fig)
 

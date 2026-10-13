@@ -80,6 +80,7 @@ def main(make_figures=None, fast=None):
         import matplotlib.pyplot as plt
 
         time_hr = hours(times)
+        # gallery-call: *.png
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
         fig.suptitle("6-DoF facet SRP: optical properties and self-shadowing", fontsize=18)
 
@@ -108,6 +109,7 @@ def main(make_figures=None, fast=None):
         axes[1, 1].grid(True, axis="y", alpha=0.3)
 
         figure_path = save_demo_figure(fig, "demo_6dof_srp_facets.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

@@ -216,7 +216,9 @@ def main(make_figures=None, fast=None, verbose=None):
         }
 
         if make_figures:
+            # gallery-call: *.jpg
             fig = plot_offsets_2d(label, r_offsets, v_offsets, r_nom, v_nom)
+            # gallery-end
             safe_label = label.replace(" ", "_")
             figsave(fig, f"sampling_tests_{safe_label}")
             plt.close(fig)

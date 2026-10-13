@@ -75,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Run demos in full-quality mode instead of CI-friendly fast mode",
     )
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Require every included demo to succeed; skips block the ZIP and return a nonzero status",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=180.0,
@@ -102,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         clean=not args.no_clean,
         fast=not args.full,
         timeout_seconds=None if args.timeout <= 0 else args.timeout,
+        strict=args.strict,
     )
 
     success = sum(r.status == "success" for r in results)
@@ -125,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
 
-    return 0 if failed == 0 else 1
+    return 1 if failed or (args.strict and skipped) else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -6,9 +6,11 @@ horizon set at full resolution is tens of megabytes and must never enter
 either repo; this module is the committed artefact, the textures are
 regenerated locally. Override with $SSATK_CACHE.
 
-With no source arguments, the baker downloads NASA SVS LOLA elevation and
-LROC colour products into that cache. NASA source products remain subject to
-NASA's media usage guidelines.
+With no source arguments, the baker reads moon_dem.npz and moon.png from the
+installed ssa-data-lunar package without network access. Use --source nasa
+to download the higher-resolution NASA SVS LOLA elevation and LROC colour
+products into the cache. Explicit --dem and --albedo paths override either
+source. NASA products remain subject to NASA's media usage guidelines.
 
 Outputs
   moon_normal.png         tangent-space normals from LOLA, true scale
@@ -41,6 +43,7 @@ horizon to nearby points does not dominate the shadow edge.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import json
 import os
 import urllib.request
@@ -111,6 +114,34 @@ def load_dem(path):
     with np.load(path) as z:
         key = "elev_km" if "elev_km" in z else z.files[0]
         return np.asarray(z[key], dtype=np.float64)
+
+
+def _load_sources(dem_path, albedo_path, source, outdir):
+    """Read source data while any extracted package resources still exist."""
+    from PIL import Image
+    from ssatk.data import data_path
+
+    Image.MAX_IMAGE_PIXELS = None
+    with ExitStack() as resources:
+        paths = []
+        for explicit, packaged_name, url in (
+            (dem_path, "moon_dem.npz", DEM_URL),
+            (albedo_path, "moon.png", ALBEDO_URL),
+        ):
+            if explicit:
+                path = os.path.expanduser(explicit)
+            elif source == "nasa":
+                path = download_source(url, outdir)
+            else:
+                path = resources.enter_context(
+                    data_path(packaged_name, package="ssa_data_lunar")
+                )
+            paths.append(path)
+        print(f"DEM source: {paths[0]}\nAlbedo source: {paths[1]}")
+        dem = load_dem(paths[0])
+        with Image.open(paths[1]) as image:
+            albedo = image.convert("RGB")
+    return dem, albedo
 
 
 def bake_normals(dem):
@@ -184,17 +215,20 @@ def bake_horizon(dem, n_az=16, n_step=128, max_km=260.0, shape=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
+    ap.add_argument("--source", choices=("packaged", "nasa"), default="packaged",
+                    help="source for unspecified inputs: installed ssa-data-lunar "
+                         "files (default, offline), or higher-resolution NASA downloads")
     ap.add_argument("--dem", default=None,
                     help="LOLA source: either ldem_16_uint.tif (16 ppd, "
-                         "preferred -- normals come off the native grid) or "
-                         "an elevation npz; defaults to NASA SVS")
+                         "normals come off the native grid) or an elevation npz; "
+                         "overrides --source for elevation")
     ap.add_argument("--outdir", default=None,
                     help="defaults to the platform cache dir, never a repo")
     ap.add_argument("--n-az", type=int, default=16)
     ap.add_argument("--n-step", type=int, default=128)
     ap.add_argument("--albedo", default=None,
                     help="LROC colour mosaic (TIFF/PNG) to re-encode as the "
-                         "WebGL albedo texture; defaults to NASA SVS. Lossy is fine for colour, "
+                         "WebGL albedo texture; overrides --source for colour. Lossy is fine for colour, "
                          "unlike normals and horizon where a quantisation "
                          "level is a slope or a shadow edge")
     ap.add_argument("--albedo-quality", type=int, default=92)
@@ -210,9 +244,7 @@ def main(argv=None):
     os.makedirs(outdir, exist_ok=True)
     print(f"cache: {outdir}")
 
-    dem_path = os.path.expanduser(args.dem) if args.dem else download_source(DEM_URL, outdir)
-    albedo_path = os.path.expanduser(args.albedo) if args.albedo else download_source(ALBEDO_URL, outdir)
-    dem = load_dem(dem_path)
+    dem, src = _load_sources(args.dem, args.albedo, args.source, outdir)
     print(f"DEM {dem.shape[1]}x{dem.shape[0]}, {dem.min():.1f} to {dem.max():.1f} km")
 
     from PIL import Image
@@ -228,7 +260,6 @@ def main(argv=None):
     print(f"normals -> {os.path.basename(p)}  {os.path.getsize(p) / 1e6:.1f} MB "
           f"({dem.shape[1]}x{dem.shape[0]}, XY only)")
 
-    src = Image.open(albedo_path).convert("RGB")
     w, h = src.size
     if max(w, h) > args.albedo_max:
         k = args.albedo_max / float(max(w, h))
@@ -262,5 +293,10 @@ def main(argv=None):
     return outdir
 
 
+def cli(argv=None):
+    """Console entry point: a successful bake exits with status zero."""
+    main(argv)
+
+
 if __name__ == "__main__":
-    main()
+    cli()

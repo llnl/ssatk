@@ -62,6 +62,10 @@ is 0 deg selenographic longitude, matching the texture. Pass
 
 from __future__ import annotations
 
+from ssatk.plots.rendering import is_low_spec
+
+from ssatk.plots.rendering import _with_low_spec
+
 import base64
 import http.server
 import json
@@ -385,6 +389,7 @@ _HTML = """<!DOCTYPE html>
 {three_script}
 {orbit_script}
 <script>
+const LOW_SPEC = {low_spec};
 const META   = {meta};
 const ORBITS = {orbit};
 const STARS  = {stars};
@@ -393,6 +398,8 @@ const R      = {radius};
 const VERT   = {vert};
 const FRAG   = {frag};
 const ANIMATION_SECONDS = {animation_seconds};
+const CAMERA_CONFIG = {camera_config};
+{camera_script}
 
 const scene  = new THREE.Scene();
 let orbitRadius = R;
@@ -426,6 +433,8 @@ renderer.setSize(innerWidth, innerHeight);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+const shotController = new SSATKAnimationCamera(camera, CAMERA_CONFIG, [0,0,1], orbitRadius);
+shotController.onModeChange = mode => { if (mode === 'overview') controls.target.set(0,0,0); };
 controls.minDistance = R*1.05;
 controls.maxDistance = Math.max(R*40, orbitRadius*8);
 
@@ -437,6 +446,7 @@ const maxAniso = renderer.capabilities.getMaxAnisotropy();
 // removes the limb speckle. Horizon textures are exempt -- they store a
 // max over a bearing, and mip-averaging a maximum is not a maximum.
 function tex(name, aniso) {
+  if (LOW_SPEC) return null;
   const t = loader.load(ASSET_URLS[name]);
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.ClampToEdgeWrapping;
@@ -467,7 +477,7 @@ const uniforms = {
 // the texture bake uses. Its own UVs are used rather than deriving
 // them from position, because a derived longitude wraps discontinuously and
 // the mip selection then shows a seam.
-const geom = new THREE.SphereGeometry(R, 256, 128);
+const geom = new THREE.SphereGeometry(R, LOW_SPEC ? 36 : 256, LOW_SPEC ? 18 : 128);
 geom.rotateX(Math.PI/2);
 const moon = new THREE.Mesh(geom, new THREE.ShaderMaterial({
   uniforms: uniforms, vertexShader: VERT, fragmentShader: FRAG
@@ -475,6 +485,7 @@ const moon = new THREE.Mesh(geom, new THREE.ShaderMaterial({
 scene.add(moon);
 
 // Use the Toolkit's catalogue-backed Moon-fixed starfield.
+let cameraStars = null;
 if (STARS) {
   const starGeometry = new THREE.BufferGeometry();
   starGeometry.setAttribute('position',
@@ -492,6 +503,7 @@ if (STARS) {
     vertexColors: true, transparent: false, depthWrite: true, depthTest: true
   }));
   stars.renderOrder = -1;
+  cameraStars = stars;
   scene.add(stars);
 }
 
@@ -1100,6 +1112,9 @@ function setVisualPosition(visual, rawPhase, elapsedMode) {
     positions[index + 1] + (positions[index + 4] - positions[index + 1]) * fraction,
     positions[index + 2] + (positions[index + 5] - positions[index + 2]) * fraction
   );
+  visual.cameraTangent = new THREE.Vector3(positions[index+3]-positions[index], positions[index+4]-positions[index+1], positions[index+5]-positions[index+2]);
+  if (!visual.closed && !elapsedMode && cycle >= .5) visual.cameraTangent.negate();
+  visual.cameraPhase = phase;
   const markerSize = Math.max(
     R * 0.018, visual.marker.position.distanceTo(camera.position) * 0.014
   );
@@ -1127,6 +1142,9 @@ updateOrbitAnimation(lastAnimationTime, false);
 
 THREE.DefaultLoadingManager.onLoad = () =>
   document.getElementById('load').style.display = 'none';
+if (LOW_SPEC) {
+  document.getElementById('load').style.display = 'none';
+}
 
 addEventListener('resize', () => {
   const previousFitDistance = fitDistance(framedRadius);
@@ -1141,7 +1159,15 @@ addEventListener('resize', () => {
 (function loop(now){
   requestAnimationFrame(loop);
   updateOrbitAnimation(now);
-  controls.update();
+  const subject = shotController.selectTarget(orbitVisuals.filter(v=>v.visible && v.marker), v=>v.name);
+  controls.enabled = shotController.mode === 'overview';
+  if (controls.enabled) controls.update();
+  shotController.update(subject ? subject.marker.position : null,
+    subject ? subject.cameraTangent : null, subject ? subject.cameraPhase : timelineValue,
+    orbitRadius, subject ? subject.name : 'target');
+  // Distant catalogue directions have no translation parallax.
+  if (cameraStars) cameraStars.position.copy(camera.position);
+
   renderer.render(scene, camera);
 })(performance.now());
 </script></body></html>
@@ -1256,9 +1282,9 @@ def _orbit_xyz(r, t, r_frame, *, units="auto"):
             xyz, _, _ = normalize_orbit_trajectory(r=r_arr, t=t, r_units=units)
     else:
         try:
-            from ..coordinates import gcrf_to_lunar_body
+            from ..coordinates import gcrf_to_lunar_map
         except ImportError:
-            from ssatk.coordinates import gcrf_to_lunar_body
+            from ssatk.coordinates import gcrf_to_lunar_map
         if t is None:
             raise ValueError("t is required to place GCRF positions on the Moon")
         # Resolve units in GCRF, where Earth-centred cislunar magnitudes
@@ -1277,7 +1303,7 @@ def _orbit_xyz(r, t, r_frame, *, units="auto"):
             r_m = np.asarray(r_km, dtype=float).reshape(-1, 3) * 1e3
         # The texture's +X is 0 deg selenographic longitude, so tracks must be
         # in the lunar body frame, not the Earth-Moon rotating frame.
-        xyz = gcrf_to_lunar_body(r_m, _time_as_gps(t).reshape(-1)) / 1e3
+        xyz = gcrf_to_lunar_map(r_m, _time_as_gps(t).reshape(-1)) / 1e3
     xyz = np.asarray(xyz, dtype=float).reshape(-1, 3)
     return [round(float(v), 3) for v in xyz.ravel()]
 
@@ -1368,6 +1394,8 @@ def _viewer_page_assets(directory, runtime_urls, embed_assets):
         "moon_horizon_2.png",
         "moon_horizon_3.png",
     )
+    if is_low_spec():
+        texture_names = ()
     if not embed_assets:
         return (
             f'<script src="{runtime_urls["three.min.js"]}"></script>',
@@ -1418,13 +1446,14 @@ def _starfield_payload(epoch=None):
     return moon_fixed_webgl_stars(epoch=epoch)
 
 
+@_with_low_spec
 def moon_webgl(r=None, t=None, r_frame="gcrf",
                title="Moon — lunar-fixed frame", subtitle=None,
                sun_azimuth_deg=35.0, sun_elevation_deg=8.0,
                exposure=1.4, cache=None, save_path=None,
                orbit=None, propagator=None, n_steps=360, n_orbits=1.0,
                orbit_json=None, animation_seconds=24.0,
-               embed_assets=False):
+               embed_assets=False, camera="overview"):
     """
     Write an interactive Moon viewer page.
 
@@ -1436,7 +1465,7 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
         Trajectory times.
     r_frame : {"gcrf", "moon_centered"}
         Frame of ``r``. ``"gcrf"`` positions are moved into the lunar
-        body-fixed frame with :func:`ssatk.coordinates.gcrf_to_lunar_body`
+        body-fixed frame with :func:`ssatk.coordinates.gcrf_to_lunar_map`
         and require ``t``. ``"moon_centered"`` positions are drawn as given,
         so they must already be in body-fixed axes.
     title, subtitle : str, optional
@@ -1475,12 +1504,18 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
     animation_seconds = float(animation_seconds)
     if not np.isfinite(animation_seconds) or animation_seconds <= 0.0:
         raise ValueError("animation_seconds must be a positive finite number")
-    d, meta = find_moon_cache(cache)
+    if is_low_spec():
+        d = os.fspath(cache) if cache is not None else cache_dir()
+        meta = dict(n_az=0, angle_lo_deg=0, angle_hi_deg=90)
+    else:
+        d, meta = find_moon_cache(cache)
     tracks = _resolve_orbit_positions(
         r, t, r_frame, orbit, propagator, n_steps, n_orbits, orbit_json)
 
     if subtitle is None:
-        if tracks:
+        if is_low_spec():
+            subtitle = "Low-spec white Moon · physical sphere · surface textures disabled"
+        elif tracks:
             radii = np.concatenate([
                 np.linalg.norm(np.asarray(track["xyz"]).reshape(-1, 3), axis=1)
                 for track in tracks
@@ -1510,6 +1545,15 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
     if star_epoch is not None:
         star_epoch = _time_as_gps(star_epoch).reshape(-1)[0]
     stars = _starfield_payload(star_epoch)
+    fragment = """precision highp float;
+        uniform vec3 uSunDir; uniform float uExposure; varying vec3 vPos;
+        void main() { float mu = max(0., dot(normalize(vPos), normalize(uSunDir)));
+            gl_FragColor = vec4(vec3(min(1., (.18+.82*mu)*uExposure)), 1.); }
+        """ if is_low_spec() else _FRAG
+    from dataclasses import asdict
+    from ssatk.plots.camera import _camera_spec
+    from pathlib import Path
+    camera_script = Path(__file__).with_name("animation_camera.js").read_text()
     doc = _HTML
     for key, val in (("{title}", title),
                      ("{three_script}", three_script),
@@ -1521,10 +1565,13 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
                      ("{asset_urls}", json.dumps(asset_urls)),
                      ("{radius}", repr(R_MOON_KM)),
                      ("{vert}", json.dumps(_VERT)),
-                     ("{frag}", json.dumps(_FRAG)),
+                     ("{frag}", json.dumps(fragment)),
+                     ("{low_spec}", json.dumps(is_low_spec())),
                      ("{sun_az}", repr(float(sun_azimuth_deg))),
                      ("{sun_el}", repr(float(sun_elevation_deg))),
                      ("{exposure}", repr(float(exposure))),
+                     ("{camera_config}", json.dumps(asdict(_camera_spec(camera)))),
+                     ("{camera_script}", camera_script),
                      ("{animation_seconds}", repr(animation_seconds))):
         doc = doc.replace(key, val)
 
@@ -1576,6 +1623,7 @@ def _handler(html_path, cache_path):
     return H
 
 
+@_with_low_spec
 def show(html_path=None, cache=None, port=0, open_browser=True):
     """
     Serve the page and its textures on loopback, and open a browser.
@@ -1584,7 +1632,10 @@ def show(html_path=None, cache=None, port=0, open_browser=True):
     cross-origin -- so the page needs an HTTP origin even locally.
     Blocks until interrupted.
     """
-    d, _ = find_moon_cache(cache)
+    if is_low_spec():
+        d = os.fspath(cache) if cache is not None else cache_dir()
+    else:
+        d, _ = find_moon_cache(cache)
     html_path = html_path or os.path.join(d, "moon_webgl.html")
     if not os.path.exists(html_path):
         html_path = moon_webgl(cache=cache)

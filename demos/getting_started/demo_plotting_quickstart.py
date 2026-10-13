@@ -40,7 +40,6 @@ from ssatk.plots.solar_view_plot import build_figure as build_solar_view
 from ssatk.plots.van_allen_plot_3d import plot_van_allen_3d
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 
 def _make_demo_orbit(fast=False):
@@ -57,8 +56,10 @@ def _make_demo_orbit(fast=False):
         t=t0,
     )
 
-    n_points = 48 if fast else 120
     duration_seconds = 2.0 * 3600.0 if fast else 6.0 * 3600.0
+    # Propagate at <=10 s cadence (LEO chords sag by <~100 m); rendering fewer
+    # animation frames must not reduce the trajectory sampling.
+    n_points = int(np.ceil(duration_seconds / 10.0)) + 1
     times = Time(t0.gps + np.linspace(0.0, duration_seconds, n_points), format="gps")
 
     r_m, v_mps = ssatk.rv(orbit, times)
@@ -126,66 +127,77 @@ def main(make_figures=None, fast=None, include_heavy=False):
     # ------------------------------------------------------------------
     # Use orbit_plot first.  It accepts SSAPy position arrays directly and can
     # switch between common views with the `view=` keyword.
+    # gallery-call: plotting_quickstart_orbit_views.jpg
     orbit_plot(
         r_m,
         t=times,
         view=("xy", "xz", "yz", "3d"),
         title="orbit_plot: Cartesian views",
-        save=f"{FIGDIR}/plotting_quickstart_orbit_views.jpg",
+        save=f"plotting_quickstart_orbit_views.jpg",
         show=False,
     )
-    outputs["files"].append(ssatk_path(f"{FIGDIR}/plotting_quickstart_orbit_views.jpg"))
+    # gallery-end
+    outputs["files"].append(ssatk_path(f"plotting_quickstart_orbit_views.jpg"))
 
     # Dashboard combines the orbit, ground track, and globe context.
+    # gallery-call: plotting_quickstart_dashboard.jpg
     orbit_plot(
         r_m,
         t=times,
         view="dashboard",
         title="orbit_plot: dashboard view",
-        save=f"{FIGDIR}/plotting_quickstart_dashboard.jpg",
+        save=f"plotting_quickstart_dashboard.jpg",
         show=False,
     )
-    outputs["files"].append(ssatk_path(f"{FIGDIR}/plotting_quickstart_dashboard.jpg"))
+    # gallery-end
+    outputs["files"].append(ssatk_path(f"plotting_quickstart_dashboard.jpg"))
 
     # A GIF is made by saving orbit_plot to a .gif path.  Keep the frame count
     # small in a beginner demo; increase max_frames for smoother animations.
+    # gallery-call: plotting_quickstart_orbit_animation.gif
     orbit_plot(
         r_m,
         t=times,
         view=("xy", "groundtrack", "globe"),
         title="orbit_plot: animated orbit summary",
-        save=f"{FIGDIR}/plotting_quickstart_orbit_animation.gif",
+        figsize=(12, 11),
+        save=f"plotting_quickstart_orbit_animation.gif",
         max_frames=8 if fast else 14,
         fps=2,
         tail=8,
         show=False,
     )
-    outputs["files"].append(ssatk_path(f"{FIGDIR}/plotting_quickstart_orbit_animation.gif"))
+    # gallery-end
+    outputs["files"].append(ssatk_path(f"plotting_quickstart_orbit_animation.gif"))
 
     # ------------------------------------------------------------------
     # 2) Standalone Earth orbit views: groundtrack_plot and globe_plot
     # ------------------------------------------------------------------
+    # gallery-call: plotting_quickstart_groundtrack.jpg
     groundtrack_fig = groundtrack_plot(
         r_m,
         times,
         title="groundtrack_plot: sub-satellite track",
         ground_stations=[(35.0, -106.0)],
     )
-    groundtrack_path = figpath(f"{FIGDIR}/plotting_quickstart_groundtrack.jpg")
+    # gallery-end
+    groundtrack_path = figpath(f"plotting_quickstart_groundtrack.jpg")
     groundtrack_fig.savefig(groundtrack_path, dpi=180, bbox_inches="tight")
     plt.close(groundtrack_fig)
     outputs["files"].append(groundtrack_path)
 
+    # gallery-call: plotting_quickstart_globe.jpg
     globe_fig, _ = globe_plot(
         r_m,
         times,
         title="globe_plot: orbit over rotating Earth",
         scale=16,
         globe_time=times[-1],
-        save_path=figpath(f"{FIGDIR}/plotting_quickstart_globe.jpg"),
+        save_path=figpath(f"plotting_quickstart_globe.jpg"),
     )
+    # gallery-end
     plt.close(globe_fig)
-    outputs["files"].append(figpath(f"{FIGDIR}/plotting_quickstart_globe.jpg"))
+    outputs["files"].append(figpath(f"plotting_quickstart_globe.jpg"))
 
     # ------------------------------------------------------------------
     # 3) Sensor field of view: plot_sensor_fov
@@ -201,7 +213,8 @@ def main(make_figures=None, fast=None, include_heavy=False):
     fov_cfg["show_moon"] = False
     fov_cfg["show_sun"] = True
 
-    fov_path = figpath(f"{FIGDIR}/plotting_quickstart_sensor_fov.html")
+    fov_path = figpath(f"plotting_quickstart_sensor_fov.html")
+    # gallery-call: plotting_quickstart_sensor_fov.html
     plot_sensor_fov(
         r=r_m / 1000.0,
         v=v_mps / 1000.0,
@@ -212,12 +225,14 @@ def main(make_figures=None, fast=None, include_heavy=False):
         save_path=fov_path,
         show=False,
     )
+    # gallery-end
     outputs["files"].append(fov_path)
 
     # ------------------------------------------------------------------
     # 4) Divergence plots: divergence_plot and divergence_gif
     # ------------------------------------------------------------------
     final_cloud = divergence["r_histories"][:, -1, :]
+    # gallery-call: plotting_quickstart_divergence.jpg
     div_fig = divergence_plot(
         final_cloud,
         r_center=divergence["r_nominal_hist"][-1],
@@ -225,12 +240,14 @@ def main(make_figures=None, fast=None, include_heavy=False):
         title="divergence_plot: final position-error cloud",
         show=False,
     )
-    div_path = figpath(f"{FIGDIR}/plotting_quickstart_divergence.jpg")
+    # gallery-end
+    div_path = figpath(f"plotting_quickstart_divergence.jpg")
     div_fig.savefig(div_path, dpi=180, bbox_inches="tight")
     plt.close(div_fig)
     outputs["files"].append(div_path)
 
-    gif_path = ssatk_path(f"{FIGDIR}/plotting_quickstart_divergence.gif")
+    gif_path = ssatk_path(f"plotting_quickstart_divergence.gif")
+    # gallery-call: plotting_quickstart_divergence.gif
     divergence_gif(
         r_histories=divergence["r_histories"],
         times_gps=divergence["times_gps"],
@@ -239,29 +256,35 @@ def main(make_figures=None, fast=None, include_heavy=False):
         v_nominal_hist=divergence["v_nominal_hist"],
         duration=1.0,
     )
+    # gallery-end
     outputs["files"].append(gif_path)
 
     # ------------------------------------------------------------------
     # 5) Moon plot: moon_plot_3d
     # ------------------------------------------------------------------
+    # gallery-call: plotting_quickstart_moon.jpg
     moon_fig, _ = moon_plot_3d(
         title="moon_plot_3d: Moon surface context",
-        save_path=figpath(f"{FIGDIR}/plotting_quickstart_moon.jpg"),
+        reference_time=Time("2025-01-01T00:00:00", scale="utc"),
+        save_path=figpath(f"plotting_quickstart_moon.jpg"),
         show=False,
     )
+    # gallery-end
     plt.close(moon_fig)
-    outputs["files"].append(figpath(f"{FIGDIR}/plotting_quickstart_moon.jpg"))
+    outputs["files"].append(figpath(f"plotting_quickstart_moon.jpg"))
 
     # ------------------------------------------------------------------
-    # 6) Space-environment Plotly figures: Earth-Sun and solar-system views
+    # 6) Solar System Plotly figures: Sun/Earth/Moon and all eight planets
     # ------------------------------------------------------------------
     earth_sun_cfg = EARTH_SUN_CFG.copy()
     earth_sun_cfg["n_frames"] = 3
     earth_sun_cfg["sphere_resolution"] = 12 if fast else 20
     earth_sun_cfg["hero_resolution"] = 24 if fast else 48
     earth_sun_cfg["show_stars"] = False
+    # gallery-call: plotting_quickstart_solar_system_earth_sun_moon.html
     earth_sun_fig = build_earth_sun_static(earth_sun_cfg)
-    earth_sun_path = figpath(f"{FIGDIR}/plotting_quickstart_earth_sun.html")
+    # gallery-end
+    earth_sun_path = figpath(f"plotting_quickstart_solar_system_earth_sun_moon.html")
     earth_sun_fig.write_html(str(earth_sun_path))
     outputs["files"].append(earth_sun_path)
 
@@ -270,8 +293,10 @@ def main(make_figures=None, fast=None, include_heavy=False):
     solar_cfg["sol_show_trails"] = True
     solar_cfg["sol_show_stars"] = False
     solar_cfg["sphere_resolution"] = 10 if fast else 18
+    # gallery-call: plotting_quickstart_solar_system.html
     solar_fig = build_solar_view(solar_cfg)
-    solar_path = figpath(f"{FIGDIR}/plotting_quickstart_solar_view.html")
+    # gallery-end
+    solar_path = figpath(f"plotting_quickstart_solar_system.html")
     solar_fig.write_html(str(solar_path))
     outputs["files"].append(solar_path)
 
@@ -282,7 +307,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     # quickstart.  Enable them explicitly with main(include_heavy=True).
     if include_heavy:
         try:
-            mag_path = figpath(f"{FIGDIR}/plotting_quickstart_magfield")
+            mag_path = figpath(f"plotting_quickstart_magfield")
             plot_magfield_3d(
                 title="plot_magfield_3d: magnetic field and belts",
                 fidelity="low",
@@ -296,7 +321,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
             outputs["magfield_skipped"] = str(exc)
 
         try:
-            belts_path = figpath(f"{FIGDIR}/plotting_quickstart_van_allen")
+            belts_path = figpath(f"plotting_quickstart_van_allen")
             plot_van_allen_3d(
                 title="plot_van_allen_3d: radiation belts",
                 fidelity="low",

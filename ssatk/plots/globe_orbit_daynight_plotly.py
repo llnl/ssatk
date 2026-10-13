@@ -11,6 +11,11 @@ go.Surface), matching the real 3D sphere approach used in the toolkit's
 own layers.py (EarthLayer / SunLayer), not flat markers.
 """
 from __future__ import annotations
+
+from .rendering import is_low_spec
+from ._body_surfaces import BODY_COLORS
+
+from .rendering import _with_low_spec
 import numpy as np
 import plotly.graph_objects as go
 
@@ -281,6 +286,8 @@ def _earth_atmosphere_trace(center=(0.0, 0.0, 0.0), radius_scale=1.0):
     trace, not baked into _earth_mesh itself since that function's return
     type (a single trace) is relied on in several places already.
     """
+    if is_low_spec():
+        return go.Mesh3d(x=[], y=[], z=[], name="Atmosphere", showlegend=False)
     n = 40
     u_, v_ = np.linspace(0, 2*np.pi, n), np.linspace(0, np.pi, n)
     U, V = np.meshgrid(u_, v_)
@@ -321,6 +328,9 @@ def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.
     range) as seen against fixed stars. This is far cheaper than
     rebuilding the land mask / relief every animation frame, and gives
     an identical result to actually rotating the geometry for a sphere."""
+    if is_low_spec():
+        n_lat, n_lon = min(n_lat, 19), min(n_lon, 36)
+        show_city_lights = False
     lat = np.linspace(90, -90, n_lat)
     lon = np.linspace(-180, 180, n_lon, endpoint=False)
     Lon, Lat = np.meshgrid(lon, lat)
@@ -328,8 +338,11 @@ def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.
 
     shift = int(round((rotation_deg % 360) / 360.0 * n_lon))
 
-    tex = _load_real_earth_texture(n_lat, n_lon)
-    if tex is not None:
+    tex = None if is_low_spec() else _load_real_earth_texture(n_lat, n_lon)
+    if is_low_spec():
+        rgb = np.broadcast_to(BODY_COLORS["earth"], (n_lat, n_lon, 3)).copy()
+        base_desc = "low-spec blue sphere"
+    elif tex is not None:
         # SSAPy's bundled earth.png is already arranged as an equirectangular
         # map over [-180°, +180°] longitude, matching the mesh grid below and
         # the 2D groundtrack helpers' imshow(extent=[-180, 180, -90, 90]).
@@ -369,48 +382,17 @@ def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.
     # layered in below, not just a brightness multiplier, since real
     # twilight visibly shifts hue, not just dims.
     twilight_band = np.exp(-(dot / 0.045) ** 2) * np.clip((dot + 0.02) / 0.08, 0, 1)
-    twilight_color = np.array([1.00, 0.55, 0.30])  # warm sunset-orange near the terminator
+    twilight_color = np.zeros(3) if is_low_spec() else np.array([1.00, 0.55, 0.30])  # warm sunset-orange near the terminator
 
-    # Real geometric terrain relief (mountain ridges on land, flat ocean),
-    # displaced into actual 3D bumps — this is the piece that was missing
-    # entirely before: a bare smooth sphere with only a global day/night
-    # color gradient has no local surface-angle variation, so it can
-    # never look as sculpted as the Moon's cratered mesh regardless of
-    # how good the color texture is. Real per-vertex normals off this
-    # bumpy surface add local light-and-shadow the same way they do for
-    # the Moon, layered under the (still dominant) day/night term.
-    land_for_lights, Lat_ll, Lon_ll = _land_mask(n_lat, n_lon)
-    if _vertex_normals is not None:
-        relief = _terrain_relief(Lat_ll, Lon_ll, land_for_lights)
-        if shift:
-            # Roll AFTER generating from the unrolled body-fixed grid —
-            # ridges are computed at fixed physical lat/lon coordinates,
-            # so rolling the input land mask first (before ridges are
-            # placed) would let a ridge sit over what the rolled mask
-            # calls "ocean" purely as an artifact of rotation, not real
-            # geography moving. Rolling the finished field instead keeps
-            # every mountain locked to the same patch of rotating color.
-            relief = np.roll(relief, shift, axis=1)
-            land_for_lights = np.roll(land_for_lights, shift, axis=1)
-        R_disp = 1.0 + relief * 0.0025   # subtle relief; larger values caused
-        # distracting dark ridges and band-like artifacts in low-resolution
-        # Plotly scenes such as the sensor-FOV demo.
-        R_disp = stabilize_sphere_poles(R_disp)
-        Xn, Yn, Zn = R_disp*nx, R_disp*ny, R_disp*nz
-        nxr, nyr, nzr = _vertex_normals(Xn, Yn, Zn)
-        terrain_diffuse = np.clip(nxr*sun_hat[0] + nyr*sun_hat[1] + nzr*sun_hat[2], 0, 1)
-        # Blend: mostly the smooth global day/night term (correct large-
-        # scale lighting), modulated more strongly than before by the
-        # local terrain normal so mountains actually catch/lose light
-        # instead of being flat color patches.
-        terrain_shade = np.clip(0.85 + 0.35*(terrain_diffuse - np.clip(dot, 0, 1)), 0.75, 1.18)
-    else:
-        if shift:
-            land_for_lights = np.roll(land_for_lights, shift, axis=1)
-        R_disp = np.ones_like(Lat)
-        terrain_shade = np.ones_like(Lat)
+    # Albedo maps do not provide elevations. Keep vertices on the adopted
+    # physical sphere; synthetic bumps changed the radius between modes.
+    land_for_lights, Lat_ll, Lon_ll = (np.zeros_like(Lat), Lat, Lon) if is_low_spec() else _land_mask(n_lat, n_lon)
+    if shift:
+        land_for_lights = np.roll(land_for_lights, shift, axis=1)
+    R_disp = np.ones_like(Lat)
+    terrain_shade = np.ones_like(Lat)
 
-    night_lights = stabilize_sphere_poles(_city_lights(n_lat, n_lon, land_for_lights, Lat_ll, Lon_ll))
+    night_lights = np.zeros_like(Lat) if is_low_spec() else stabilize_sphere_poles(_city_lights(n_lat, n_lon, land_for_lights, Lat_ll, Lon_ll))
     night_factor = np.clip(1 - np.clip(dot, 0, 1) * 3.0, 0, 1)  # only near/past the terminator
     light_color = np.array([1.0, 0.78, 0.45])
 
@@ -426,7 +408,7 @@ def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.
     glint = np.clip(dot, 0, 1) ** 60   # much tighter (was **14) — a real
     # sun-glint highlight is a small bright patch, not a broad sheen
     # covering a third of the visible disk
-    glint_color = np.array([1.0, 1.0, 0.96])
+    glint_color = np.zeros(3) if is_low_spec() else np.array([1.0, 1.0, 0.96])
 
     eclipse_brightness = np.ones_like(day_night_brightness)
     if shadow_body_center_km is not None and shadow_body_radius_km is not None and illumination_fraction is not None:
@@ -591,6 +573,7 @@ def _sun_sphere_traces(pos, radius_km, seed=11):
     return traces
 
 
+@_with_low_spec
 def plot_globe_orbit_daynight_plotly(a_km=None, e=None, inc_deg=None, raan_deg=0.0, argp_deg=0.0,
                                      nu0_deg=0.0, sat_name="Satellite",
                                      n_orbits=1.0, n_steps=1500, save_path=None,

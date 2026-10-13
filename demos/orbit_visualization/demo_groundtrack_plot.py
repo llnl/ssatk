@@ -58,6 +58,7 @@ def main(make_figures=None, fast=None):
 
     ground_stations = None
 
+    # gallery-call: *.jpg
     fig = groundtrack_plot(
         [r1, r2, r3],
         [t1, t2, t3],
@@ -69,6 +70,7 @@ def main(make_figures=None, fast=None):
         central_longitude=0,
         relabel_xticks=True,
     )
+    # gallery-end
 
     if make_figures:
         save_demo(fig, "demo_groundtrack_04_multi_custom_styles")

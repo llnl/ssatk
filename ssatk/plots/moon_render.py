@@ -1,50 +1,14 @@
-"""
-moon_render.py — shared, high-quality Moon mesh for Plotly scenes
-======================================================================
-Used by eclipse_space_view_plotly.py (and anything else that needs a Moon:
-globe_orbit_daynight_plotly.py's future lunar-orbit views, moon_plot_3d.py,
-etc). Split out on its own so there's exactly one Moon renderer in the
-toolkit instead of a slightly-different copy in every file that draws one.
+"""Mapped physical Moon sphere with illustrative solar/eclipse shading.
 
-What actually changes visual quality vs. the old _moon_mesh_plotly():
-
-1. REAL TEXTURE FIRST, same pattern as globe_orbit_daynight_plotly's
-   _load_real_earth_texture: try ssapy.utils.find_file("moon", ext=".png")
-   before falling back to anything procedural. This is the single biggest
-   quality jump when a real asset is present — no amount of procedural
-   crater-painting matches an actual lunar photomosaic.
-
-2. REAL PER-VERTEX DIFFUSE LIGHTING, not flat ambient=1/diffuse=0 over a
-   painted albedo. The old version made craters *look* like paint swatches
-   because only color changed, never brightness-by-surface-angle. This
-   computes an actual outward normal at every vertex (from the displaced,
-   bumpy sphere, via finite differences across the lat/lon grid — not the
-   undisplaced sphere normal, so the bumps themselves cast the shading)
-   and shades each point by max(0, normal . sun_hat). That's what makes
-   craters read as 3D relief with a lit rim and a shadowed bowl, the way
-   every real Moon photo looks, instead of a flat texture.
-
-3. MARIA vs HIGHLANDS, not just "some albedo dips". The real Moon's most
-   recognizable feature from Earth is the dark basaltic maria (Sea of
-   Tranquility etc.) against brighter cratered highlands — large-scale
-   low-frequency blobs, distinct from the small high-frequency craters.
-   Previously there was only one texture scale (craters), so the disk
-   read as uniformly grey rather than having the familiar patchy look.
-
-4. Same real per-vertex Earth-shadow eclipse shading as before for lunar
-   mode (illumination_fraction evaluated at each vertex's true physical
-   position), just layered on top of the new base shading multiplicatively
-   instead of being the only source of brightness variation.
-
-Usage
------
-::
-
-    from moon_render import moon_mesh_plotly
-    fig.add_trace(moon_mesh_plotly(center, radius, sun_hat=sun_hat,
-                                   real_center_km=moon_r_km, mode="lunar"))
+No synthetic terrain is added. Use time (GPS seconds or Astropy Time) for
+DE440 body orientation; undated geometry uses lunar body-fixed axes.
 """
 from __future__ import annotations
+
+from .rendering import is_low_spec
+from ._body_surfaces import surface_map, body_rotation
+
+from .rendering import _with_low_spec
 import numpy as np
 import plotly.graph_objects as go
 
@@ -66,9 +30,6 @@ except ImportError:
 
 R_MOON_KM = MOON_MEAN_RADIUS_KM
 
-_moon_texture_cache = None
-
-
 def _display_lunar_albedo(rgb):
     """Map a dark lunar photomosaic into a readable display albedo.
 
@@ -86,123 +47,6 @@ def _display_lunar_albedo(rgb):
         stretched = np.clip((luminance - low) / (high - low), 0.0, 1.0)
     albedo = 0.34 + 0.58 * stretched
     return np.repeat(albedo[..., None], 3, axis=-1) * np.array([1.0, 0.985, 0.955])
-
-
-def _load_real_moon_texture(n_lat, n_lon):
-    """
-    Real lunar photomosaic, same discovery pattern as the Earth texture in
-    globe_orbit_daynight_plotly.py: ssapy.utils.find_file + PIL. This is
-    what the checkpoint's Section 6 flagged as unconfirmed on the real
-    machine — this is that check, applied to the Moon instead of Earth.
-    """
-    global _moon_texture_cache
-    if _moon_texture_cache is not None and _moon_texture_cache.shape[:2] == (n_lat, n_lon):
-        return _moon_texture_cache
-    try:
-        from ssapy.utils import find_file
-        from PIL import Image
-        img = Image.open(find_file("moon", ext=".png")).convert("RGB")
-        img = img.resize((n_lon, n_lat), Image.LANCZOS)
-        _moon_texture_cache = np.array(img)
-        print("[moon_render] Moon base: real ssapy texture found")
-        return _moon_texture_cache
-    except Exception as ex:
-        print(f"[moon_render] Real Moon texture not found ({ex}) — "
-              f"using procedural maria+crater model instead.")
-        return None
-
-
-def _smooth(field, sigma=1.4):
-    """Light Gaussian smoothing (wrapping in longitude) so procedural
-    albedo/relief never shows hard tile/facet edges once displaced and
-    lit — this is what turns a blocky, grid-like sphere (visible facet
-    boundaries wherever two adjacent random blotches meet head-on) into
-    a continuous, photographic-looking surface. Falls back to an
-    unsmoothed field if scipy isn't available."""
-    try:
-        from scipy.ndimage import gaussian_filter
-        return gaussian_filter(field, sigma=sigma, mode="wrap")
-    except Exception:
-        return field
-
-
-def _procedural_moon_albedo(Lat, Lon, seed=3):
-    """Two-scale albedo: large dark maria + small bright/dark crater fields,
-    matching how the real Moon's near side actually looks patchy rather
-    than uniformly grey."""
-    rng = np.random.default_rng(seed)
-
-    # --- Maria: a handful of large, soft, irregular dark blobs, mostly
-    # confined to one hemisphere (real maria are lopsided — concentrated
-    # on the historically Earth-facing side) ---
-    albedo = np.full_like(Lat, 0.78)
-    n_maria = 8
-    for _ in range(n_maria):
-        clat = rng.uniform(-45, 45)
-        clon = rng.uniform(-60, 60)          # biased to one hemisphere
-        spread_lat = rng.uniform(10, 26)
-        spread_lon = rng.uniform(14, 32)
-        dlat = (Lat - clat)
-        dlon = (Lon - clon + 180) % 360 - 180
-        d2 = (dlat / spread_lat) ** 2 + (dlon / spread_lon) ** 2
-        albedo -= 0.22 * np.exp(-d2 / 2)
-
-    # --- Crater fields on top: large + medium, then many small ---
-    for _ in range(60):
-        clat, clon = rng.uniform(-85, 85), rng.uniform(-180, 180)
-        rad = rng.uniform(4, 11)
-        d = np.sqrt((Lat - clat) ** 2 + ((Lon - clon + 180) % 360 - 180) ** 2)
-        bowl = np.clip(1 - d / rad, 0, 1)
-        albedo -= 0.12 * bowl ** 3
-    for _ in range(500):
-        clat, clon = rng.uniform(-85, 85), rng.uniform(-180, 180)
-        rad = rng.uniform(0.4, 2.2)
-        d = np.sqrt((Lat - clat) ** 2 + ((Lon - clon + 180) % 360 - 180) ** 2)
-        bowl = np.clip(1 - d / rad, 0, 1)
-        albedo -= 0.10 * bowl ** 3
-
-    albedo += rng.normal(0, 0.01, Lat.shape)  # fine regolith speckle
-    albedo = _smooth(albedo, sigma=0.45)       # just enough to kill hard blotch edges
-    return np.clip(albedo, 0.30, 1.0)
-
-
-def _procedural_moon_relief(Lat, Lon, seed=3):
-    """Radial bump field: bright rim + dark bowl per crater, at two size
-    scales, plus fine roughness noise — this is what gets displaced into
-    actual 3D geometry (not just painted) so the lighting step below has
-    real bumps to shade."""
-    rng = np.random.default_rng(seed)
-    relief = np.zeros_like(Lat)
-    for _ in range(60):
-        clat, clon = rng.uniform(-85, 85), rng.uniform(-180, 180)
-        rad = rng.uniform(4, 11)
-        d = np.sqrt((Lat - clat) ** 2 + ((Lon - clon + 180) % 360 - 180) ** 2)
-        bowl = np.clip(1 - d / rad, 0, 1)
-        relief -= 0.65 * bowl ** 3
-        rim = np.clip(1 - np.abs(d - rad * 0.92) / (rad * 0.1), 0, 1)
-        relief += 0.45 * rim
-    for _ in range(500):
-        clat, clon = rng.uniform(-85, 85), rng.uniform(-180, 180)
-        rad = rng.uniform(0.4, 2.2)
-        d = np.sqrt((Lat - clat) ** 2 + ((Lon - clon + 180) % 360 - 180) ** 2)
-        bowl = np.clip(1 - d / rad, 0, 1)
-        relief -= 0.5 * bowl ** 3
-        rim = np.clip(1 - np.abs(d - rad * 0.9) / (rad * 0.2), 0, 1)
-        relief += 0.35 * rim
-    fine_noise = np.zeros_like(Lat)
-    for _ in range(25):
-        clat, clon = rng.uniform(-90, 90), rng.uniform(-180, 180)
-        spread = rng.uniform(2, 6)
-        d = np.sqrt((Lat - clat) ** 2 + ((Lon - clon + 180) % 360 - 180) ** 2)
-        fine_noise += rng.uniform(-0.15, 0.15) * np.exp(-(d ** 2) / (2 * spread ** 2))
-    relief += fine_noise
-    # Smooth before displacement — this is what removes any visible
-    # facet/grid pattern from the mesh: unsmoothed relief has sharp
-    # per-blotch edges that, once turned into real geometry and lit,
-    # show up as a faint quad grid across the sphere (exactly the
-    # artifact in the reference screenshot). A touch of blur keeps the
-    # crater shapes but rounds their edges into the surrounding terrain.
-    return _smooth(relief, sigma=0.4)
 
 
 def _vertex_normals(X, Y, Z, center=None):
@@ -235,9 +79,10 @@ def _vertex_normals(X, Y, Z, center=None):
     return nx, ny, nz
 
 
+@_with_low_spec
 def moon_mesh_plotly(center, radius, sun_hat=None, seed=3,
                      real_center_km=None, mode="lunar",
-                     eclipse_tint=True, n_lat=180, n_lon=360):
+                     eclipse_tint=True, n_lat=180, n_lon=360, time=None, rotation=None):
     """
     Real-texture-first, properly-lit Moon mesh.
 
@@ -254,36 +99,23 @@ def moon_mesh_plotly(center, radius, sun_hat=None, seed=3,
                       shadow (mode="lunar" only) — set False if the caller
                       wants to apply its own tint instead
     """
+    if is_low_spec():
+        n_lat, n_lon = min(n_lat, 19), min(n_lon, 36)
     lat = np.linspace(90, -90, n_lat)
     lon = np.linspace(-180, 180, n_lon, endpoint=False)
     Lon, Lat = np.meshgrid(lon, lat)
     latr, lonr = np.radians(Lat), np.radians(Lon)
-    nx0, ny0, nz0 = np.cos(latr) * np.cos(lonr), np.cos(latr) * np.sin(lonr), np.sin(latr)
+    normals = np.stack((np.cos(latr)*np.cos(lonr), np.cos(latr)*np.sin(lonr), np.sin(latr)), axis=-1)
+    rotation = body_rotation("moon", time) if rotation is None else np.asarray(rotation)
+    normals = normals @ rotation.T
+    nx0, ny0, nz0 = np.moveaxis(normals, -1, 0)
+    X, Y, Z = np.moveaxis(np.asarray(center) + radius*normals, -1, 0)
+    nxr, nyr, nzr = nx0, ny0, nz0
+    base_rgb = surface_map("moon", n_lon, n_lat)
+    if not is_low_spec():
+        base_rgb = _display_lunar_albedo(base_rgb*255.)
 
-    tex = _load_real_moon_texture(n_lat, n_lon)
-    if tex is not None:
-        tex = np.roll(tex, n_lon // 2, axis=1)  # same antimeridian fix as Earth
-        base_rgb = _display_lunar_albedo(tex)
-        # Still add a light procedural relief for lighting, even with a
-        # real texture — real texture gives *color*, but most Moon photo
-        # textures are pre-shaded/flat-lit, so without geometric bumps the
-        # sphere would look like a printed ball, not a rocky one.
-        relief = _procedural_moon_relief(Lat, Lon, seed=seed) * 0.5
-    else:
-        base_rgb = None
-        relief = _procedural_moon_relief(Lat, Lon, seed=seed)
-
-    R_disp = stabilize_sphere_poles(radius * (1 + relief * 0.009))
-    X = center[0] + R_disp * nx0
-    Y = center[1] + R_disp * ny0
-    Z = center[2] + R_disp * nz0
-    nxr, nyr, nzr = _vertex_normals(X, Y, Z, center=center)
-
-    if base_rgb is None:
-        albedo = _procedural_moon_albedo(Lat, Lon, seed=seed)
-        base_rgb = np.repeat(albedo[..., None], 3, axis=-1) * np.array([1.0, 0.98, 0.94])
-
-    # Real per-vertex diffuse lighting from the bumpy normals — this is
+    # Real per-vertex diffuse lighting from the spherical normals — this is
     # what makes craters look sculpted instead of painted. Ambient floor
     # so the unlit portion of a gibbous/crescent Moon isn't pure black.
     if sun_hat is not None:

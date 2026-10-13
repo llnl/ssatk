@@ -1,11 +1,12 @@
 Test reference audit
 ====================
 
-This audit covers all 102 ``tests/test_*.py`` files and their 384 test
+The initial audit covered all 103 ``tests/test_*.py`` files and their 389 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
-is ``f05e171fe4ccd2d0c693ffef9e9d6d23d85b70f5``.
+is ``f05e171fe4ccd2d0c693ffef9e9d6d23d85b70f5``. Later additions and their
+references are recorded in the inventory and follow-up sections below.
 
 The suite contains independent numerical references, conservation and
 derivative checks, and software contracts. Passing all three categories does
@@ -165,7 +166,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_epoch_comparison_tolerance.py,2,R6 C,IEEE floating-point ULP and absolute GPS epoch differences,Numerical time contract
    tests/test_faceted_magnitude.py,6,R1 R4,Lambert surface cosine/area factors; magnitude flux ratio; occultation,Ideal diffuse surfaces
    tests/test_frame_and_state_references.py,11,R1 R2 R4 C,J2000 obliquity; specified axes; Astropy Sun/velocity; Kepler quantities,Mixed geometry and viewer contracts; polar-motion linearization bounded explicitly
-   tests/test_gamma_and_heading.py,3,R1,Constructed east/north/up headings and climb angles,Finite-difference circular-orbit approximation tolerance
+   tests/test_gamma_and_heading.py,8,R1/R2/C,Exact local directions singularities quadratic time derivatives and Astropy state differentials,1e-10 deg directions; 5e-9 m/s quadratic; 5e-4 deg frame comparison
    tests/test_horizon_frames.py,3,R1 R2,Cardinal hour-angle geometry; Astropy AltAz,0.5 degree approximate horizon-model budget
    tests/test_iers_global_state.py,1,R2 C,Astropy IERS UT1 before/after plotting,Global-state preservation; not independent IERS calibration
    tests/test_igrf_wrapper.py,1,R2,ppigrf geocentric magnetic synthesis,Same IGRF model; wrapper/frame validation
@@ -197,6 +198,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_navigation_batch.py,2,R1 R5 C,Known linear free-flight state and Fisher covariance; finite differences,Synthetic measurement functions; not realistic observed orbit determination
    tests/test_navigation_measurements.py,4,R1 R2 R5,Known range/range-rate/angles; finite differences; SSAPy station up,Geometry/derivatives; no atmospheric or instrument calibration
    tests/test_navigation_sensors.py,2,R1 R4,Known Gaussian/chi-square/binomial distributions and synthetic elevation mask,Seeded statistical tests; not measured sensor noise
+   tests/test_optical_navigation.py,5,R1 C,Literal camera rotations and intersecting rays; batch Gaussian information solution; prescribed impulse,14 cases including invalid geometry/covariance/epochs; synthetic measurements not telemetry
    tests/test_numeric_mechanics_helpers.py,2,R1,Newtonian orbital equations; Kepler residuals; cardinal coordinates,Specified ideal geometry
    tests/test_orbit_absolute_epoch.py,2,C R6,Force callback epochs anchored to known GPS values,Time-interface contract; trajectory truth tested separately
    tests/test_orbit_acceleration_helpers.py,4,R1 R2,SSAPy third-body acceleration; uniform sphere; vector steering geometry,Shared body ephemerides; force-equation validation
@@ -236,6 +238,8 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_tle_iter_pairs.py,1,C,Literal validated-checksum TLE line/name records,Serialization contract only
    tests/test_transfer_optimal.py,1,R1,Analytic Hohmann cost and transfer time,Selected coplanar circular case; not proof of general global optimality
    tests/test_two_body_closed_forms.py,2,R1,Vis-viva apsidal speeds and haversine great-circle distance,Ideal two-body/spherical models
+   tests/test_solar_scene_geometry.py,5,R1 R2,ERFA ecm06; SSAPy DE ephemeris; analytic pinhole projection,Approximate built-in ephemeris; not a measured-sky calibration
+   tests/test_vector_rotation_references.py,3,R1 R2,Literal right-hand turns; SciPy quaternion rotations; magnitude-independent directions,2e-14 dimensionless component budget; explicit reference-axis convention
    tests/test_viewer_star_reference.py,1,R2 R6,Astropy GCRS-to-TEME sky at 2008 and 2026 epochs,0.5 arcsec transform/serialization budget; catalog astrometry itself is not recalibrated
 
 The inventory is a review record, not a proof of completeness over all
@@ -248,9 +252,17 @@ Workflow contracts outside the numerical suite
 The original testing policy excludes rendering and demo execution from
 ``tests/``. Publishing/export checks therefore run separately in the gallery
 workflow with ``python -m pytest scripts/tests -q``. The default pytest command
-selects ``tests/`` explicitly in ``pyproject.toml``. There are 650 core cases
-(102 files, 384 functions) and 142 workflow cases (2 files, 20 functions).
-The former 775-case combined suite becomes 792 cases: one duplicated path
+selects ``tests/`` explicitly in ``pyproject.toml``. The current gallery follow-ups have
+658 core cases (103 files, 389 functions) and 161 workflow cases (6 files,
+33 functions): 819 total. The browser contract runs in gallery CI and skips
+locally unless ``SSATK_BROWSER_TESTS=1`` is set. Relative to the preceding
+792-case handoff, this adds eight numerical and ten rendering/export cases.
+The subsequent gallery dependency fix adds three publishing cases: both CLI
+skip policies (including stale archive removal) and discovery of the real
+gallery membership with standalone GMAT excluded. These are deployment
+contracts, not physical reference tests.
+
+In the preceding audit, the former 775-case combined suite became 792 cases: one duplicated path
 layout was removed and 18 targeted cases were added. Moving 125 cases out of
 ``tests/`` changes their classification, not the total number checked.
 
@@ -280,3 +292,255 @@ GPS epoch could accept a whole-second time error. Copied segment epochs now
 require exact equality. Analytic frame arithmetic allows float64 rounding;
 OEM elapsed-time conversions retain a 1 ns absolute budget. These budgets
 validate specified computations, not measured model fidelity.
+
+The solar scene follow-up adds analytic pinhole projection checks, an ERFA
+J2000 ecliptic rotation reference, and four-epoch comparisons against SSAPy's
+separate DE ephemeris. ``scripts/tests/test_solar_gallery.py`` checks physical
+mesh radii, explicit scale labels, precise UTC dates and AU coordinates, dense
+circular trails under playback decimation, and 60-second frame timing.
+``scripts/tests/test_solar_sky_browser.py`` uses two prescribed opposite rays
+and a green occluder: it checks actual browser pixels on camera reversal and
+resize. It does not treat file existence as evidence of rendering correctness.
+
+The full-period divergence example adds two demo regressions in
+``scripts/tests/test_divergence_gallery.py``. A circular GEO solution checks
+all nominal epochs analytically; SSAPy's separate Kepler solver checks every
+perturbed DOP853 trajectory. Absolute budgets are 1 cm and 1 micrometre/s over
+one period, with a 0.5 microsecond epoch-span allowance and at most 120 seconds
+between samples. These validate synthetic point-mass dynamics, not flight data.
+
+``scripts/tests/test_moon_data_sources.py`` adds three preparation contracts:
+a real packaged-data bake with downloads blocked and source hashes unchanged,
+and custom-elevation precedence with either packaged or opted-in NASA colour
+sources. They check file selection and decodable textures, not terrain accuracy.
+
+The existing movie-duration contract now checks both an explicit seven-day
+span and the default 27.3217-day mean lunar revolution from NASA's Moon Fact
+Sheet. Both decode to the requested playback length; the physical endpoint
+allows 1 microsecond for GPS rounding and path sampling is at most one hour.
+This adds one parametrized case, not another test function or propagation oracle.
+
+
+Star-finder extension
+----------------------
+
+``tests/test_star_tracker.py`` adds five tests with literal quarter-turn
+rotations, exactly intersecting finite-distance rays, loss of observability
+for parallel rays, analytic tangent motion at a celestial pole, and the
+Moon viewer's epoch/rotation contract. The new Cartesian proper-motion
+calculation avoids division by cos(Dec); the former linear RA/Dec update
+was displaced by up to 0.1492 arcsec from Astropy's zero-distance-information
+space-motion model for the 83,123 stellar rows at 2026-10-12. This is a
+comparison of calculations on the same catalogue, not independent
+validation of the original astrometric measurements.
+
+``scripts/tests/test_star_finder_demo.py`` adds two tests: an end-to-end
+noise-free simulation compared with a separate analytic circular orbit and
+prescribed attitude/position truth, and explicit catalogue-source/unit
+contracts. The simulation's approximate aberration correction uses a
+100-km/50-m/s coarse orbit offset, so a 0.1-arcsec attitude and 2-m position
+budget is retained even with zero centroid noise. Full-cycle DOP853
+positions must agree with the analytic circle within 2 mm. Rendering and
+file metadata contracts are not counted as physical validation.
+
+Satellite viewer Earth detail
+-----------------------------
+
+``scripts/tests/test_viewer_earth_assets.py`` adds two publishing contracts:
+byte-exact embedding and offline fallback for an asymmetric image fixture,
+and rejection of a checksum-mismatched source without replacing the previous
+cached asset. Neither test claims to validate geography or orbit dynamics.
+The prepared gallery uses a SHA-256-pinned NASA Blue Marble product, with
+browser inspection of the embedded dimensions and landmark UV alignment.
+
+
+Coverage-map validation
+------------------------
+
+``tests/test_coverage_references.py`` adds five functions/seven cases:
+analytic crossing times, the spherical horizon-angle formula, stationary
+WGS84 access against ellipsoid normals, latitude-band surface integrals,
+and archived HST states against direct SGP4 with Astropy TEME-to-ITRS.
+The latter checks model selection and coordinate handling, not flight truth.
+``scripts/tests/test_coverage_analysis_contracts.py`` separately checks
+no-output mode and Sun/satellite/site geometry wiring. The reproducible
+full-grid and event-convergence audit is described in :doc:`coverage_validation`.
+
+Gamma and heading follow-up
+---------------------------
+
+The gamma/heading module adds eight core cases: radial/stationary and polar
+singularities, an analytic quadratic sampled at unequal intervals, invalid
+epoch ordering, and an Astropy spherical-differential state comparison.
+Two workflow cases separately check plotted speeds against straight/circular
+motion and direction symbols against cardinal/radial geometry. The demo's
+full-period comparison and explicit frame conventions are documented in
+:doc:`gamma_heading_validation`.
+
+
+Dated globe rendering follow-up
+-------------------------------
+
+``scripts/tests/test_globe_rendering.py`` contains six test functions, thirteen
+parametrized cases. R1/R2 references are the explicit spherical-coordinate map,
+prescribed satellite positions, opaque-sphere visibility and Astropy GCRS/ITRS
+coordinates. They inspect rendered polygon vertices and pixels, rather than
+comparing two uses of the same SSATK transform. The frame comparison allows
+0.5 arcsecond for IAU model differences; arithmetic-only coordinates allow
+0.1 micrometre at Earth radius and 20 nanometres for marker placement. C cases
+reject absent, repeated, reversed or asynchronous animation epochs and suppress
+a highlighted satellite marker at an unsupplied time. They do not establish telemetry
+accuracy or physical surface fidelity of the Earth imagery.
+
+Lunar plot follow-up
+--------------------
+
+``scripts/tests/test_moon_plot_rendering.py`` adds seven functions/thirteen
+cases. An independent scalar Kepler-equation solution checks the demo's lunar
+ellipse and velocity to 1 mm and 1 micrometre/s, including GPS-time rounding.
+An end-to-end renderer check catches a repeated origin subtraction, and literal
+spherical coordinates plus an asymmetric texture catch longitude shifts and
+latitude flips. Astropy ERFA Moon positions and apparent Sun directions provide
+independent 20-km and 0.02-degree model-comparison budgets against DE440.
+Tidal locking constrains the rendered prime meridian within the 9-degree optical
+libration envelope. Radius checks include the analytically bounded second-order
+error of the SSAPy-compatible first-order polar-motion matrix.
+
+Separate C checks cover short-arc framing, visible/occluded raster pixels,
+standalone TT-to-UTC epochs, gnomonic sky projection and invalid inputs. These
+checks validate geometry and output contracts, not measured lunar flight states,
+terrain elevation or calibrated surface photometry.
+
+Cislunar framing follow-up
+--------------------------
+
+``scripts/tests/test_cislunar_framing.py`` adds three functions/seven cases.
+A specified linear Moon ephemeris puts the real rotating-frame transform in
+an exact Cartesian basis at the test epoch. Literal 3,000-km circles must
+produce +/-3,480-km limits under 8% padding, with a 1e-8-km floating-point
+budget and the physical 1,738.1-km Moon radius. Analytic orthographic visibility
+selects the expected samples behind the lunar disc. Mixed near-Earth and
+near-Moon tracks are checked in both input orders and all three layouts,
+against supplied metre positions with a 0.1-mm arithmetic budget. XY bounds
+must remain tied to the lunar radius despite a large vertical excursion.
+
+Canvas containment, legend suppression and fractional tick placement are
+explicit C contracts. These tests validate framing and coordinate/unit wiring;
+they do not provide an independent real lunar ephemeris or propagation oracle.
+
+Mesh catalogue demo follow-up
+-----------------------------
+
+``scripts/tests/test_mesh_catalog_demo.py`` adds three functions/four cases.
+A literal 4-by-2-m rectangle in the camera plane must retain its 2:1 shape and
+90% width fit in landscape and portrait thumbnails, within one raster pixel.
+Translation and uniform scaling must leave those bounds unchanged. This R1
+reference validates display geometry, not mission dimensions.
+
+C contracts check the complete current registry, one embedded and decodable
+actual-mesh preview per canonical name, escaped metadata and standalone assets.
+The opt-in browser case runs with networking disabled and exercises an HST alias
+search, combined collection filtering, preset selection, referenced CubeSat
+dimensions, and local PNG/JPG downloads. Flight-model fidelity remains limited
+to the separately documented referenced features in :doc:`spacecraft_presets`.
+
+GEO chase-camera demo follow-up
+-------------------------------
+
+``scripts/tests/test_geo_spacecraft_demo.py`` adds three functions/four cases.
+An analytic circular-orbit solution checks the propagated 24-hour track to
+1 mm and 1 micrometre/s; the radius and speed correspond to the mean sidereal
+period, rather than a 24-hour orbital period. Astropy independently transforms
+the track to Earth-fixed coordinates, requiring longitude and latitude to
+remain within 0.001 degree of the initial Greenwich subpoint. The angular budget
+includes frame-model differences and the unperturbed orbit plane's small drift
+relative to Earth's evolving equator over one day.
+
+Scene geometry checks constrain nadir/along-track body axes to 1e-12 and camera
+placement to 10 nm. Export contracts require 45-second playback in both fast
+and normal modes and one propagated position per output frame, with no sparse
+chord interpolation. These are model and display checks; no measured GEO
+telemetry, attitude-control dynamics or station-keeping performance is claimed.
+
+Vector rotation and animation-camera follow-up
+----------------------------------------------
+
+``tests/test_vector_rotation_references.py`` adds three numerical reference
+tests for ``ssatk.vectors.rotate_vector``. Literal right-hand quarter-turns
+constrain the signs and order of both rotations, including the formerly
+undefined positive and negative Y directions. SciPy quaternion rotations about
+specified axes independently check an oblique direction and directions within
+1e-14 of either Y pole. The absolute component budget is 2e-14, dimensionless,
+with zero relative tolerance. Known positive multiples of +X spanning
+1e-200 to 1e200 check normalization without overflowing or underflowing squares.
+The routine uses the original +Y reference except within 1e-12 of either pole,
+where the documented +X reference defines the otherwise singular first axis.
+
+Three new software-contract cases check invalid rotation input, JSON export
+of NumPy camera scalars, and actual browser target replacement/reordering.
+The last runs the shipped Three.js controller, including repeated names and
+names containing delimiters. It requires a removed target's chase direction
+to be cleared while a still-selected target retains its direction on reorder.
+The existing Plotly frame test also requires titles, backgrounds and annotations
+to survive camera attachment unchanged. These are C contracts, not physical
+accuracy references. The previously added camera geometry cases separately
+check fixed translations, nonuniform-time sweeps, constant-velocity tangents,
+independent projection, full-scene containment and rendered pixel centring.
+
+Transfer planning dashboard follow-up
+-------------------------------------
+
+``scripts/tests/test_structured_transfer_dashboard.py`` adds four cases.
+An independent DOP853 integration of each selected Keplerian transfer must
+reach a closed-form inclined circular target within 5 cm. Tightening integration
+tolerances by ten must change the reference by less than 1 mm and 1 micrometre/s.
+Reconstructing the departure and arrival impulses from those independent
+states must match the reported cost within 5e-5 m/s. These are R1/R2 synthetic
+two-body references; no measured accuracy or finite-thrust accuracy is claimed.
+
+The flight-time curve finalizes each accepted search point because the coarse
+Lambert grid and final plan use different solver tolerances. Its 60-minute
+point must match the comparison plan within 1e-6 m/s. C contracts require
+single-departure-burn plans to retain their full coast interval, stacked bars
+to show every planned impulse even for an arrival-only objective, and rendered
+text rectangles to stay inside the canvas without overlapping at 140 and
+200 dots per inch. The existing Hohmann minimum-cost reference remains a
+separate check on the solver itself.
+
+The dashboard alignment follow-up extends the existing rendering contract:
+all four plot rectangles must share row/column edges and dimensions to within
+one pixel at both export resolutions, while equal x/y distances in the orbit
+panel retain equal screen lengths. It adds no numerical test cases.
+
+Three publishing contracts execute the command displayed in a gallery card
+for a ``main`` entry point, a ``run`` entry point, and a standalone script.
+They verify the command runs the selected module and uses the documented
+standalone defaults, rather than implying the gallery's fast settings were
+reproduced. These are software contracts, not physical validation.
+
+Gallery paths, body maps, and dense animations
+-----------------------------------------------
+
+``scripts/tests/test_gallery_figure_calls.py`` adds seven C contracts: an
+executed drawing statement with HTML-sensitive arguments survives publishing
+and relocation, malformed/ambiguous annotations fail, the introductory demo
+writes a single ``figures`` directory, and every bundled visual demo supplies
+parseable output-specific source regions. These validate publishing behavior,
+not the physics depicted by the figures.
+
+``scripts/tests/test_gallery_render_repairs.py`` adds eight checks. R1 references
+include literal circular Walker states (1 mm and 1 micrometre/s), a straight
+trajectory with known 5 km/s speed at nonuniform times in both time directions,
+an explicitly unknown speed at the initial single sample, and analytic sphere
+occlusion/dateline cases for the batched renderer. The R2 lunar-map reference
+contains 50 CSPICE matrices across 2000--2040 and weekly 2025 epochs. The
+2 cm surface-displacement budget covers SSAPy's TT versus TDB evaluation and
+epoch roundoff; source URLs, kernel hashes and reproduction steps accompany
+the fixture. This tests orientation, not centimetre-resolution imagery.
+
+C checks require north-up map legend keys, no map I/O in low-spec mode, actual
+background pixels and non-overlapping panel bounds at three animation frames,
+retention of 3-D trajectory coordinates, and faithful display of specified
+residuals including exact zero in the force-model dashboard. The existing sky
+epoch contract now mocks the map-frame helper used by the renderer; its
+independent quarter-turn and expected direction remain unchanged.

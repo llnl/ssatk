@@ -39,6 +39,7 @@ The `demos/` package is organized by workflow area:
 | `six_dof/` | rigid-body attitude, gravity-gradient torque, facet solar-radiation pressure, and finite-burn coupling |
 | `orbit_visualization/` | orbit, cislunar, globe, Moon, and ground-track visualization workflows |
 | `sensor_coverage/` | satellite viewer and sensor field-of-view coverage demos |
+| `navigation/` | star-catalogue attitude and landmark-bearing position estimation |
 | `space_environment/` | Sun/Earth/Moon scenes, solar-system views, magnetic fields, and Van Allen belts |
 | `eclipse/` | solar and lunar eclipse geometry and animation demos |
 | `analysis_dashboards/` | dashboards, divergence plots, and population summary visualizations |
@@ -49,6 +50,19 @@ The `demos/` package is organized by workflow area:
 The gallery runner searches these subfolders recursively, so adding a new
 `demo_*.py` file under the right category is enough for it to appear unless the
 file sets `GALLERY_INCLUDE = False`.
+
+The published gallery groups demos by user task rather than listing folders
+alphabetically. It opens with **Getting started**, then scene viewers, orbit
+geometry, maneuvers, attitude, coverage/navigation, illumination/brightness,
+space environment, dashboards, coordinates/sampling, reference comparisons,
+and animation export. Section descriptions, topic jump links and combined
+search/topic filters make the sequence explicit. Each demo appears once.
+
+`ssatk/_gallery_layout.py` defines topic membership and the introductory-to-
+specialized order. New demos inherit their folder's topic and follow the curated
+examples alphabetically by title; custom categories remain visible as separate
+topics. This presentation does not move source files or change execution order.
+Within each demo, animations and HTML views precede images, downloads and logs.
 
 ---
 
@@ -91,6 +105,22 @@ pass `--output` for an explicit alternate location.
 ---
 
 ## Demo vs. test policy
+
+Each media output shows its specific plotting call, including arguments and a
+link to the complete demo source. Annotate the call that creates each output:
+
+```python
+# gallery-call: example_orbit.jpg
+orbit_plot(r, t, save_path="example_orbit.jpg")
+# gallery-end
+```
+
+Use the output basename, or `|`-separated filename patterns when one call creates
+several files. Every bundled media file must match exactly one annotated region.
+Keep setup variables in the demo; the source link provides that context. Use a
+separate region for an animation and a static plot if different calls create them.
+SSATK plotting helpers already place relative output names in `figures/`, so do
+not add another `figures/` prefix to their filenames.
 
 - Gallery demos should create useful artifacts: figures, animations, logs, or
   other files that help a user understand the workflow.

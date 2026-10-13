@@ -16,6 +16,8 @@ minimal environment.
 
 from __future__ import annotations
 
+from .rendering import is_low_spec
+
 
 from pathlib import Path
 
@@ -267,6 +269,8 @@ def _build_earth_mesh(texture_path, n_lon=480, n_lat=240, sun_shading=False,
     HTML) sampled from the texture with area prefilter + bilinear
     interpolation.
     """
+    if is_low_spec():
+        n_lon, n_lat = min(n_lon, 37), min(n_lat, 19)
     a, b = WGS84_A_KM, WGS84_B_KM
     e2   = 1.0 - (b * b) / (a * a)
 
@@ -290,8 +294,8 @@ def _build_earth_mesh(texture_path, n_lon=480, n_lat=240, sun_shading=False,
     tj = np.concatenate([v01, v11])
     tk = np.concatenate([v11, v10])
 
-    resolved = _resolve_texture_path(texture_path, allow_download=allow_download)
-    tex = _load_texture_rgb(resolved)
+    resolved = None if is_low_spec() else _resolve_texture_path(texture_path, allow_download=allow_download)
+    tex = None if is_low_spec() else _load_texture_rgb(resolved)
     if tex is not None:
         colors = _sample_equirect_bilinear(tex, LAT, LON,
                                            prefilter_to=(n_lon * 2, n_lat * 2))

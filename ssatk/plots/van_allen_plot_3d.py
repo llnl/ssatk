@@ -27,6 +27,8 @@ Dependencies
 
 from __future__ import annotations
 
+from .rendering import _with_low_spec
+
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -142,6 +144,7 @@ def _igrf_belt_backend():
 # Public API
 # ===========================================================================
 
+@_with_low_spec
 def plot_van_allen_3d(
     *,
     title="Van Allen Radiation Belts",
@@ -175,7 +178,7 @@ def plot_van_allen_3d(
     t=None,
     r_units="auto",
     v_units="auto",
-    orbit_name="SSAPy orbit",
+    orbit_name="SSATK orbit",
     orbit_color="#ff4d4d",
     orbit_width=5,
     pitch_angle_deg=25.0,

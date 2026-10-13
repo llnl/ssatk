@@ -336,53 +336,27 @@ def orbit_divergence_plot(rs: np.ndarray, r_moon: np.ndarray = None, t=None,
     # Normalize once
     r_moon = r_moon / RGEO
 
-    fig = plt.figure(dpi=100, figsize=(15, 4))
-    for i in range(rs.shape[-1]):
-        r = rs[:, :, i]
-        x = r[:, 0] / RGEO
-        y = r[:, 1] / RGEO
-        z = r[:, 2] / RGEO
-        dotcolors = cm.rainbow(np.linspace(0, 1, len(x)))
-
-        # XY
-        plt.subplot(1, 3, 1)
-        plt.scatter(x, y, color=dotcolors, s=1)
-        plt.scatter(0, 0, color="blue", s=50)
-        plt.scatter(r_moon[:, 0], r_moon[:, 1], color="grey", s=5)
-        plt.axis('scaled')
-        plt.xlabel('x [GEO]')
-        plt.ylabel('y [GEO]')
-        plt.xlim((-limits, limits))
-        plt.ylim((-limits, limits))
-        plt.text(x[0], y[0], '$\\leftarrow$ start')
-        plt.text(x[-1], y[-1], '$\\leftarrow$ end')
-
-        # XZ
-        plt.subplot(1, 3, 2)
-        plt.scatter(x, z, color=dotcolors, s=1)
-        plt.scatter(0, 0, color="blue", s=50)
-        plt.scatter(r_moon[:, 0], r_moon[:, 2], color="grey", s=5)
-        plt.axis('scaled')
-        plt.xlabel('x [GEO]')
-        plt.ylabel('z [GEO]')
-        plt.xlim((-limits, limits))
-        plt.ylim((-limits, limits))
-        plt.text(x[0], z[0], '$\\leftarrow$ start')
-        plt.text(x[-1], z[-1], '$\\leftarrow$ end')
-        plt.title(f'{title}')
-
-        # YZ
-        plt.subplot(1, 3, 3)
-        plt.scatter(y, z, color=dotcolors, s=1)
-        plt.scatter(0, 0, color="blue", s=50)
-        plt.scatter(r_moon[:, 1], r_moon[:, 2], color="grey", s=5)
-        plt.axis('scaled')
-        plt.xlabel('y [GEO]')
-        plt.ylabel('z [GEO]')
-        plt.xlim((-limits, limits))
-        plt.ylim((-limits, limits))
-        plt.text(y[0], z[0], '$\\leftarrow$ start')
-        plt.text(y[-1], z[-1], '$\\leftarrow$ end')
+    fig, axes = plt.subplots(1, 3, dpi=100, figsize=(15, 4))
+    dotcolors = cm.rainbow(np.linspace(0, 1, rs.shape[0]))
+    for ax, (a, b) in zip(axes, ((0, 1), (0, 2), (1, 2))):
+        for i in range(rs.shape[-1]):
+            ax.scatter(rs[:, a, i] / RGEO, rs[:, b, i] / RGEO,
+                       color=dotcolors, s=1)
+        # Shared bodies and annotations belong to the axes, not each sample.
+        ax.scatter(0, 0, color="blue", s=50)
+        ax.scatter(r_moon[:, a], r_moon[:, b], color="grey", s=5)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set(xlabel=f"{'xyz'[a]} [GEO]", ylabel=f"{'xyz'[b]} [GEO]",
+               xlim=(-limits, limits), ylim=(-limits, limits))
+        first = rs[0, [a, b], 0] / RGEO
+        last = rs[-1, [a, b], 0] / RGEO
+        # Annotate one representative sample; offset nearly coincident labels
+        # vertically when the full-period start and end occupy the same place.
+        ax.annotate("start (sample 1)", first, xytext=(6, 12),
+                    textcoords="offset points", fontsize=8)
+        ax.annotate("end (sample 1)", last, xytext=(6, -12),
+                    textcoords="offset points", fontsize=8)
+    fig.suptitle(title)
 
     plt.tight_layout()
     if show:

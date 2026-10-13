@@ -55,6 +55,7 @@ def main(make_figures=None, fast=None):
             "orbit_visualization/demo_moon_webgl_animation.html"
         )
         try:
+            # gallery-call: *.html
             moon_webgl(
                 r=positions,
                 t=times,
@@ -64,6 +65,7 @@ def main(make_figures=None, fast=None):
                 embed_assets=True,
                 save_path=html_path,
             )
+            # gallery-end
             print(f"Saved: {html_path}")
         except FileNotFoundError as exc:
             # The high-resolution baked maps are optional local data. Keep the

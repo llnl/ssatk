@@ -346,6 +346,7 @@ class BasePlot3D:
         dt_s        : float = 60.0,
         interval_ms : int   = 40,
         trail_pts   : int   = 60,
+        camera = "overview",
     ) -> FuncAnimation:
         """
         Return a FuncAnimation of the satellite moving along its orbit.
@@ -356,6 +357,10 @@ class BasePlot3D:
         traj  = self._get_trajectory()
         r_t   = self._transform_traj(traj)
         N     = len(r_t)
+        from .camera import _mpl_camera, _camera_spec
+        if _camera_spec(camera).target != 0:
+            raise ValueError("BasePlot3D has one camera target (index 0)")
+        shot = _mpl_camera(camera, self._ax, r_t, times=np.arange(N)*dt_s)
 
         # dynamic artists
         trail_line, = self._ax.plot([], [], [], color=_ORBIT_COLOR,
@@ -376,13 +381,14 @@ class BasePlot3D:
             start = max(0, idx - trail_pts)
             seg   = r_t[start:idx+1]
             trail_line.set_data_3d(seg[:, 0], seg[:, 1], seg[:, 2])
+            shot.mpl(self._ax, idx)
             pos = r_t[idx]
             dot._offsets3d = (pos[0:1], pos[1:2], pos[2:3])
             return trail_line, dot
 
         self._anim = FuncAnimation(
             self._fig, _update, frames=N, init_func=_init,
-            interval=interval_ms, blit=True,
+            interval=interval_ms, blit=False,
         )
         return self._anim
 

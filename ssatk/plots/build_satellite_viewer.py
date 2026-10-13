@@ -7,13 +7,18 @@ Run:  python assemble.py
 
 Inlines scene.js, the vendored libraries (three.min.js and satellite.min.js) and
 the four Earth textures into a single standalone HTML file. The texture images
-come from the external core data package, not from this source repository.
+come from the external core data package, with an optional cached 8K NASA
+day map prepared by scripts.prepare_gallery_data, not from this source repository.
 
 Layout-agnostic on purpose: inputs are looked up next to this script first,
 then in an optional assets/ subfolder, then one directory up. That means the
 files can sit flat in an existing package folder or in their own subdirectory,
 whichever suits the repo -- no particular directory structure is required.
 """
+
+from .rendering import is_low_spec
+
+from .rendering import _with_low_spec
 
 import base64
 import csv
@@ -71,20 +76,26 @@ def text(filename):
 def load_textures():
     """Return base64 strings for the four Earth textures.
 
-    Textures ship as individual files in the core data package. This avoids committing a
-    duplicated texture archive to SSATK while
-    still allowing installed users to build a self-contained HTML viewer.
+    Prefer the cached 8192 x 4096 NASA day map prepared by
+    ``scripts.prepare_gallery_data``. Otherwise use the core data package's
+    2048 x 1024 map. Night lights, specular mask and clouds remain at 2K.
+    All image bytes are embedded, so the exported viewer works offline.
     """
+    from ssatk.plots._textures import viewer_earth_day_path
+
     files = {
         "day": "earth_day_2048.jpg",
         "night": "earth_night_2048.jpg",
         "specular": "earth_specular_2048.jpg",
         "clouds": "earth_clouds_2048.png",
     }
-    return {
-        key: base64.b64encode(_read_texture_binary(filename, key)).decode("ascii")
-        for key, filename in files.items()
-    }
+    cached_day = viewer_earth_day_path()
+    textures = {}
+    for key, filename in files.items():
+        data = (cached_day.read_bytes() if key == "day" and cached_day.is_file()
+                else _read_texture_binary(filename, key))
+        textures[key] = base64.b64encode(data).decode("ascii")
+    return textures
 
 
 def _load_ssapy_plot_constants():
@@ -521,6 +532,12 @@ html = """<!DOCTYPE html>
     position: absolute; top: 14px; left: 18px; color: #cfd8e3; font: 13px/1.4 -apple-system, sans-serif;
     background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 8px; pointer-events: none;
   }
+  #earth-credit {
+    position: absolute; bottom: 12px; left: 18px; z-index: 6;
+    color: #cfd8e3; background: rgba(0,0,0,0.55); padding: 6px 9px;
+    border-radius: 6px; font: 11px/1.4 -apple-system, sans-serif;
+  }
+  #earth-credit a { color: inherit; }
   #label-layer {
     position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5;
   }
@@ -688,6 +705,7 @@ html = """<!DOCTYPE html>
 <div id="scene-container"></div>
 <div id="label-layer"></div>
 <div id="hint">Drag to rotate &middot; scroll / pinch to zoom</div>
+<div id="earth-credit">__EARTH_CREDIT__</div>
 <div id="sat-panel">
   <div id="time-section">
     <div id="time-clock-row">
@@ -791,6 +809,8 @@ __THREE_JS__
 __SATELLITE_JS__
 </script>
 <script>
+const LOW_SPEC = __LOW_SPEC__;
+const CAMERA_CONFIG = __CAMERA_CONFIG__;
 const DAY_TEXTURE_DATAURI = "data:image/jpeg;base64,__DAY_B64__";
 const NIGHT_TEXTURE_DATAURI = "data:image/jpeg;base64,__NIGHT_B64__";
 const SPECULAR_TEXTURE_DATAURI = "data:image/jpeg;base64,__SPEC_B64__";
@@ -809,8 +829,9 @@ __SCENE_JS__
 </html>
 """
 
+@_with_low_spec
 def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
-          propagator="sgp4"):
+          propagator="sgp4", camera="overview"):
     """Assemble the self-contained Three.js viewer and write it to disk.
 
     Everything expensive lives here rather than at module level so that
@@ -844,7 +865,17 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         The path written.
     """
     propagator = _propagator_name(propagator)
-    _tex = load_textures()
+    from ssatk.plots._textures import viewer_earth_day_path
+
+    earth_credit = (
+        '<a href="https://science.nasa.gov/earth/earth-observatory/'
+        'blue-marble-next-generation/base-topography/">NASA Earth Observatory</a>'
+        ' &middot; Blue Marble, Jan 2004 &middot; 8192 &times; 4096'
+        if viewer_earth_day_path().is_file() else 'Earth textures: ssa-data-core (2K fallback)'
+    )
+    if is_low_spec():
+        earth_credit = "Low-spec blue Earth · surface textures disabled"
+    _tex = dict.fromkeys(("day", "night", "specular", "clouds"), "") if is_low_spec() else load_textures()
     day_b64 = _tex["day"]
     night_b64 = _tex["night"]
     spec_b64 = _tex["specular"]
@@ -863,11 +894,20 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
 
     satellite_js = text("satellite.min.js")
     three_js = text("three.min.js")
-    scene_js = text("satellite_viewer_scene.js")
+    from dataclasses import asdict, replace
+    from .camera import _camera_spec
+    camera_spec = _camera_spec(camera)
+    if isinstance(camera, str):
+        camera_spec = replace(camera_spec, up=(0., 1., 0.))
+    scene_js = text("animation_camera.js") + "\n" + text("satellite_viewer_scene.js")
+
 
     replacements = {
+        "LOW_SPEC": json.dumps(is_low_spec()),
+        "CAMERA_CONFIG": json.dumps(asdict(camera_spec)),
         "SATELLITE_JS": satellite_js,
         "DAY_B64": day_b64,
+        "EARTH_CREDIT": earth_credit,
         "NIGHT_B64": night_b64,
         "SPEC_B64": spec_b64,
         "CLOUDS_B64": clouds_b64,
@@ -896,8 +936,9 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     return out_path
 
 
+@_with_low_spec
 def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
-                     verbose=True, database_path=None, propagator="sgp4"):
+                     verbose=True, database_path=None, propagator="sgp4", camera="overview"):
     """Write the satellite WebGL viewer from propagated SSAPy state arrays.
 
     ``r`` and ``v`` are the position and velocity arrays returned by
@@ -919,6 +960,7 @@ def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
         database_path=database_path,
         state_vectors=state_vectors,
         propagator=propagator,
+        camera=camera,
     )
 
 

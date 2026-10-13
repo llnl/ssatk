@@ -7,6 +7,12 @@ bodies, build the Plotly figure, then save the HTML artifact.
 """
 
 GALLERY_CATEGORY = "space_environment"
+TITLE = "Solar System — Planets and Orbits"
+DESCRIPTION = (
+    "Eight planets and the Moon at physical radii and distances, with a "
+    "catalogue star background. The initial view covers the inner Solar System; "
+    "crosses locate bodies and do not represent their diameters."
+)
 
 import os
 import sys
@@ -41,18 +47,16 @@ def main(make_figures=None, fast=None):
     cfg["star_mag_limit"] = 5.5 if fast else 6.5
     cfg["sphere_resolution"] = 16 if fast else 50
 
+    # gallery-call: *.html
     fig = build_figure(cfg)
+    # gallery-end
     outputs = {"figure": fig, "n_traces": len(fig.data), "html": None}
 
     if make_figures:
-        html_path = Path(figpath("demo_solar_view_plot.html"))
+        html_path = Path(figpath("demo_solar_system_plot.html"))
         fig.write_html(str(html_path))
-        alias_path = Path(figpath("demo_solar_view.html"))
-        fig.write_html(str(alias_path))
         outputs["html"] = str(html_path)
-        outputs["html_alias"] = str(alias_path)
         print(f"Saved: {html_path}")
-        print(f"Saved: {alias_path}")
 
     return outputs
 

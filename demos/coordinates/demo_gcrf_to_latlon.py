@@ -49,6 +49,7 @@ def main(make_figures=True, fast=True):
         raise AssertionError(f"Independent ground-track reference exceeded its budget: {metrics}")
     print(json.dumps(metrics, indent=2))
     if make_figures:
+        # gallery-call: *.png
         figure, axes = plt.subplots(2, 1, figsize=(9, 6), sharex=True)
         axes[0].plot(seconds/60, errors[:,0], label="Longitude")
         axes[0].plot(seconds/60, errors[:,1], label="Latitude")
@@ -59,6 +60,7 @@ def main(make_figures=True, fast=True):
         figure.suptitle("Prescribed orbit; independent model comparison")
         figure.tight_layout()
         figure.savefig(figpath("gcrf_to_lonlat_groundtrack_vs_benchmark.png"), dpi=160)
+        # gallery-end
         plt.close(figure)
         Path(figpath("gcrf_to_lonlat_reference.json")).write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     return {"title": TITLE, "description": DESCRIPTION}

@@ -40,24 +40,24 @@ PLOT_ORDER = (
 
 CAPTIONS = {
     "artemis_benchmark_cislunar_context.png": "Cislunar context for the Artemis II/Orion benchmark; the trajectory is compared with JPL Horizons state-vector data.",
-    "artemis_benchmark_position_error.png": "Artemis II/Orion position residuals for the SSAPy Kepler propagation against the JPL Horizons reference states.",
-    "artemis_benchmark_velocity_error.png": "Artemis II/Orion velocity residuals for the SSAPy Kepler propagation against the JPL Horizons reference states.",
+    "artemis_benchmark_position_error.png": "Artemis II/Orion position residuals for the SSATK Kepler propagation against the JPL Horizons reference states.",
+    "artemis_benchmark_velocity_error.png": "Artemis II/Orion velocity residuals for the SSATK Kepler propagation against the JPL Horizons reference states.",
     "artemis_benchmark_burn_events.png": "Executed Artemis II/Orion burn matches from the NASA mission timeline overlaid on position and velocity residuals. Vertical lines mark the nearest Horizons sample used for each burn synchronization.",
     "gmat_two_body_position_error.png": "Short two-body position residuals: SSATK DOP853 versus GMAT R2026a RungeKutta89 using an Earth degree/order-0 point mass.",
     "gmat_two_body_velocity_error.png": "Short two-body velocity residuals: SSATK DOP853 versus GMAT R2026a RungeKutta89 using an Earth degree/order-0 point mass.",
     "orekit_two_body_position_error.png": "Short two-body position residuals: SSATK DOP853 versus Orekit 10.3.1 KeplerianPropagator.",
     "orekit_two_body_velocity_error.png": "Short two-body velocity residuals: SSATK DOP853 versus Orekit 10.3.1 KeplerianPropagator.",
-    "long_term_summary.png": "RMS position and velocity residuals for the matched 7-day LEO, 30-day GEO, and 60-day cislunar-radius two-body cases. The annotation reports the GMAT JGM2 versus SSATK Earth gravitational-parameter difference.",
-    "long_term_leo_residuals.png": "Seven-day LEO two-body residual histories for GMAT and Orekit relative to SSATK DOP853; the GMAT JGM2 μ mismatch is shown in the title.",
-    "long_term_geo_residuals.png": "Thirty-day GEO two-body residual histories for GMAT and Orekit relative to SSATK DOP853; the GMAT JGM2 μ mismatch is shown in the title.",
-    "long_term_cislunar_radius_residuals.png": "Sixty-day Earth-centered two-body residual histories at lunar orbital radius, spanning more than two orbital periods. This is not an Earth–Moon–Sun dynamical model.",
+    "long_term_summary.png": "RMS position and velocity residuals for the matched LEO, GEO, and cislunar-radius two-body cases; actual durations are listed on the inputs page. The annotation reports the GMAT JGM2 versus SSATK Earth gravitational-parameter difference.",
+    "long_term_leo_residuals.png": "LEO two-body residual histories for the available reference tools relative to SSATK DOP853; the GMAT JGM2 μ mismatch is shown in the title.",
+    "long_term_geo_residuals.png": "GEO two-body residual histories for the available reference tools relative to SSATK DOP853; the GMAT JGM2 μ mismatch is shown in the title.",
+    "long_term_cislunar_radius_residuals.png": "Earth-centered two-body residual histories at lunar orbital radius; actual duration is listed on the inputs page. This is not an Earth–Moon–Sun dynamical model.",
     "nbody_summary.png": "RMS residuals for the Earth–Moon–Sun and full planetary point-mass ladders across LEO, GEO, and cislunar-radius cases.",
-    "nbody_earth_moon_sun_leo_residuals.png": "Seven-day LEO residuals with Earth, Moon, and Sun point-mass perturbations.",
-    "nbody_earth_moon_sun_geo_residuals.png": "Thirty-day GEO residuals with Earth, Moon, and Sun point-mass perturbations.",
-    "nbody_earth_moon_sun_cislunar_radius_residuals.png": "Sixty-day cislunar-radius residuals with Earth, Moon, and Sun point-mass perturbations.",
-    "nbody_solar_system_leo_residuals.png": "Seven-day LEO residuals with Earth, Moon, Sun, and the seven additional planetary point masses.",
-    "nbody_solar_system_geo_residuals.png": "Thirty-day GEO residuals with Earth, Moon, Sun, and the seven additional planetary point masses.",
-    "nbody_solar_system_cislunar_radius_residuals.png": "Sixty-day cislunar-radius residuals with Earth, Moon, Sun, and the seven additional planetary point masses.",
+    "nbody_earth_moon_sun_leo_residuals.png": "LEO residuals with Earth, Moon, and Sun point-mass perturbations.",
+    "nbody_earth_moon_sun_geo_residuals.png": "GEO residuals with Earth, Moon, and Sun point-mass perturbations.",
+    "nbody_earth_moon_sun_cislunar_radius_residuals.png": "Cislunar-radius residuals with Earth, Moon, and Sun point-mass perturbations.",
+    "nbody_solar_system_leo_residuals.png": "LEO residuals with Earth, Moon, Sun, and the seven additional planetary point masses.",
+    "nbody_solar_system_geo_residuals.png": "GEO residuals with Earth, Moon, Sun, and the seven additional planetary point masses.",
+    "nbody_solar_system_cislunar_radius_residuals.png": "Cislunar-radius residuals with Earth, Moon, Sun, and the seven additional planetary point masses.",
     "benchmark_regime_matrix.png": "Combined RMS residual matrix for two-body, Earth-Moon-Sun, and full planetary point-mass models across LEO, GEO, and cislunar-radius cases.",
 }
 
@@ -102,7 +102,7 @@ def _summary_lines(summaries: dict[str, dict]) -> list[str]:
         ephemerides = nbody.get("ephemeris_sources", {})
         lines.append(
             "N-body ephemerides: "
-            f"SSAPy {ephemerides.get('ssatk', 'unknown')}, "
+            f"SSATK {ephemerides.get('ssatk', 'unknown')}, "
             f"GMAT {ephemerides.get('gmat', 'unknown')}, "
             f"Orekit {ephemerides.get('orekit', 'unknown')}."
         )
@@ -121,7 +121,10 @@ def _write_regime_matrix(summaries: dict[str, dict], output_dir: Path) -> Path |
     modes = (None, "earth_moon_sun", "solar_system")
     regimes = ("leo", "geo", "cislunar_radius")
     orbit_labels = ("LEO", "GEO", "Cislunar")
-    tools = ("GMAT", "Orekit")
+    tools = sorted({tool for case in (*cases.values(), *nbody_cases.values())
+                    for tool in case.get("tools", {})})
+    if not tools:
+        return None
     position = np.full((len(regimes), len(labels), len(tools)), np.nan)
     velocity = np.full_like(position, np.nan)
     for i, regime in enumerate(regimes):
@@ -136,14 +139,15 @@ def _write_regime_matrix(summaries: dict[str, dict], output_dir: Path) -> Path |
     output_dir.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharex=False)
     x = np.arange(len(labels))
-    width = 0.34
+    width = 0.8 / len(tools)
     for i, orbit_label in enumerate(orbit_labels):
         for axis, values, ylabel in (
             (axes[0, i], position[i], "RMS position [m]"),
             (axes[1, i], velocity[i], "RMS velocity [m/s]"),
         ):
-            axis.bar(x - width / 2, values[:, 0], width, label="GMAT")
-            axis.bar(x + width / 2, values[:, 1], width, label="Orekit")
+            for k, tool in enumerate(tools):
+                offset = (k - (len(tools) - 1) / 2) * width
+                axis.bar(x + offset, values[:, k], width, label=tool)
             axis.set_xticks(x, labels, rotation=25, ha="right")
             if np.any(values > 0):
                 axis.set_yscale("log")
@@ -163,7 +167,7 @@ def _write_cover(pdf: PdfPages, figure_count: int, summaries: dict[str, dict]) -
     fig = plt.figure(figsize=(8.5, 11))
     fig.patch.set_facecolor("#f5f7fa")
     fig.text(0.08, 0.82, "SSATK Propagation\nBenchmark Report", fontsize=28, weight="bold", color="#16324f")
-    fig.text(0.08, 0.68, "GMAT, Orekit, and SSATK comparisons", fontsize=15, color="#37627f")
+    fig.text(0.08, 0.68, "SSATK and available external reference tools", fontsize=15, color="#37627f")
     scope = (
         "This report collects the benchmark figures generated by SSATK Toolkit. "
         "Residuals are norm differences between SSATK and each external tool at "
@@ -231,7 +235,7 @@ def write_benchmark_report(*, output_dir: Path | None = None, summaries: dict[st
             {
                 "Title": "SSATK Propagation Benchmark Report",
                 "Author": "Travis Yeager",
-                "Subject": "SSATK comparisons with GMAT and Orekit",
+                "Subject": "SSATK comparisons with available external reference tools",
             }
         )
     return str(report_path)

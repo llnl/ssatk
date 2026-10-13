@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -14,11 +15,13 @@ import sys
 import time
 import traceback
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field, replace
 from pathlib import Path
 from urllib.parse import quote, unquote
 
 from ssatk._paths import SSATK_OUTPUT_ENV, output_root as default_output_root
+from ssatk._gallery_layout import gallery_group, gallery_sort_key, gallery_title
+from ssatk._gallery_calls import collect_figure_calls
 from ssatk.gallery_validation import validate_gallery
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
@@ -88,6 +91,7 @@ class DemoResult:
     stderr: str = ""
     error: str = ""
     category: str = ""
+    figure_calls: dict = field(default_factory=dict)
 
 
 class DemoTimeoutError(TimeoutError):
@@ -267,7 +271,9 @@ def run_demo_script(
     output_root = Path(output_root).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     with _gallery_output(output_root):
-        return _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds)
+        result = _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds)
+        result.figure_calls = collect_figure_calls(path, output_root, result.name, result.files)
+        return result
 
 
 def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
@@ -328,7 +334,7 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
             files.append(relpath_for_report(stdout_file, output_root))
         if stderr_text:
             files.append(relpath_for_report(stderr_file, output_root))
-        files = sorted(set(files))
+        files = sorted(set(files), key=_file_preview_sort_key)
 
         return DemoResult(
             name=name,
@@ -379,7 +385,7 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
             status="failed",
             runtime_seconds=time.time() - start,
             output_dir=str(output_root),
-            files=sorted(files),
+            files=sorted(files, key=_file_preview_sort_key),
             stdout=stdout_text,
             stderr=stderr_text,
             error=err,
@@ -387,17 +393,51 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
         )
 
 
-def render_file_preview(file_rel: str) -> str:
+def _file_preview_sort_key(file_rel: str) -> tuple[int, str, str, str]:
+    """Animations/viewers, stills, downloads, then logs; stable names within each."""
+    decoded = unquote(file_rel)
+    path = Path(decoded)
+    ext = path.suffix.lower()
+    if ext in {".gif", ".mp4", ".webm", ".html", ".htm"}:
+        group = 0
+    elif ext in IMAGE_EXTS:
+        group = 1
+    elif ext in {".txt", ".log"} or "logs" in {part.casefold() for part in path.parts}:
+        group = 3
+    else:
+        group = 2
+    return group, decoded.casefold(), decoded, file_rel
+
+
+def render_file_preview(file_rel: str, example: dict | None = None) -> str:
+    preview = _render_file_preview(file_rel)
+    if not example:
+        return preview
+    call = (
+        '<div class="figure-call"><span>Figure call</span> '
+        f'<code>{html.escape(example["function"])}(...)</code>'
+        '<details><summary>Arguments and source</summary>'
+        f'<pre><code>{html.escape(example["code"])}</code></pre>'
+        '<p>Inputs and configuration are defined in the demo. '
+        f'<a class="file-link" href="{html.escape(example["source"], quote=True)}" '
+        f'target="_blank" rel="noopener">Demo source, lines '
+        f'{int(example["first_line"])}–{int(example["last_line"])}</a>.</p>'
+        '</details></div>'
+    )
+    return preview.removesuffix('</div>') + call + '</div>'
+
+
+def _render_file_preview(file_rel: str) -> str:
     path = html.escape(file_rel)
     name = html.escape(unquote(Path(file_rel).name))
-    ext = Path(file_rel).suffix.lower()
+    ext = Path(unquote(file_rel)).suffix.lower()
 
     if ext in {".png", ".jpg", ".jpeg", ".svg", ".webp"}:
         return (
             f'<div class="asset">'
             f'<a href="{path}" target="_blank">'
             f'<img src="{path}" alt="{name}" loading="lazy"></a>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -406,7 +446,7 @@ def render_file_preview(file_rel: str) -> str:
             f'<div class="asset">'
             f'<a href="{path}" target="_blank">'
             f'<img src="{path}" alt="{name}" loading="lazy"></a>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -417,7 +457,7 @@ def render_file_preview(file_rel: str) -> str:
             f'style="width:100%; height:180px; object-fit:contain; background:#0a0f22; border-radius:8px;">'
             f'<source src="{path}" type="video/mp4">'
             f'</video>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -428,7 +468,7 @@ def render_file_preview(file_rel: str) -> str:
             f'style="width:100%; height:180px; object-fit:contain; background:#0a0f22; border-radius:8px;">'
             f'<source src="{path}" type="video/webm">'
             f'</video>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -456,10 +496,21 @@ def render_file_preview(file_rel: str) -> str:
 
 
 def build_html_report(results: list[DemoResult], out_root: Path) -> None:
-    cards = []
+    # Rebuilding an existing/externally supplied manifest must follow the same
+    # order as a fresh run, without mutating the caller's DemoResult objects.
+    results = sorted(
+        (replace(r, title=gallery_title(r.name, r.title),
+                 files=sorted(r.files, key=_file_preview_sort_key)) for r in results),
+        key=gallery_sort_key,
+    )
+    groups = {}
+    cards = {}
     for r in results:
+        group = gallery_group(r.name, r.category)
+        groups.setdefault(group.key, group)
+        cards.setdefault(group.key, [])
         badge_class = {"success": "ok", "skipped": "skip"}.get(r.status, "fail")
-        previews = "\n".join(render_file_preview(f) for f in r.files) or "<p>No output files found.</p>"
+        previews = "\n".join(render_file_preview(f, r.figure_calls.get(f)) for f in r.files) or "<p>No output files found.</p>"
 
         stdout_block = ""
         if r.stdout:
@@ -482,20 +533,23 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
                 f"<pre>{html.escape(r.error)}</pre></details>"
             )
 
-        category_line = ""
-        if r.category:
-            category_line = f'<p class="meta"><strong>Category:</strong> {html.escape(r.category)}</p>'
-
-        cards.append(
+        # Search demo metadata, not captured logs, file paths or tracebacks.
+        search_text = " ".join((r.title, r.name, r.description, group.title, r.category))
+        description = "" if r.description == f"Demo from {r.name}.py" else f"<p>{html.escape(r.description)}</p>"
+        # Every bundled demo is runnable as a module. This is a standalone
+        # invocation, not a claim to reproduce the gallery's injected options.
+        command = shlex.join(["python", "-m", "demos." + r.name.replace("/", ".")])
+        cards[group.key].append(
             f"""
-            <section class="card" data-category="{html.escape(r.category, quote=True)}">
+            <section class="card" data-category="{group.key}" data-demo="{html.escape(r.name, quote=True)}"
+                     data-search="{html.escape(search_text, quote=True)}">
               <div class="card-header">
-                <h2>{html.escape(r.title)}</h2>
+                <h3>{html.escape(r.title)}</h3>
                 <span class="badge {badge_class}">{html.escape(r.status)}</span>
               </div>
               <p class="meta"><strong>Demo:</strong> {html.escape(r.name)}</p>
-              {category_line}
-              <p>{html.escape(r.description)}</p>
+              {description}
+              <div class="demo-call"><span>Run this demo</span><code>{html.escape(command)}</code></div>
               <p class="meta"><strong>Runtime:</strong> {r.runtime_seconds:.2f}s</p>
               <div class="gallery">
                 {previews}
@@ -513,8 +567,21 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     skipped = sum(r.status == "skipped" for r in results)
     manifest = [asdict(r) for r in results]
     category_options = ''.join(
-        f'<option value="{html.escape(category, quote=True)}">{html.escape(category)}</option>'
-        for category in sorted({r.category for r in results if r.category})
+        f'<option value="{group.key}">{html.escape(group.title)}</option>'
+        for group in groups.values()
+    )
+    navigation = ''.join(
+        f'<a class="topic-link" href="#group-{group.key}" data-group="{group.key}">'
+        f'<span>{html.escape(group.title)}</span><span class="topic-count">{len(cards[group.key])}</span></a>'
+        for group in groups.values()
+    )
+    sections = ''.join(
+        f'<section class="demo-group" id="group-{group.key}" aria-labelledby="heading-{group.key}">'
+        f'<div class="group-heading"><h2 id="heading-{group.key}">{html.escape(group.title)}</h2>'
+        f'<span class="group-count">{len(cards[group.key])} {"demo" if len(cards[group.key]) == 1 else "demos"}</span></div>'
+        f'<p class="group-description">{html.escape(group.description)}</p>'
+        f'{"".join(cards[group.key])}</section>'
+        for group in groups.values()
     )
 
     html_text = f"""<!doctype html>
@@ -567,6 +634,19 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       background: #121a31; color: #e8ecf3; border: 1px solid #526692;
       border-radius: 6px; padding: 10px; margin-left: 8px; max-width: 100%;
     }}
+    .browse-intro, .group-description {{ color: #c7d2e6; line-height: 1.5; }}
+    .topic-nav {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }}
+    .topic-link {{
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px; border: 1px solid #3b5284; border-radius: 8px;
+      background: #121a31; color: #b9d9ff; text-decoration: none;
+    }}
+    .topic-link:hover, .topic-link:focus-visible {{ background: #1c2d5a; border-color: #8ec5ff; }}
+    .topic-count, .group-count {{ color: #b8c3da; white-space: nowrap; }}
+    .demo-group {{ margin-top: 42px; scroll-margin-top: 20px; }}
+    .group-heading {{ display: flex; align-items: baseline; gap: 18px; border-bottom: 1px solid #3b5284; }}
+    .group-heading h2 {{ margin: 0 0 12px; }}
+    .card-header h3 {{ margin: 0; font-size: 1.25rem; }}
     [hidden] {{ display: none !important; }}
     .card {{
       background: #121a31;
@@ -609,6 +689,14 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     .meta {{
       color: #b8c3da;
     }}
+    .demo-call {{
+      display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px;
+      align-items: baseline; padding: 12px 14px; margin: 14px 0;
+      background: #0f1730; border: 1px solid #33466f; border-radius: 8px;
+      font-size: 0.9rem;
+    }}
+    .demo-call span {{ color: #b8c3da; }}
+    .demo-call code {{ color: #dbe7ff; overflow-wrap: anywhere; user-select: all; }}
     .gallery {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -636,9 +724,14 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       color: #cbd5e1;
       word-break: break-word;
     }}
+    .figure-call {{ margin-top: 12px; font-size: 0.85rem; overflow-wrap: anywhere; }}
+    .figure-call > span {{ color: #b8c3da; margin-right: 6px; }}
+    .figure-call code {{ color: #dbe7ff; }}
+    .figure-call pre {{ max-height: 360px; overflow-y: auto; }}
     .file-link {{
       color: #8ec5ff;
       text-decoration: none;
+      overflow-wrap: anywhere;
     }}
     details {{
       margin-top: 12px;
@@ -664,6 +757,20 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       padding: 0 24px 40px 24px;
       color: #99a7c4;
     }}
+    @media (max-width: 600px) {{
+      header, main {{ padding: 18px; }}
+      .summary {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }}
+      .summary-box {{ min-width: 0; padding: 12px; }}
+      .filters {{ flex-direction: column; }}
+      .filters label {{ display: flex; flex-direction: column; gap: 6px; min-width: 0; }}
+      .filters input, .filters select {{ margin-left: 0; min-width: 0; width: 100%; box-sizing: border-box; }}
+      .card {{ padding: 12px; }}
+      .card-header {{ align-items: flex-start; flex-direction: column; }}
+      .meta {{ overflow-wrap: anywhere; }}
+      .demo-call {{ grid-template-columns: minmax(0, 1fr); gap: 6px; }}
+      .gallery, .topic-nav {{ grid-template-columns: minmax(0, 1fr); }}
+      .group-heading {{ flex-wrap: wrap; gap: 8px; }}
+    }}
   </style>
 </head>
 <body>
@@ -672,10 +779,6 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     <p class="subtitle">Space Situational Awareness Toolkit — plots, animations and interactive viewers.</p>
   </header>
   <main>
-    <div class="filters">
-      <label>Search <input id="search" type="search" placeholder="Orbit, Moon, attitude…"></label>
-      <label>Category <select id="category"><option value="">All categories</option>{category_options}</select></label>
-    </div>
     <section class="summary">
       <div class="summary-box"><strong>Total demos</strong><br>{total}</div>
       <div class="summary-box"><strong>Successful</strong><br>{success}</div>
@@ -683,7 +786,20 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       <div class="summary-box"><strong>Failed</strong><br>{failed}</div>
       <div class="summary-box"><strong>Manifest</strong><br><a class="file-link" href="manifest.json">manifest.json</a></div>
     </section>
-    {''.join(cards)}
+    <p class="browse-intro">Start with the introductory workflows or jump to a topic below.
+      Within each topic, examples progress from basic views to specialized workflows.
+      Each demo shows animations and interactive views first, then images, downloads and logs.</p>
+    <p class="browse-intro">The <strong>Run this demo</strong> commands work from an SSATK checkout
+      or an installation that includes the demos. They use each script’s standalone defaults;
+      the gallery may use faster settings.</p>
+    <div class="filters">
+      <label>Search <input id="search" type="search" placeholder="Orbit, Moon, attitude…"></label>
+      <label>Topic <select id="category"><option value="">All topics</option>{category_options}</select></label>
+      <button id="reset-filters" type="button" class="topic-link">Clear filters</button>
+    </div>
+    <p id="match-count" class="meta" role="status" aria-live="polite">Showing {total} of {total} demos</p>
+    <nav class="topic-nav" aria-label="Demo topics">{navigation}</nav>
+    {sections}
     <p id="no-matches" hidden>No demos match these filters.</p>
   </main>
   <footer>
@@ -693,19 +809,35 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     const search = document.getElementById('search');
     const category = document.getElementById('category');
     const cards = [...document.querySelectorAll('.card')];
+    const groups = [...document.querySelectorAll('.demo-group')];
     function filterCards() {{
       const query = search.value.trim().toLowerCase();
       let visible = 0;
       for (const card of cards) {{
         const matches = (!category.value || card.dataset.category === category.value)
-          && card.textContent.toLowerCase().includes(query);
+          && card.dataset.search.toLowerCase().includes(query);
         card.hidden = !matches;
         if (matches) visible++;
       }}
+      for (const group of groups) {{
+        const count = group.querySelectorAll('.card:not([hidden])').length;
+        group.hidden = count === 0;
+        group.querySelector('.group-count').textContent = `${{count}} demo${{count === 1 ? '' : 's'}}`;
+        const link = document.querySelector(`.topic-link[data-group="${{group.id.slice(6)}}"]`);
+        link.hidden = count === 0;
+        link.querySelector('.topic-count').textContent = count;
+      }}
+      document.getElementById('match-count').textContent = `Showing ${{visible}} of ${{cards.length}} demos`;
       document.getElementById('no-matches').hidden = visible > 0;
     }}
     search.addEventListener('input', filterCards);
     category.addEventListener('change', filterCards);
+    document.getElementById('reset-filters').addEventListener('click', () => {{
+      search.value = '';
+      category.value = '';
+      filterCards();
+    }});
+    filterCards();
   </script>
 </body>
 </html>
@@ -721,6 +853,7 @@ def run_all_demos(
     *,
     fast: bool = True,
     timeout_seconds: float | None = 180,
+    strict: bool = False,
 ) -> list[DemoResult]:
     demos_dir = Path(demos_dir).expanduser().resolve()
     output_root = Path(output_root).expanduser().resolve()
@@ -757,7 +890,8 @@ def run_all_demos(
     build_html_report(results, output_root)
     validate_gallery(output_root)
 
-    if all(result.status != "failed" for result in results):
+    if all(result.status == "success" if strict else result.status != "failed"
+           for result in results):
         shutil.make_archive(str(output_root), "zip", root_dir=str(output_root))
 
     return results

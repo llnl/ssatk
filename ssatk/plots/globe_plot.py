@@ -1,10 +1,11 @@
+
+from .rendering import _with_low_spec
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from PIL import Image as PILImage
 import numpy as np
 
 
-from ._textures import earth_texture_path
+from ._globe_scene import TexturedEarth, earth_to_scene, visible_points
 from .plotutils import (
     make_black,
     make_white,
@@ -22,44 +23,12 @@ def _earth_lon0_from_time(t):
     return earth_rotation_deg_from_time(t)
 
 
-def _view_unit_vector(el_deg, az_deg):
-    el = np.radians(float(el_deg))
-    az = np.radians(float(az_deg))
-    v = np.array([
-        np.cos(el) * np.cos(az),
-        np.cos(el) * np.sin(az),
-        np.sin(el),
-    ], dtype=float)
-    n = np.linalg.norm(v)
-    if n == 0.0:
-        return np.array([1.0, 0.0, 0.0], dtype=float)
-    return v / n
-
-
 def _earth_occultation_mask(r_scaled, earth_radius_scaled, el_deg, az_deg):
-    """
-    Return boolean mask where True means point is visible (not hidden behind Earth)
-    for the current camera direction defined by (el, az).
-    """
-    r_scaled = np.asarray(r_scaled, dtype=float)
-    if r_scaled.ndim != 2 or r_scaled.shape[1] != 3:
-        raise ValueError("r_scaled must be shape (N, 3)")
-
-    # Unit vector pointing from origin toward the viewer
-    v_hat = _view_unit_vector(el_deg, az_deg)
-
-    # Signed depth along viewing axis
-    depth = r_scaled @ v_hat
-
-    # Perpendicular distance from viewing axis
-    perp = r_scaled - np.outer(depth, v_hat)
-    rho = np.linalg.norm(perp, axis=1)
-
-    # Points are hidden if they are behind the planet center and project inside the Earth disk
-    hidden = (depth < 0.0) & (rho < float(earth_radius_scaled))
-    return ~hidden
+    """Compatibility wrapper for spherical Earth occultation."""
+    return visible_points(r_scaled, earth_radius_scaled, el_deg, az_deg)
 
 
+@_with_low_spec
 def globe_plot(
     r,
     t=None,
@@ -82,6 +51,8 @@ def globe_plot(
     highlight_reference=True,
     highlight_kwargs=None,
     ax=None,
+    frame="gcrf",
+    earth_resolution=None,
     **save_kwargs,
 ):
     """
@@ -114,7 +85,14 @@ def globe_plot(
         Orbit sample to highlight as the instant represented by the Earth
         texture orientation.  Defaults to the last sample.
     highlight_reference : bool
-        Draw a larger marker at ``reference_index`` for each orbit track.
+        Draw a larger marker at the sample matching the Earth epoch. A track
+        without a sample within 1 microsecond of that epoch has no reference
+        marker. Hidden points behind Earth are not highlighted.
+    frame : {"gcrf", "itrf"}
+        Display frame; input positions always use GCRF metres. Earth rotates
+        in GCRF and is fixed in ITRF, for both still and animated exports.
+    earth_resolution : int, optional
+        Longitude cells, with half as many latitude cells. Overrides ``scale``.
 
     Returns
     -------
@@ -127,6 +105,15 @@ def globe_plot(
     # ---- Normalize/validate inputs ----
     r_list, t_list = valid_orbits(r, t)  # t_list kept for consistency
     n_tracks = len(r_list)
+    from ._frames import normalize_orbit_frame
+    frame = normalize_orbit_frame(frame)
+    if frame not in {"gcrf", "itrf"}:
+        raise ValueError("Textured globe views support GCRF or ITRF coordinates")
+    if frame == "itrf":
+        if t is None:
+            raise ValueError("ITRF globe requires absolute times for GCRF input positions")
+        from ..coordinates.earth_fixed import gcrf_to_itrf
+        r_list = [gcrf_to_itrf(ri, ti) for ri, ti in zip(r_list, t_list)]
 
     # --- Labels sanity ---
     if labels is not None and len(labels) != n_tracks:
@@ -137,7 +124,7 @@ def globe_plot(
         raise ValueError("orbit_colors must have same length as number of orbits (tracks)")
 
     # --- Orient globe at an explicit time, or the final supplied sample time ---
-    if globe_time is None and t_list and len(t_list[0]):
+    if globe_time is None and t is not None and t_list and len(t_list[0]):
         ref_idx = int(reference_index) % len(t_list[0])
         globe_time = t_list[0][ref_idx]
     # With a time, orient the textured Earth with the full GCRF<-ITRF rotation
@@ -145,12 +132,21 @@ def globe_plot(
     # groundTrack uses), not a z-rotation: a z-rotation by GAST alone put the
     # globe 1242 arcsec (38.4 km at the equator) off SSAPy's ground tracks on
     # 2026-10-09, and no z-rotation carries the 0.15 deg tilt of the true pole.
-    earth_to_scene = None
+    rotation = None
+    reference_indices = []
     if globe_time is not None:
-        from ..coordinates.frames import eci_to_ecf_matrix
-
-        earth_to_scene = eci_to_ecf_matrix(gps_seconds_at(globe_time, default=0.0)).T
-        lon0 = 0.0
+        epoch = gps_seconds_at(globe_time, default=0.0)
+        if not np.isfinite(epoch):
+            raise ValueError("globe_time must be finite")
+        rotation = earth_to_scene(epoch, frame)
+        for times in t_list:
+            matches = np.flatnonzero(np.abs(times.gps - epoch) <= 1e-6) if t is not None else []
+            reference_indices.append(int(matches[0]) if len(matches) else None)
+    else:
+        angle = np.radians(float(lon0))
+        rotation = np.array([[np.cos(angle), -np.sin(angle), 0],
+                             [np.sin(angle), np.cos(angle), 0], [0, 0, 1]])
+        reference_indices = [int(reference_index) % len(track) for track in r_list]
 
     # ---------- Theme ----------
     if c in ("black", "b"):
@@ -160,31 +156,12 @@ def globe_plot(
     else:
         plotcolor, textcolor = "white", "black"
 
-    # ---------- Earth texture ----------
-    scale = 1.0 if (not np.isfinite(scale) or scale <= 0) else float(scale)
-    tex_w = int(round(5400 / scale))
-    tex_h = int(round(2700 / scale))
-    earth_png = PILImage.open(earth_texture_path()).resize(
-        (tex_w, tex_h), resample=PILImage.BILINEAR
-    )
-    bm = np.asarray(earth_png, dtype=float) / 255.0  # (H, W, C)
-
-    # ---------- Globe mesh (match texture resolution) ----------
-    lons = np.radians(np.linspace(-180.0, 180.0, bm.shape[1]))
-    lats = np.radians(np.linspace(-90.0, 90.0, bm.shape[0])[::-1])
-
-    # Apply longitude offset (rotate globe about z-axis)
-    lon0_rad = np.radians(float(lon0))
-    lons = lons + lon0_rad
-
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    # Retain the old scale knob (formerly a 5400/scale image, stride four),
+    # but sample colours at cell centres and share geometry with the animation.
+    if earth_resolution is None:
+        scale = 1.0 if (not np.isfinite(scale) or scale <= 0) else float(scale)
+        earth_resolution = max(12, min(1440, int(round(5400 / (4 * scale)))))
     scale_fac = EARTH_RADIUS / RGEO
-    mesh_x = np.cos(lat_grid) * np.cos(lon_grid) * scale_fac
-    mesh_y = np.cos(lat_grid) * np.sin(lon_grid) * scale_fac
-    mesh_z = np.sin(lat_grid) * scale_fac
-    if earth_to_scene is not None:
-        scene_xyz = np.stack([mesh_x, mesh_y, mesh_z], axis=-1) @ earth_to_scene.T
-        mesh_x, mesh_y, mesh_z = scene_xyz[..., 0], scene_xyz[..., 1], scene_xyz[..., 2]
 
     # ---------- Figure and axes ----------
     if ax is None:
@@ -197,10 +174,17 @@ def globe_plot(
     fig.patch.set_facecolor(plotcolor)
     ax.set_facecolor(plotcolor)
     ax.view_init(elev=float(el), azim=float(az))
+    ax.set_proj_type("ortho")
+    ax.computed_zorder = False
     ax.tick_params(axis="both", colors=textcolor)
     ax.grid(True, color="grey", linestyle="--", linewidth=0.5)
 
-    ax.plot_surface(mesh_x, mesh_y, mesh_z, rstride=4, cstride=4, facecolors=bm, shade=False)
+    earth = TexturedEarth(ax, scale_fac, earth_resolution)
+    earth.orient(rotation)
+    if globe_time is not None:
+        from astropy.time import Time
+        ax.text2D(0.02, 0.96, f"{Time(epoch, format='gps').utc.isot} UTC · {frame.upper()}",
+                  transform=ax.transAxes, color=textcolor, fontsize=10)
 
     # ---------- Colors for satellites ----------
     if orbit_colors is not None:
@@ -220,16 +204,9 @@ def globe_plot(
         if ri_scaled.size:
             max_extent = max(max_extent, float(np.nanmax(np.abs(ri_scaled))))
 
-        visible = _earth_occultation_mask(
-            ri_scaled,
-            earth_radius_scaled=scale_fac,
-            el_deg=el,
-            az_deg=az,
-        )
-        ri_vis = ri_scaled[visible]
-
-        if ri_vis.size == 0:
-            continue
+        # Keep all states: the shared draw adapter evaluates the current
+        # camera, including rotations of the returned figure.
+        ri_vis = ri_scaled
 
         if n_tracks == 1:
             # Single orbit:
@@ -237,26 +214,25 @@ def globe_plot(
                 color = orbit_colors[0]
                 ax.scatter(
                     ri_vis[:, 0], ri_vis[:, 1], ri_vis[:, 2],
-                    color=color, s=1,
+                    color=color, s=1, zorder=2,
                 )
             else:
                 # original: color by point
                 point_colors = plt.cm.rainbow(np.linspace(0.0, 1.0, ri_scaled.shape[0]))
-                point_colors = point_colors[visible]
                 ax.scatter(
                     ri_vis[:, 0], ri_vis[:, 1], ri_vis[:, 2],
-                    color=point_colors, s=1,
+                    color=point_colors, s=1, zorder=2,
                 )
         else:
             # Multiple orbits: one color per orbit
             color = colors[i] if colors is not None else None
             ax.scatter(
                 ri_vis[:, 0], ri_vis[:, 1], ri_vis[:, 2],
-                color=color, s=1,
+                color=color, s=1, zorder=2,
             )
 
-        if highlight_reference and len(ri_scaled) > 1:
-            ref_idx = int(reference_index) % len(ri_scaled)
+        ref_idx = reference_indices[i]
+        if highlight_reference and ref_idx is not None:
             ref_point = ri_scaled[ref_idx]
             marker_kwargs = dict(
                 color="#FFD700",
@@ -277,7 +253,7 @@ def globe_plot(
     #   scalar -> cube [-L,L]
     #   [[x1,x2],[y1,x2],[z1,z2]] -> explicit
     if limits is None:
-        L = (max_extent if max_extent > 0 else scale_fac) * 1.2
+        L = max(max_extent, scale_fac) * 1.2
         xlim = ylim = zlim = (-L, L)
         limits_is_scalar_or_none = True
     elif np.isscalar(limits):
@@ -361,6 +337,11 @@ def globe_plot(
         fig, axes = make_white(fig, ax)
         ax = axes[0]
 
+    # A globe should not be enclosed in opaque grey Matplotlib panes.
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+        axis.pane.fill = False
+        axis.pane.set_edgecolor((0.5, 0.5, 0.5, 0.2))
+        axis._axinfo["grid"]["color"] = (0.5, 0.5, 0.5, 0.2)
     if save_path:
         figsave(fig, save_path)
 

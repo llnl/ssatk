@@ -47,6 +47,7 @@ def main(make_figures=None, fast=None):
 
     labels = [f"orb_{i}" for i in range(len(r_list))]
 
+    # gallery-call: *.jpg
     out_pop = orbit_stats_dashboard(
         r_list,
         v_list=v_list,
@@ -59,13 +60,14 @@ def main(make_figures=None, fast=None):
         n_resample=300 if fast else 3000,
         percentiles=(5, 25, 50, 75, 95),
         make_plots=make_figures,
-        plot_title="Orbit dashboard (population mode, SI, SSAPy population)",
+        plot_title="Orbit dashboard (population mode, SI, SSATK population)",
         time_unit="s",
         r_unit="m",
         v_unit="m/s",
         labels=labels,
         show_legend=True,
     )
+    # gallery-end
 
     print_population_summary(out_pop, top_k=8)
 

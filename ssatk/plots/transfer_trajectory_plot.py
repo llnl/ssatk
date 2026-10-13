@@ -113,7 +113,12 @@ def transfer_trajectory_plot(result, ax=None, three_d=False,
     def plot(xyz, *a, **kw):
         cols = (xyz[:, 0], xyz[:, 1], xyz[:, 2]) if three_d \
             else (xyz[:, 0], xyz[:, 1])
-        return ax.plot(*cols, *a, **kw)
+        artists = ax.plot(*cols, *a, **kw)
+        if not three_d:
+            from .occultation import _projected_orbit
+            for artist in artists:
+                _projected_orbit(artist, xyz)
+        return artists
 
     if show_orbits:
         plot(_orbit_ring(tr[0] * 1e3, tv[0]) / 1e3, "C0--", lw=0.9,
@@ -122,8 +127,10 @@ def transfer_trajectory_plot(result, ax=None, three_d=False,
              label="arrival orbit")
     if show_earth and not three_d:
         ang = np.linspace(0, 2 * np.pi, 181)
-        ax.fill(EARTH_RADIUS / 1e3 * np.cos(ang),
+        body, = ax.fill(EARTH_RADIUS / 1e3 * np.cos(ang),
                 EARTH_RADIUS / 1e3 * np.sin(ang), color="0.85")
+        from .occultation import _register_body
+        _register_body(ax, body, np.zeros(3), EARTH_RADIUS/1e3, "xy")
     plot(tr, "C3-", lw=2, label="transfer")
 
     for i, b in enumerate(burns, 1):
@@ -136,7 +143,7 @@ def transfer_trajectory_plot(result, ax=None, three_d=False,
             if annotate_burns:
                 ax.text(*rb, "  " + _burn_label(i, b), fontsize=8)
         else:
-            ax.plot(rb[0], rb[1], "k*", ms=13, zorder=5)
+            plot(rb[None, :], "k*", ms=13, zorder=5)
             if annotate_burns:
                 ax.annotate(_burn_label(i, b), rb[:2],
                             textcoords="offset points", xytext=(10, 8),

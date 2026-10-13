@@ -32,6 +32,12 @@ body and component model.
    usage
    spacecraft_view
    gallery_hosting
+   gallery_scene_fidelity
+   rendering_modes
+   camera_modes
+   star_finder
+   coverage_validation
+   gamma_heading_validation
    benchmarking_ssatk
    test_reference_audit
    design/6dof_architecture

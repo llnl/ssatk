@@ -94,15 +94,34 @@ def norm(arr):
 
 
 def rotate_vector(v_unit, theta, phi, save_path=False, **save_kwargs):
-    v_unit = v_unit / np.linalg.norm(v_unit, axis=-1)
-    if np.all(np.abs(v_unit) != np.max(np.abs(v_unit))):
+    """Rotate one direction by ``theta``, then about itself by ``phi`` (degrees).
+
+    Both rotations follow the right-hand rule. The first axis is the unit
+    cross product of the input direction with +Y. Within 1e-12 of either Y
+    pole, use +X instead, where the ordinary reference axis is undefined.
+    The second rotation is about the original input direction. Return a unit
+    three-vector; the input magnitude does not affect the result.
+    """
+    v_unit = np.asarray(v_unit, dtype=float)
+    if v_unit.shape != (3,) or not np.isfinite(v_unit).all():
+        raise ValueError("Input vector must be a finite nonzero three-vector.")
+    scale = np.max(np.abs(v_unit))
+    if scale == 0:
+        raise ValueError("Input vector must be a finite nonzero three-vector.")
+    # Scale first to avoid squaring extremely large/small finite magnitudes.
+    v_unit = v_unit / scale
+    v_unit = v_unit / np.linalg.norm(v_unit)
+    for name, angle in (("theta", theta), ("phi", phi)):
+        value = np.asarray(angle)
+        if value.ndim != 0 or value.dtype.kind not in "iuf" or not np.isfinite(value):
+            raise ValueError(f"{name} must be a finite scalar angle in degrees.")
+    perp_vector = np.cross(v_unit, np.array([0, 1, 0]))
+    if np.linalg.norm(perp_vector) < 1e-12:
         perp_vector = np.cross(v_unit, np.array([1, 0, 0]))
-    else:
-        perp_vector = np.cross(v_unit, np.array([0, 1, 0]))
     perp_vector /= np.linalg.norm(perp_vector)
 
-    theta = np.radians(theta)
-    phi = np.radians(phi)
+    theta = np.radians(float(theta))
+    phi = np.radians(float(phi))
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
     cos_phi = np.cos(phi)

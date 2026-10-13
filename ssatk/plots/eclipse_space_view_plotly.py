@@ -17,6 +17,10 @@ Usage
     plot_space_view_animated(mode="solar", save_path="solar_space_animated.html")
 """
 from __future__ import annotations
+
+from ._body_surfaces import BodySurface, body_rotation
+
+from .rendering import _with_low_spec
 import json
 import numpy as np
 import matplotlib.pyplot as plt
@@ -936,6 +940,14 @@ def _eclipse_window(mode, search_days=None, *, event=None, n_steps=4000, verbose
     return _synthetic_eclipse_window(mode, search_days=search_days, n_steps=n_steps, verbose=verbose)
 
 
+def _window_epoch(window, idx):
+    from astropy.time import Time
+    times = window.get("times")
+    if times is not None:
+        return times[idx]
+    return Time(window.get("epoch_jd", 2460500.0), format="jd", scale="utc") + float(window["t_s"][idx])/86400.
+
+
 def _earth_rotation_for_window_sample(window, idx):
     times = window.get("times")
     if times is not None:
@@ -1011,69 +1023,28 @@ def _sun_sphere_mpl(ax, center, radius, seed=11):
     for ch in range(3):
         colors[..., ch] = np.interp(brightness, stops, rgb_stops[:, ch])
 
-    ax.plot_surface(sx, sy, sz, facecolors=colors, linewidth=0, shade=False, zorder=8)
+    surface = ax.plot_surface(sx, sy, sz, facecolors=colors, linewidth=0, shade=False, zorder=8)
+    from .occultation import _register_body
+    _register_body(ax, surface, center, radius)
+    surface._ssatk_body_backgrounds = []
     for gs, ga in [(1.4, 0.15), (1.9, 0.06)]:
         gx, gy, gz = center[0]+radius*gs*nx, center[1]+radius*gs*ny, center[2]+radius*gs*nz
-        ax.plot_surface(gx, gy, gz, color="#FFD700", alpha=ga, linewidth=0, shade=False, zorder=7)
+        halo = ax.plot_surface(gx, gy, gz, color="#FFD700", alpha=ga, linewidth=0, shade=False, zorder=7)
+        surface._ssatk_body_backgrounds.append(halo)
 
 
-def _earth_sphere_mpl(ax, center, radius, sun_hat, seed=7):
-    n_lat, n_lon = 40, 80
-    lat = np.linspace(90, -90, n_lat)
-    lon = np.linspace(-180, 180, n_lon)
-    Lon, Lat = np.meshgrid(lon, lat)
-    latr, lonr = np.radians(Lat), np.radians(Lon)
-    nx, ny, nz = np.cos(latr)*np.cos(lonr), np.cos(latr)*np.sin(lonr), np.sin(latr)
-    ex, ey, ez = center[0]+radius*nx, center[1]+radius*ny, center[2]+radius*nz
-
-    try:
-        from global_land_mask import globe
-        lon_q = np.where(Lon >= 180, Lon-360, Lon)
-        land = globe.is_land(np.clip(Lat, -89.999, 89.999), lon_q)
-    except Exception:
-        rng = np.random.default_rng(seed)
-        field = np.zeros_like(Lat)
-        for _ in range(14):
-            clat, clon = rng.uniform(-60,60), rng.uniform(-180,180)
-            spread = rng.uniform(15, 35)
-            d = np.sqrt((Lat-clat)**2 + ((Lon-clon+180)%360-180)**2)
-            field += np.exp(-(d**2)/(2*spread**2))
-        land = field > 0.35
-
-    ocean, landc = np.array([0.08,0.22,0.50]), np.array([0.20,0.50,0.18])
-    rgb = np.where(land[...,None], landc, ocean)
-    dot = nx*sun_hat[0] + ny*sun_hat[1] + nz*sun_hat[2]
-    lit = np.clip(dot, 0, 1) ** 0.6
-    night_tint = np.array([0.03,0.05,0.10])
-    rgb_shaded = np.clip(rgb*lit[...,None] + night_tint*(1-lit[...,None]), 0, 1)
-    ax.plot_surface(ex, ey, ez, facecolors=rgb_shaded, linewidth=0, shade=False, zorder=8)
+def _earth_sphere_mpl(ax, center, radius, sun_hat, seed=7, time=None):
+    surface = BodySurface(ax, "earth", radius, center, body_rotation("earth", time), zorder=8)
+    return surface.update(center, body_rotation("earth", time), sun_hat)
 
 
-def _moon_sphere_mpl(ax, center, radius, tint_rgb, seed=3):
-    n = 30
-    mu, mv = np.linspace(0, 2*np.pi, n), np.linspace(0, np.pi, n//2)
-    muu, mvv = np.meshgrid(mu, mv)
-    mx, my, mz = center[0]+radius*np.cos(muu)*np.sin(mvv), \
-                 center[1]+radius*np.sin(muu)*np.sin(mvv), \
-                 center[2]+radius*np.cos(mvv)
-    rng = np.random.default_rng(seed)
-    mlat, mlon = 90-np.degrees(mvv), np.degrees(muu)
-    albedo = np.full_like(mlat, 0.85)
-    for _ in range(6):
-        clat, clon = rng.uniform(-40,55), rng.uniform(-70,70)
-        spread = rng.uniform(12, 28)
-        d = np.sqrt((mlat-clat)**2 + ((mlon-clon+180)%360-180)**2)
-        albedo -= 0.30*np.exp(-(d**2)/(2*spread**2))
-    for _ in range(60):
-        clat, clon = rng.uniform(-85,85), rng.uniform(-180,180)
-        radius_c = rng.uniform(2, 8)
-        d = np.sqrt((mlat-clat)**2 + ((mlon-clon+180)%360-180)**2)
-        albedo -= 0.35*np.clip(1 - d/radius_c, 0, 1)**2
-    albedo = np.clip(albedo, 0.35, 1.0)
-    rgb = np.clip(np.array(tint_rgb)[None,None,:] * albedo[...,None], 0, 1)
-    ax.plot_surface(mx, my, mz, facecolors=rgb, linewidth=0, shade=False, zorder=9)
+def _moon_sphere_mpl(ax, center, radius, tint_rgb, seed=3, time=None):
+    surface = BodySurface(ax, "moon", radius, center, body_rotation("moon", time), zorder=9)
+    surface.colors *= np.asarray(tint_rgb)
+    return surface.update(center, body_rotation("moon", time))
 
 
+@_with_low_spec
 def find_and_plot_eclipse(mode="lunar", save_path=None, search_days=None, verbose=True, event=None):
     assert mode in ("lunar", "solar")
     window = _eclipse_window(mode, search_days=search_days, event=event, n_steps=4000, verbose=verbose)
@@ -1794,6 +1765,7 @@ def _great_circle_distance_km(lat1, lon1, lat2, lon2, radius_km=EARTH_MEAN_RADIU
     return float(radius_km * 2.0 * np.arcsin(np.sqrt(a)))
 
 
+@_with_low_spec
 def plot_2024_solar_eclipse_animated(
     save_path=None,
     *,
@@ -1806,6 +1778,7 @@ def plot_2024_solar_eclipse_animated(
     target_lat=30.3630,
     target_lon=-97.9790,
     target_label="NW Travis County, TX",
+    camera="overview",
     show_stars=True,
     verbose=True,
 ):
@@ -1923,7 +1896,7 @@ def plot_2024_solar_eclipse_animated(
             _earth_atmosphere_trace(center=tuple(earth_pos), radius_scale=size_boost),
             moon_mesh_plotly(moon_i, R_MOON_KM * size_boost, sun_hat=sun_i,
                              real_center_km=np.zeros(3), mode="solar",
-                             n_lat=max(100, n_lat), n_lon=max(200, n_lon)),
+                             n_lat=max(100, n_lat), n_lon=max(200, n_lon), time=times[k]),
             _shadow_cone_trace(cone_origin, -sun_i, base_r, umbra_len,
                                color="#1a0a0a", opacity=0.12, end_radius=0.0),
             _shadow_cone_trace(cone_origin, -sun_i, pen_base_r, pen_len,
@@ -1992,6 +1965,8 @@ def plot_2024_solar_eclipse_animated(
         )],
     )
 
+    from .camera import _plotly_camera
+    _plotly_camera(fig, camera, moon_pos, times=times.gps)
     stats = dict(
         event="2024-04-08 total solar eclipse",
         start_utc=times[0].utc.iso,
@@ -2019,9 +1994,10 @@ def plot_2024_solar_eclipse_animated(
     return fig, stats
 
 
+@_with_low_spec
 def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
                              save_path=None, n_lat=60, n_lon=120, verbose=True,
-                             show_eclipse_path=True, event=None):
+                             show_eclipse_path=True, event=None, camera="overview"):
     """
     Animated version of plot_space_view_plotly: steps through the real
     eclipse time window (the same fine-resolution window eclipse_demo.py
@@ -2115,7 +2091,7 @@ def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
         real_moon_center = moon_r_km if mode == "lunar" else np.array([0.0, 0.0, 0.0])
         traces.append(moon_mesh_plotly(moon_pos, R_MOON_KM*size_boost, sun_hat=sun_hat,
                                        real_center_km=real_moon_center, mode=mode,
-                                       n_lat=max(140, n_lat), n_lon=max(280, n_lon)))
+                                       n_lat=max(140, n_lat), n_lon=max(280, n_lon), time=_window_epoch(window, idx)))
 
         # Real umbra (converging, dark) + penumbra (diverging, lighter)
         # cone pair, calibrated so their cross-section at the real
@@ -2366,6 +2342,9 @@ def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
         )],
     )
 
+    from .camera import _plotly_camera
+    _plotly_camera(fig, camera, r_fine[frame_idxs], times=t_fine[frame_idxs])
+
     if save_path:
         fig.write_html(save_path)
         if str(save_path).endswith(".html"):
@@ -2374,6 +2353,7 @@ def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
     return fig
 
 
+@_with_low_spec
 def plot_space_view_plotly(mode="lunar", search_days=None, save_path=None, verbose=True, event=None):
     """Recomputes the same real search as find_and_plot_eclipse() (so this
     can be called standalone) and renders the space-view panel in Plotly."""
@@ -2412,7 +2392,7 @@ def plot_space_view_plotly(mode="lunar", search_days=None, save_path=None, verbo
     fig.add_trace(_earth_atmosphere_trace(center=tuple(earth_pos), radius_scale=size_boost))
     _real_moon_center = moon_r_km if mode == "lunar" else np.array([0.0, 0.0, 0.0])
     fig.add_trace(moon_mesh_plotly(moon_pos, R_MOON_KM*size_boost, sun_hat=sun_hat,
-                                   real_center_km=_real_moon_center, mode=mode))
+                                   real_center_km=_real_moon_center, mode=mode, time=_window_epoch(window, mid)))
 
     ref_dist_km = D_MOON_A_KM
     base_r, umbra_len, pen_base_r, pen_len, pen_end_r, slope = _umbra_penumbra_geometry(

@@ -34,6 +34,48 @@ memory helper.
 Node.js 20+ is only needed for validating the JavaScript satellite-viewer source;
 GitHub Actions installs it with ``actions/setup-node``.
 
+Running a gallery demo
+----------------------
+
+Every gallery entry includes a selectable **Run this demo** command. Run it
+from the repository root or an installation that includes the ``demos`` package:
+
+.. code-block:: bash
+
+   python -m demos.orbital_mechanics.demo_structured_transfer_api
+
+The command uses the script's standalone defaults. The gallery runner can use
+faster settings, so frame counts or sample spacing can differ. For the transfer
+dashboard's fast settings, the corresponding Python entry point is:
+
+.. code-block:: python
+
+   from demos.orbital_mechanics import demo_structured_transfer_api
+
+   demo_structured_transfer_api.main(make_figures=True, fast=True)
+
+Each image, animation, or interactive view also has its own **Figure call**.
+Expand **Arguments and source** to see the actual plotting statement and its
+arguments, copied from the demo source. The source link includes surrounding
+input definitions; variables in these excerpts are not standalone input data.
+
+Figure helpers already write inside the output root's ``figures`` directory.
+Pass ``"my_plot.png"`` or an intentional subfolder such as ``"benchmarks/plot.png"``;
+do not add another ``"figures/"`` prefix.
+
+The globe demo includes two 30-second views of a synthetic Walker-delta shell:
+1,584 satellites in 72 planes, 550 km altitude and 53-degree inclination, over
+two orbital periods. These are design trajectories, not live Starlink positions.
+The reusable ``ssatk.orbital_mechanics.constellations.walker_delta`` helper
+provides SSAPy orbit states for propagation with ``ssapy.rv``.
+
+Lunar surface maps use the dated DE440 mean-Earth/polar-axis orientation through
+``lunar_map_rotation``. ``lunar_body_rotation`` retains the principal-axis
+convention used by dynamics. The map correction follows NAIF's
+``moon_de440_250416.tf``; its numerical implementation is checked against 50
+independent CSPICE reference matrices. This rotation accuracy does not imply
+centimetre map georegistration or surface-image resolution.
+
 Basic Example
 -------------
 
@@ -420,6 +462,17 @@ route, and solver controls in one call:
 The result diagnostics include ``problem_schema="ssatk.transfer_problem.v1"``
 when the structured interface is used.
 
+The gallery's ``demo_structured_transfer_api`` dashboard separates route
+geometry, total burn budgets, and burn schedules. Its ten API examples use
+the same 60-minute flight time; intercept/inject omit arrival matching, while
+the insertion example optimizes only its final burn. The budget panel always
+shows the sum of all planned burns, so these different objectives are explicit.
+A separate fixed-departure rendezvous study samples 35--120 minutes and
+finalizes every feasible grid point before plotting its total burn cost.
+The lowest sampled cost is labelled with the grid spacing, rather than claimed
+as a global optimum. Keplerian coast arcs and engine burn-sizing windows are
+planning products; this example does not propagate finite thrust.
+
 
 6-DoF dynamics
 --------------
@@ -663,6 +716,25 @@ match; a missing file raises an error that names the extra to install:
    with data_path("bright_stars.csv") as catalog_path:
        # Pass catalog_path to libraries that require a filesystem path.
        print(catalog_path)
+
+Moon viewer textures
+~~~~~~~~~~~~~~~~~~~~
+
+Build the Moon viewer's normal, albedo and terrain-shadow textures once with
+``ssatk-bake-moon``. Its default source is ``moon_dem.npz`` and ``moon.png``
+from the installed ``ssa-data-lunar`` package, so baking needs no network
+access after installation. Version 0.0.1 supplies a 2880 x 1440 elevation grid
+and a 4096 x 2048 colour image. Outputs go to ``SSATK_CACHE`` when set, or
+``~/.ssatk/moon``; installed data files are read without modification.
+
+For the higher-resolution NASA sources, explicitly select
+``ssatk-bake-moon --source nasa``. This downloads and caches the 5760 x 2880
+LOLA elevation grid and 8192 x 4096 LROC colour image. Supply ``--dem PATH``
+or ``--albedo PATH`` to override either input independently. Missing packaged
+inputs raise a data-package error instead of silently starting a download.
+Generated textures remain in the local cache; no additional hosted dataset
+is needed. The gallery preparation script explicitly supplies its checksummed
+NASA source paths to retain the published gallery's larger normal map.
 
 Optional demo data
 ------------------

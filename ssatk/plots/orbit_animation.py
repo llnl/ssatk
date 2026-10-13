@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ._body_surfaces import BodySurface, body_rotation, body_disc
+
+from .rendering import _with_low_spec
+
 from pathlib import Path
 
 import matplotlib.cm as _cm
@@ -13,7 +17,9 @@ from ssapy import get_body as _get_body
 from ssapy import groundTrack as _ground_track
 
 from ..compute import find_smallest_bounding_cube as _find_smallest_bounding_cube
-from ..constants import RGEO as _RGEO
+from ..constants import RGEO as _RGEO, EARTH_RADIUS as _EARTH_RADIUS
+from ._globe_scene import TexturedEarth, earth_to_scene
+from .occultation import _projected_orbit
 from ._frames import normalize_orbit_frame as _normalize_orbit_frame
 from ._orbit_plot_core import _COORDINATE_VIEWS, _VIEW_AXES
 from ._orbit_plot_core import _create_orbit_axes, _orbit_frame_transformations
@@ -24,6 +30,7 @@ from .plotutils import _figure_save_path, _raise_unrecognized_kwargs, valid_orbi
 _ANIMATED_VIEWS = _COORDINATE_VIEWS + ("groundtrack", "globe")
 
 
+@_with_low_spec
 def orbit_animation(
     r,
     t=None,
@@ -44,6 +51,10 @@ def orbit_animation(
     dpi=100,
     bitrate=1800,
     interval=None,
+    earth_resolution=180,
+    camera="overview",
+    el=25.0,
+    az=35.0,
     **animation_kwargs,
 ):
     """Save an animated orbit plot as GIF or MP4.
@@ -51,6 +62,17 @@ def orbit_animation(
     This is the animation backend for :func:`ssatk.plots.orbit_plot`.
     Static image extensions still use the normal full-track plot; ``.gif`` and
     ``.mp4`` save an animation with moving heads and short fading tails.
+    ``max_frames`` limits the playback frames; trails retain input samples.
+    ``tail_points``/``tail`` counts playback frames, not trajectory samples.
+
+    Globe views draw a textured Earth at every frame's absolute epoch, with
+    a UTC timestamp. Inputs are GCRF metres; ``frame`` selects GCRF or ITRF
+    display axes. They require explicit, finite, strictly increasing times on
+    a common grid for all tracks. Propagate to a common grid before rendering
+    tracks sampled at different times. No trajectory is extrapolated.
+
+    ``earth_resolution`` controls longitude cells (half as many latitude cells).
+    ``el`` and ``az`` set the orthographic globe camera in degrees.
     """
     _raise_unrecognized_kwargs(animation_kwargs, "orbit_animation")
     save_path = _animation_save_path(save_path)
@@ -76,7 +98,11 @@ def orbit_animation(
     r_list, t_list = _valid_orbits(r, t)
     if not r_list:
         raise ValueError("Empty trajectory; nothing to animate.")
-    r_list, t_list = _downsample_tracks(r_list, t_list, max_frames=max_frames)
+    globe = "globe" in views
+    if globe:
+        _validate_globe_times(t, t_list, frame)
+    # Limit rendered frames, not the geometry used to draw each trail.
+    frame_indices = _animation_indices(r_list, max_frames=max_frames)
 
     if "w" in c:
         textcolor = "black"
@@ -91,6 +117,7 @@ def orbit_animation(
         frame=frame,
         lunar_transform=lunar_transform,
         pad=pad,
+        include_groundtrack="groundtrack" in views,
     )
 
     fig = _plt.figure(dpi=dpi, figsize=figsize, facecolor=plotcolor)
@@ -98,18 +125,104 @@ def orbit_animation(
     _draw_animation_backgrounds(axes, views, prepared, title, textcolor)
     _set_orbit_limits(axes, prepared["bounds"])
     _style_orbit_axes([axes[view] for view in views], plotcolor, textcolor)
+    earth = None
+    if globe:
+        ax = axes["globe"]
+        ax.set_proj_type("ortho")
+        ax.computed_zorder = False
+        ax.view_init(elev=el, azim=az)
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            axis.pane.fill = False
+            axis.pane.set_edgecolor((0.5, 0.5, 0.5, 0.2))
+            axis._axinfo["grid"]["color"] = (0.5, 0.5, 0.5, 0.2)
+        earth = TexturedEarth(ax, _EARTH_RADIUS / prepared["unit_conversion"],
+                              earth_resolution, cull_backfaces=True)
+        clock = ax.text2D(0.02, 0.96, "", transform=ax.transAxes, color=textcolor, fontsize=10)
+
+    body_artists = {}
+    first = prepared["tracks"][0]
+    from ..constants import MOON_RADIUS
+    for view in views:
+        if view in {"groundtrack", "globe"}:
+            continue
+        for body, radius in [("earth", _EARTH_RADIUS), ("moon", MOON_RADIUS)]:
+            center = first["r_"+body][0]
+            rotation = body_rotation(body, first["times"][0], prepared["frame_key"])
+            if view == "3d":
+                surface = BodySurface(axes[view], body, radius/prepared["unit_conversion"], center, rotation, n=45)
+                body_artists[(view, body)] = surface
+            else:
+                body_artists[(view, body)] = ([], radius/prepared["unit_conversion"])
 
     colors = _cm.rainbow(_np.linspace(0, 1, max(1, len(prepared["tracks"]))))
-    artists = _init_animation_artists(axes, views, prepared["tracks"], colors)
-    frame_count = max(len(track["xyz"]) for track in prepared["tracks"])
+    batch = None
+    if len(r_list) >= 32 and set(views) <= {"globe", "groundtrack"} and all(
+            _np.array_equal(ti.gps, t_list[0].gps) for ti in t_list):
+        batch = _ConstellationArtists(axes, prepared["tracks"], colors,
+                                       _EARTH_RADIUS/prepared["unit_conversion"])
+    artists = {} if batch else _init_animation_artists(axes, views, prepared["tracks"], colors)
+    frame_count = len(frame_indices[0])
+    from .camera import _camera_spec, _mpl_camera
+    from dataclasses import replace
+    spec = _camera_spec(camera)
+    if spec.target >= len(prepared["tracks"]):
+        raise ValueError("camera target is outside the supplied trajectory list")
+    selected = prepared["tracks"][spec.target]
+    # Camera lengths at this API follow the input convention: metres.
+    scale = prepared["unit_conversion"]
+    spec = replace(spec, distance=None if spec.distance is None else spec.distance/scale,
+                   offset=None if spec.offset is None else tuple(_np.asarray(spec.offset)/scale))
+    if camera == "overview":
+        spec = replace(spec, elevation=el, azimuth=az)
+    camera_times = selected["times"].gps
+    if t is None or _np.all(camera_times == camera_times[0]):
+        camera_times = None  # Legacy undated/single-epoch views use sample fraction.
+    cameras = {view: _mpl_camera(spec, axes[view], selected["xyz"], times=camera_times)
+               for view in views if view in {"3d", "globe"}}
+    if not cameras and spec.mode != "overview":
+        raise ValueError("moving cameras require a 3-D/globe panel; 2-D diagnostic axes stay fixed")
 
     def update(frame_index):
         frame_artists = []
+        for view, shot in cameras.items():
+            shot.mpl(axes[view], frame_indices[spec.target][frame_index])
+        body_index = frame_indices[0][frame_index]
+        for (view, body), surface in body_artists.items():
+            center = first["r_"+body][body_index]
+            rotation = body_rotation(body, first["times"][body_index], prepared["frame_key"])
+            if view == "3d":
+                frame_artists.append(surface.update(center, rotation))
+            else:
+                previous, radius = surface
+                for artist in previous:
+                    artist.remove()
+                ax = axes[view]
+                a, b, _, _ = _VIEW_AXES[view]
+                lower = _np.array([ax.get_xlim()[0], ax.get_ylim()[0]])
+                upper = _np.array([ax.get_xlim()[1], ax.get_ylim()[1]])
+                if _np.any(center[[a, b]]+radius < lower) or _np.any(center[[a, b]]-radius > upper):
+                    body_artists[(view, body)] = ([], radius)
+                    continue
+                image_count = len(ax.images)
+                disc = body_disc(ax, body, radius, center, rotation, view=view, resolution=512)
+                current = [disc] + list(ax.images)[image_count:]
+                body_artists[(view, body)] = (current, radius)
+                frame_artists.extend(current)
+        if earth is not None:
+            epoch = t_list[0][frame_indices[0][frame_index]]
+            earth_rotation = earth_to_scene(epoch.gps, prepared["frame_key"])
+            frame_artists.append(earth.orient(earth_rotation))
+            clock.set_text(f"{epoch.utc.isot} UTC · {prepared['frame_title']}")
+            frame_artists.append(clock)
+        if batch is not None:
+            index = frame_indices[0][frame_index]
+            start = frame_indices[0][max(0, frame_index-tail_points+1)]
+            return frame_artists + batch.update(start, index)
         for track_index, track in enumerate(prepared["tracks"]):
             color = colors[track_index % len(colors)]
-            idx = min(frame_index, len(track["xyz"]) - 1)
+            idx = frame_indices[track_index][frame_index]
             xyz = track["xyz"]
-            start = max(0, idx - tail_points + 1)
+            start = frame_indices[track_index][max(0, frame_index - tail_points + 1)]
             tail_xyz = xyz[start: idx + 1]
             for view in views:
                 artist_group = artists[(track_index, view)]
@@ -124,11 +237,13 @@ def orbit_animation(
                 else:
                     x_idx, y_idx, _, _ = _VIEW_AXES[view]
                     tail_artist = _add_2d_tail(axes[view], tail_xyz[:, [x_idx, y_idx]], color)
+                    _projected_orbit(tail_artist, _np.stack((tail_xyz[:-1], tail_xyz[1:]), axis=1), view)
+                    _projected_orbit(artist_group["head"], xyz[idx:idx+1], view)
                     artist_group["head"].set_data([xyz[idx, x_idx]], [xyz[idx, y_idx]])
                 artist_group["tail"] = tail_artist
                 frame_artists.extend([artist_group["head"], tail_artist])
 
-        _update_secondary_markers(axes, views, artists, prepared, frame_index, frame_artists)
+        _update_secondary_markers(axes, views, artists, prepared, frame_indices[0][frame_index], frame_artists)
         return frame_artists
 
     animation = FuncAnimation(
@@ -140,12 +255,28 @@ def orbit_animation(
         repeat=False,
     )
     writer = _animation_writer(suffix, fps=fps, bitrate=bitrate)
-    animation.save(save_path, writer=writer, dpi=dpi)
-    if show:
-        _plt.show()
-    _plt.close(fig)
+    try:
+        animation.save(save_path, writer=writer, dpi=dpi)
+        if show:
+            _plt.show()
+    finally:
+        _plt.close(fig)
     print(f"Animation saved at: {save_path}")
     return save_path
+
+
+def _validate_globe_times(t, t_list, frame):
+    if _normalize_orbit_frame(frame) not in {"gcrf", "itrf"}:
+        raise ValueError("Textured globe views support GCRF or ITRF coordinates")
+    if t is None:
+        raise ValueError("Animated globe requires explicit absolute times")
+    reference = t_list[0].gps
+    for times in t_list:
+        gps = times.gps
+        if not _np.all(_np.isfinite(gps)) or _np.any(_np.diff(gps) <= 0):
+            raise ValueError("Animated globe times must be finite and strictly increasing")
+        if gps.shape != reference.shape or not _np.allclose(gps, reference, rtol=0, atol=1e-6):
+            raise ValueError("Animated globe tracks require a common time grid (within 1 microsecond)")
 
 
 def _animation_save_path(save_path):
@@ -176,21 +307,13 @@ def _animation_writer(suffix, *, fps, bitrate):
     )
 
 
-def _downsample_tracks(r_list, t_list, *, max_frames):
-    max_len = max(len(track) for track in r_list)
-    if max_len <= max_frames:
-        return r_list, t_list
-
-    r_downsampled = []
-    t_downsampled = []
-    for track, time in zip(r_list, t_list):
-        indices = _np.linspace(0, len(track) - 1, max_frames).astype(int)
-        r_downsampled.append(track[indices])
-        t_downsampled.append(time[indices])
-    return r_downsampled, t_downsampled
+def _animation_indices(r_list, *, max_frames):
+    """Select head positions; all intervening input samples remain in the tail."""
+    count = min(max(len(track) for track in r_list), max_frames)
+    return [_np.linspace(0, len(track) - 1, count).astype(int) for track in r_list]
 
 
-def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad):
+def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad, include_groundtrack=True):
     if any(_np.max(_np.linalg.norm(xyz, axis=-1)) >= 0.95 * _RGEO for xyz in r_list):
         unit_conversion = _RGEO
         unit_label = "GEO"
@@ -209,24 +332,27 @@ def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad):
         "upper": _np.array([-_np.inf, -_np.inf, -_np.inf]),
     }
     tracks = []
+    body_cache = {}
     for xyz_raw, t_current in zip(r_list, t_list):
         xyz = _np.asarray(xyz_raw, dtype=float)
-        groundtrack = _groundtrack_degrees(xyz, t_current)
-        moon_body = _get_body("moon")
-        r_moon = moon_body.position(t_current).T
-        r_earth = _np.zeros(_np.shape(r_moon))
+        groundtrack = _groundtrack_degrees(xyz, t_current) if include_groundtrack else None
+        key = t_current.gps.tobytes()
+        if key not in body_cache:
+            moon_body = _get_body("moon")
+            r_moon = moon_body.position(t_current).T
+            r_earth = _np.zeros(_np.shape(r_moon))
+            if transform_func:
+                r_moon = transform_func(r_moon, t_current)
+                r_earth = transform_func(r_earth, t_current)
+            body_cache[key] = (r_moon/unit_conversion, r_earth/unit_conversion)
+        r_moon, r_earth = body_cache[key]
         if transform_func:
             xyz = transform_func(xyz, t_current)
-            r_moon = transform_func(r_moon, t_current)
-            r_earth = transform_func(r_earth, t_current)
-
         xyz = xyz / unit_conversion
-        r_moon = r_moon / unit_conversion
-        r_earth = r_earth / unit_conversion
         lower_bound, upper_bound = _find_smallest_bounding_cube(xyz, pad=pad)
         bounds["lower"] = _np.minimum(bounds["lower"], lower_bound)
         bounds["upper"] = _np.maximum(bounds["upper"], upper_bound)
-        tracks.append({"xyz": xyz, "r_moon": r_moon, "r_earth": r_earth, "groundtrack": groundtrack})
+        tracks.append({"xyz": xyz, "r_moon": r_moon, "r_earth": r_earth, "groundtrack": groundtrack, "times": t_current})
 
     stn = _plot_settings(frame_key, tracks[0]["r_moon"], tracks[0]["r_earth"], unit_conversion)
     return {
@@ -248,6 +374,9 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
     for view in views:
         ax = axes[view]
         if view == "groundtrack":
+            from .plotutils import load_earth_file
+            ax.imshow(load_earth_file(), extent=(-180, 180, -90, 90),
+                      origin="upper", aspect="auto", zorder=0)
             ax.set_xlim(-180, 180)
             ax.set_ylim(-90, 90)
             ax.set_xlabel("Longitude [deg]", color=textcolor)
@@ -257,32 +386,25 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
             continue
 
         if view in {"3d", "globe"}:
-            _draw_3d_body_background(ax, stn)
-            ax.scatter3D(secondary[:, 0], secondary[:, 1], secondary[:, 2], color=stn["secondary_color"], s=2, alpha=0.35)
+            if view != "globe":
+                ax.scatter3D(secondary[:, 0], secondary[:, 1], secondary[:, 2], color=stn["secondary_color"], s=2, alpha=0.35)
             ax.set_xlabel(f"x [{unit_label}]", color=textcolor)
             ax.set_ylabel(f"y [{unit_label}]", color=textcolor)
             ax.set_zlabel(f"z [{unit_label}]", color=textcolor)
             ax.set_title(title or ("Globe" if view == "globe" else f"{prepared['frame_title']} orbit"), color=textcolor)
             if view == "globe":
-                _set_3d_limits(ax, prepared["bounds"])
+                radius = _EARTH_RADIUS / prepared["unit_conversion"]
+                bound = max(radius * 1.1, float(_np.max(_np.abs([
+                    prepared["bounds"]["lower"], prepared["bounds"]["upper"]]))))
+                _set_3d_limits(ax, {"lower": _np.full(3, -bound), "upper": _np.full(3, bound)})
             continue
 
         x_idx, y_idx, x_name, y_name = _VIEW_AXES[view]
-        ax.add_patch(_plt.Circle(xy=(0, 0), radius=stn["primary_size"], color=stn["primary_color"], alpha=0.3))
         ax.scatter(secondary[:, x_idx], secondary[:, y_idx], color=stn["secondary_color"], s=2, alpha=0.35)
         ax.set_xlabel(f"{x_name} [{unit_label}]", color=textcolor)
         ax.set_ylabel(f"{y_name} [{unit_label}]", color=textcolor)
         ax.set_aspect("equal")
         ax.set_title(_view_title(view, title, prepared["frame_title"], frame_key), color=textcolor)
-
-
-def _draw_3d_body_background(ax, stn):
-    u = _np.linspace(0, 2 * _np.pi, 36)
-    v = _np.linspace(-_np.pi / 2, _np.pi / 2, 18)
-    mesh_x = _np.outer(_np.cos(u), _np.cos(v)).T * stn["primary_size"]
-    mesh_y = _np.outer(_np.sin(u), _np.cos(v)).T * stn["primary_size"]
-    mesh_z = _np.outer(_np.ones(_np.size(u)), _np.sin(v)).T * stn["primary_size"]
-    ax.plot_surface(mesh_x, mesh_y, mesh_z, color=stn["primary_color"], alpha=0.3, edgecolor="none")
 
 
 def _view_title(view, title, frame_title, frame_key):
@@ -305,13 +427,13 @@ def _init_animation_artists(axes, views, tracks, colors):
         for view in views:
             ax = axes[view]
             if view in {"3d", "globe"}:
-                head = ax.plot([xyz[0, 0]], [xyz[0, 1]], [xyz[0, 2]], marker="o", linestyle="None", color=color, markersize=5)[0]
+                head = ax.plot([xyz[0, 0]], [xyz[0, 1]], [xyz[0, 2]], marker="o", linestyle="None", color=color, markersize=5, zorder=3)[0]
             elif view == "groundtrack":
                 lonlat = track["groundtrack"]
-                head = ax.plot([lonlat[0, 0]], [lonlat[0, 1]], marker="o", linestyle="None", color=color, markersize=5)[0]
+                head = ax.plot([lonlat[0, 0]], [lonlat[0, 1]], marker="o", linestyle="None", color=color, markersize=5, zorder=3)[0]
             else:
                 x_idx, y_idx, _, _ = _VIEW_AXES[view]
-                head = ax.plot([xyz[0, x_idx]], [xyz[0, y_idx]], marker="o", linestyle="None", color=color, markersize=5)[0]
+                head = ax.plot([xyz[0, x_idx]], [xyz[0, y_idx]], marker="o", linestyle="None", color=color, markersize=5, zorder=3)[0]
             artists[(track_index, view)] = {"head": head, "tail": None}
     return artists
 
@@ -321,7 +443,7 @@ def _update_secondary_markers(axes, views, artists, prepared, frame_index, frame
         artists["secondary"] = {}
         secondary = _np.column_stack((prepared["stn"]["secondary_x"], prepared["stn"]["secondary_y"], prepared["stn"]["secondary_z"]))
         for view in views:
-            if view == "groundtrack":
+            if view in {"groundtrack", "globe"}:
                 continue
             ax = axes[view]
             if view in {"3d", "globe"}:
@@ -334,7 +456,7 @@ def _update_secondary_markers(axes, views, artists, prepared, frame_index, frame
     secondary = _np.column_stack((prepared["stn"]["secondary_x"], prepared["stn"]["secondary_y"], prepared["stn"]["secondary_z"]))
     idx = min(frame_index, len(secondary) - 1)
     for view in views:
-        if view == "groundtrack":
+        if view in {"groundtrack", "globe"}:
             continue
         marker = artists["secondary"][view]
         if view in {"3d", "globe"}:
@@ -356,14 +478,19 @@ def _add_2d_tail(ax, xy, color):
     return collection
 
 
-def _add_3d_tail(ax, xyz, color):
+def _add_3d_tail(ax, xyz, color, visible=None):
     if len(xyz) < 2:
-        point = xyz[0] if len(xyz) else _np.zeros(3)
-        collection = Line3DCollection([[point, point]], colors=[_tail_colors(color, 1)[0]])
+        collection = Line3DCollection([[xyz[0], xyz[0]]], colors=[(0, 0, 0, 0)])
     else:
         segments = _np.stack([xyz[:-1], xyz[1:]], axis=1)
         colors = _tail_colors(color, len(segments))
-        collection = Line3DCollection(segments, colors=colors, linewidths=2.0)
+        if visible is not None:
+            keep = visible[:-1] & visible[1:]
+            segments, colors = segments[keep], colors[keep]
+        if len(segments) == 0:
+            segments = [[xyz[0], xyz[0]]]
+            colors = [(0, 0, 0, 0)]
+        collection = Line3DCollection(segments, colors=colors, linewidths=2.0, zorder=2)
     ax.add_collection3d(collection)
     return collection
 
@@ -407,3 +534,49 @@ def _set_3d_limits(ax, bounds):
     ax.set_ylim(bounds["lower"][1], bounds["upper"][1])
     ax.set_zlim(bounds["lower"][2], bounds["upper"][2])
     ax.set_box_aspect([1, 1, 1])
+
+
+class _ConstellationArtists:
+    """Batch common-epoch globe/map tracks into two collections per panel.
+
+    This changes artist storage only: every input position is retained, with
+    the same Earth occultation and dateline rules as the single-track path.
+    """
+    def __init__(self, axes, tracks, colors, radius):
+        self.axes, self.colors, self.radius = axes, colors, radius
+        self.xyz = _np.stack([track["xyz"] for track in tracks])
+        self.lonlat = (_np.stack([track["groundtrack"] for track in tracks])
+                       if "groundtrack" in axes else None)
+        self.heads, self.tails = {}, {}
+        for view, ax in axes.items():
+            if view == "globe":
+                self.heads[view] = ax.scatter([], [], [], s=4, depthshade=False, zorder=3)
+                self.tails[view] = Line3DCollection(_np.empty((0, 2, 3)), linewidths=.45, zorder=2)
+                ax.add_collection3d(self.tails[view])
+            else:
+                self.heads[view] = ax.scatter([], [], s=4, zorder=3)
+                self.tails[view] = LineCollection([], linewidths=.45, zorder=2)
+                ax.add_collection(self.tails[view])
+
+    def update(self, start, stop):
+        artists = []
+        for view, ax in self.axes.items():
+            data = self.xyz if view == "globe" else self.lonlat
+            points = data[:, start:stop+1]
+            if view == "globe":
+                self.heads[view]._offsets3d = tuple(data[:, stop].T)
+                self.heads[view].set_facecolors(self.colors)
+                self.heads[view].set_edgecolors("none")
+                keep = _np.ones(points.shape[:2], dtype=bool)[:, 1:]
+            else:
+                self.heads[view].set_offsets(data[:, stop])
+                self.heads[view].set_facecolors(self.colors)
+                self.heads[view].set_edgecolors("none")
+                keep = _np.abs(_np.diff(points[..., 0], axis=1)) <= 180
+            segments = _np.stack((points[:, :-1], points[:, 1:]), axis=2)
+            colors = _np.repeat(self.colors[:, None, :], max(0, stop-start), axis=1)
+            colors[..., 3] = _np.linspace(.08, .7, max(0, stop-start))
+            self.tails[view].set_segments(segments[keep])
+            self.tails[view].set_color(colors[keep])
+            artists += [self.heads[view], self.tails[view]]
+        return artists

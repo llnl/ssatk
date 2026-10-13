@@ -440,6 +440,7 @@ def main(make_figures=None, fast=None):
 
     # 3. Build the scene context and convert the base orbit trace into the first
     #    compact legend entry.
+    # gallery-call: *.html
     fig = build_figure(cfg, reference_r_km, reference_v_kms)
     for trace in fig.data:
         if getattr(trace, "name", None) == "Orbit":
@@ -504,6 +505,7 @@ def main(make_figures=None, fast=None):
     #    users do not read a polar orbit path as continuous ground coverage.
     _add_ground_coverage_map(fig, satellites, cfg)
     _finalize_layout(fig)
+    # gallery-end
 
     html_path = None
     if make_figures:

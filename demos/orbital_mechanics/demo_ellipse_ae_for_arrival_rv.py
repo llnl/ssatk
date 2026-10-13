@@ -44,6 +44,7 @@ def main(make_figures=None, verbose=None):
             x, y = arr[:, 0], arr[:, 1]
 
     if make_figures and x is not None and y is not None:
+        # gallery-call: *.png
         plt.figure()
         plt.plot(x, y, linewidth=1.5)
         plt.gca().set_aspect("equal", adjustable="box")
@@ -56,6 +57,7 @@ def main(make_figures=None, verbose=None):
             outpath = outpath.with_suffix(".png")
         outpath.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(outpath, dpi=200, bbox_inches="tight")
+        # gallery-end
         print("Saved plot to:", outpath)
         plt.close()
     elif verbose and x is None:

@@ -28,6 +28,9 @@ layer.add_to_mpl(ax, orbit_state, traj)
 
 from __future__ import annotations
 
+from .rendering import is_low_spec, low_spec_mode
+from ._body_surfaces import BodySurface, body_mesh_plotly, body_rotation
+
 import abc
 import warnings
 from pathlib import Path
@@ -429,17 +432,18 @@ class EarthLayer(BaseLayer):
 
     def __init__(self, texture_path: str | Path | None = None,
                  n_lat: int = 72, n_lon: int = 144, radius_scale: float = 1.0,
-                 time=None, rotation_deg=None, **kw):
+                 time=None, rotation_deg=None, low_spec=None, **kw):
         super().__init__("earth", "Earth", **kw)
         self.texture_path = Path(texture_path) if texture_path else None
-        self.n_lat = n_lat
-        self.n_lon = n_lon
+        self.low_spec = is_low_spec(low_spec)
+        self.n_lat = min(n_lat, 19) if self.low_spec else n_lat
+        self.n_lon = min(n_lon, 37) if self.low_spec else n_lon
         self.radius_scale = radius_scale   # visual size multiplier; doesn't move position
         self.rotation_deg = earth_rotation_deg_from_time(time) if rotation_deg is None else float(rotation_deg)
         self._tex: Optional[np.ndarray] = None  # (H, W, 3) uint8
 
     def _load_texture(self):
-        if self._tex is not None or not _HAS_PIL:
+        if self.low_spec or self._tex is not None or not _HAS_PIL:
             return
         if self.texture_path and self.texture_path.exists():
             try:
@@ -465,7 +469,7 @@ class EarthLayer(BaseLayer):
         if not _HAS_MPL:
             return []
         self._load_texture()
-        X, Y, Z = self._sphere_xyz()
+        X, Y, Z = self._sphere_xyz(RE_KM*self.radius_scale)
         if self._tex is not None:
             fcolors = self._tex / 255.0
             surf = ax.plot_surface(X, Y, Z, facecolors=fcolors,
@@ -473,7 +477,9 @@ class EarthLayer(BaseLayer):
                                    zorder=1, alpha=1.0)
         else:
             surf = ax.plot_surface(X, Y, Z, color="#1a4f8a",
-                                   alpha=0.85, zorder=1)
+                                   alpha=1.0, zorder=1)
+        from .occultation import _register_body
+        _register_body(ax, surf, np.zeros(3), RE_KM*self.radius_scale)
         self._artists_mpl = [surf]
         return [surf]
 
@@ -518,102 +524,43 @@ class EarthLayer(BaseLayer):
             fig.add_trace(go.Surface(
                 x=X, y=Y, z=Z,
                 colorscale=[[0,"#1a4f8a"],[1,"#1a4f8a"]],
-                showscale=False, name="Earth", opacity=0.9,
+                showscale=False, name="Earth", opacity=1.0,
             ))
 
 
 # ─── MoonLayer ────────────────────────────────────────────────────────────────
 class MoonLayer(BaseLayer):
-    """Textured Moon sphere positioned at current lunar position."""
+    """Mapped Moon at its DE ephemeris position in geocentric GCRF (km)."""
 
-    def __init__(self, texture_path: str | Path | None = None,
-                 n_pts: int = 60, radius_scale: float = 1.0, **kw):
+    def __init__(self, texture_path=None, n_pts=60, radius_scale=1.0, low_spec=None, **kw):
         super().__init__("moon", "Moon", **kw)
-        self.texture_path = Path(texture_path) if texture_path else None
-        self.n_pts = n_pts
-        self.radius_scale = radius_scale   # visual size multiplier; doesn't move position
-        self._tex: Optional[np.ndarray] = None
+        self.texture_path = texture_path
+        self.n_pts, self.radius_scale = n_pts, radius_scale
+        self.low_spec = is_low_spec(low_spec)
 
-    def _load_texture(self):
-        if self._tex is not None or not _HAS_PIL:
-            return
-        if self.texture_path and self.texture_path.exists():
-            try:
-                img = Image.open(self.texture_path).convert("RGB")
-                img = img.resize((self.n_pts, self.n_pts//2), Image.LANCZOS)
-                self._tex = np.array(img)
-            except Exception:
-                pass
-
-    def _moon_position_km(self, t_gps: float) -> np.ndarray:
-        """Approximate Moon ECI position (low-precision)."""
-        try:
-            import ssapy.compute
-            return ssapy.compute.moonPos(t_gps) / 1e3  # m → km
-        except Exception:
-            pass
-        # fallback: simple circular approximation
-        T  = t_gps / 86_400.0 / 27.321582  # fraction of lunar month
-        th = 2*np.pi * T
-        return MOON_A_KM * np.array([np.cos(th), np.sin(th)*np.cos(np.radians(5.1)),
-                                      np.sin(th)*np.sin(np.radians(5.1))])
+    def _moon_position_km(self, t_gps):
+        from ssapy import get_body
+        moon = get_body("moon")
+        return np.asarray(moon.position(t_gps)).reshape(3) / 1000.
 
     def add_to_mpl(self, ax, orbit_state, traj=None, satellite=None, **kw):
-        if not _HAS_MPL:
-            return []
-        self._load_texture()
-        moon_pos = self._moon_position_km(orbit_state._epoch_gps())
-        n = self.n_pts
-        u = np.linspace(0, 2*np.pi, n)
-        v = np.linspace(0,   np.pi, n)
-        X = moon_pos[0] + MOON_R_KM * np.outer(np.cos(u), np.sin(v))
-        Y = moon_pos[1] + MOON_R_KM * np.outer(np.sin(u), np.sin(v))
-        Z = moon_pos[2] + MOON_R_KM * np.outer(np.ones(n), np.cos(v))
-        if self._tex is not None:
-            fcolors = np.zeros((*X.shape, 3))
-            H, W = self._tex.shape[:2]
-            for i in range(n):
-                for j in range(n):
-                    ti = int(i / n * H) % H
-                    tj = int(j / n * W) % W
-                    fcolors[j, i] = self._tex[ti, tj] / 255.0
-            surf = ax.plot_surface(X, Y, Z, facecolors=fcolors, shade=False,
-                                   rstride=1, cstride=1, zorder=3)
-        else:
-            surf = ax.plot_surface(X, Y, Z, color="#888888", alpha=0.9, zorder=3)
-        self._artists_mpl = [surf]
-        return [surf]
+        epoch = orbit_state._epoch_gps()
+        with low_spec_mode(self.low_spec):
+            surface = BodySurface(ax, "moon", MOON_R_KM*self.radius_scale,
+                self._moon_position_km(epoch), body_rotation("moon", epoch),
+                n=self.n_pts, path=self.texture_path)
+        self._artists_mpl = [surface.artist]
+        return self._artists_mpl
 
     def add_to_plotly(self, fig, orbit_state, traj=None, satellite=None, **kw):
-        if not _HAS_PLOTLY:
-            return
-        try:
-            moon_pos = self._moon_position_km(orbit_state._epoch_gps())
-        except Exception as ex:
-            print(f"[MoonLayer] position lookup failed ({ex}); using fixed fallback.")
-            moon_pos = np.array([MOON_A_KM, 0.0, 0.0])
-        n = self.n_pts
-        u = np.linspace(0, 2*np.pi, n)
-        v = np.linspace(0,   np.pi, n)
-        _R = MOON_R_KM * self.radius_scale
-        X = moon_pos[0] + _R * np.outer(np.cos(u), np.sin(v))
-        Y = moon_pos[1] + _R * np.outer(np.sin(u), np.sin(v))
-        Z = moon_pos[2] + _R * np.outer(np.ones(n), np.cos(v))
-        fig.add_trace(go.Surface(
-            x=X, y=Y, z=Z,
-            colorscale=[[0,"#888888"],[1,"#cccccc"]],
-            showscale=False, opacity=0.95,
-            name="Moon", hoverinfo="skip",
-        ))
-        # Marker fallback ensures the Moon is findable even at scales where the
-        # sphere itself (radius ~1737 km) is too small to see against a scene
-        # sized to lunar distance.
-        fig.add_trace(go.Scatter3d(
-            x=[moon_pos[0]], y=[moon_pos[1]], z=[moon_pos[2]],
-            mode="markers+text", marker=dict(size=6, color="#cccccc"),
-            text=["Moon"], textfont=dict(color="#cccccc", size=10),
-            name="Moon marker", hoverinfo="skip", showlegend=False,
-        ))
+        epoch = orbit_state._epoch_gps()
+        moon_pos = self._moon_position_km(epoch)
+        with low_spec_mode(self.low_spec):
+            fig.add_trace(body_mesh_plotly("moon", moon_pos, MOON_R_KM*self.radius_scale,
+                body_rotation("moon", epoch), n=self.n_pts, path=self.texture_path))
+        fig.add_trace(go.Scatter3d(x=[moon_pos[0]], y=[moon_pos[1]], z=[moon_pos[2]],
+            mode="markers+text", marker=dict(size=3, symbol="cross", color="#cccccc"),
+            text=["Moon centre"], name="Moon marker", hoverinfo="skip", showlegend=False))
 
 
 # ─── OrbitSunLayer ─────────────────────────────────────────────────────────────────

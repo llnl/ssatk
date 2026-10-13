@@ -25,14 +25,16 @@ Reference frames
 `frame` decides how far along the chain the catalogue is carried:
 
 * ``"j2000"``: catalogue positions as-is.
-* ``"gcrf"``: proper motion and precession to the mean equator of date; this
-  inertial frame is appropriate for trajectory plots.
-* ``"ecef"``: rotation by Greenwich Mean Sidereal Time into the Earth-fixed
-  frame. Use it with Earth's surface, an IGRF field, or ground locations;
-  otherwise the sky can be misaligned by a full rotation.
+* ``"gcrf"``: proper motion in fixed ICRS/GCRF-aligned axes, without precession.
+* ``"mod"``: proper motion plus IAU 1976 mean-of-date precession.
+* ``"teme"``: rotation with SSAPy's GCRF-to-TEME convention.
+* ``"ecef"``: rotation with SSATK's GCRF-to-ITRF matrix.
 
-Nutation (<=17") and polar motion (<0.5") are omitted.  Validated against
-astropy's ITRS transform: star directions agree to 8-24 arcsec, GMST to 0.01 s.
+These are distant-star plotting directions, not apparent camera measurements:
+aberration, parallax, radial velocity and gravitational light deflection are
+omitted. Catalogue uncertainties and unresolved binaries remain unmodelled.
+The solar-system background requires a real catalogue; the legacy
+``starfield_traces`` API can explicitly use a random fallback if it is absent.
 
 Star colours
 ------------
@@ -181,19 +183,18 @@ def _apply_frame(ra_hours, dec_deg, pmra_mas, pmdec_mas, when, frame):
     directions: 1142 arcsec median (1345 max) from GCRF for the 50 stars
     brighter than mag 2 on 2026-10-09.
     """
-    ra = np.radians(np.asarray(ra_hours, float) * 15.0)
-    dec = np.radians(np.asarray(dec_deg, float))
     frame = (frame or "j2000").lower()
     if frame not in ("j2000", "gcrf", "teme", "mod", "ecef"):
         raise ValueError(f"unknown star frame {frame!r}; use j2000, gcrf, teme, mod or ecef")
 
-    if frame != "j2000" and when is not None:
-        yrs = (_julian_date(when) - 2451545.0) / 365.25
-        # pmra is mu_alpha* (already carries cos(dec))
-        ra = ra + np.radians(np.asarray(pmra_mas, float)/3.6e6) * yrs / np.cos(dec)
-        dec = dec + np.radians(np.asarray(pmdec_mas, float)/3.6e6) * yrs
+    from ssatk.coordinates.star_astrometry import proper_motion_directions
+    from astropy.time import Time
 
-    v = np.stack([np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)], axis=1)
+    years = 0.0
+    if frame != "j2000" and when is not None:
+        t_pm = Time(when if isinstance(when, datetime) else _to_datetime(when), scale="utc")
+        years = (t_pm.tdb - Time("J2000").tdb).to_value("yr")
+    v = proper_motion_directions(ra_hours, dec_deg, pmra_mas, pmdec_mas, years)
     if when is None or frame in ("j2000", "gcrf"):
         return v
 
@@ -220,13 +221,14 @@ def _stars_to_ecef(ra_hours, dec_deg, pmra_mas, pmdec_mas, date,
     checking that a star at RA = GMST lands on longitude 0 with precession off.
     The `frame` argument cannot express that, since 'ecef' implies precession.
     """
-    ra = np.radians(np.asarray(ra_hours, float) * 15.0)
-    dec = np.radians(np.asarray(dec_deg, float))
+    from ssatk.coordinates.star_astrometry import proper_motion_directions
+    from astropy.time import Time
+
+    years = 0.0
     if apply_pm and date is not None:
-        yrs = (_julian_date(date) - 2451545.0) / 365.25
-        ra = ra + np.radians(np.asarray(pmra_mas, float)/3.6e6) * yrs / np.cos(dec)
-        dec = dec + np.radians(np.asarray(pmdec_mas, float)/3.6e6) * yrs
-    v = np.stack([np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)], axis=1)
+        time = Time(date if isinstance(date, datetime) else _to_datetime(date), scale="utc")
+        years = (time.tdb - Time("J2000").tdb).to_value("yr")
+    v = proper_motion_directions(ra_hours, dec_deg, pmra_mas, pmdec_mas, years)
     if apply_prec and date is not None:
         v = v @ _precession_matrix(date).T
     if apply_rot and date is not None:
@@ -375,22 +377,22 @@ def moon_fixed_webgl_stars(mag_limit=7.0, radius_km=4.0e6, epoch=None):
     """Return compact WebGL star arrays in the lunar body-fixed frame.
 
     Uses the same frame as the textured Moon in ``moon_webgl``; see
-    :func:`ssatk.coordinates.lunar_body_rotation`.
+    :func:`ssatk.coordinates.lunar_map_rotation`.
     """
     from astropy.time import Time
-    from ssatk.coordinates.lunar import lunar_body_rotation
+    from ssatk.coordinates.lunar import lunar_map_rotation
 
-    catalogue = star_directions(mag_limit=mag_limit, frame="gcrf")
-    if catalogue is None:
-        return None
-    v, mag, rgb = (np.asarray(value, float) for value in catalogue)
     if epoch is None:
         epoch = Time.now()
     elif isinstance(epoch, (int, float, np.integer, np.floating)):
         epoch = Time(epoch, format="gps")
     else:
         epoch = Time(epoch, scale="tt")
-    rotation = lunar_body_rotation(float(np.atleast_1d(epoch.gps)[0]))[0]
+    catalogue = star_directions(mag_limit=mag_limit, when=epoch, frame="gcrf")
+    if catalogue is None:
+        return None
+    v, mag, rgb = (np.asarray(value, float) for value in catalogue)
+    rotation = lunar_map_rotation(float(np.atleast_1d(epoch.gps)[0]))[0]
     positions = (v @ rotation.T) * radius_km
     brightness = np.clip(1.60 - 0.15 * mag, 0.16, 1.0)
     return {

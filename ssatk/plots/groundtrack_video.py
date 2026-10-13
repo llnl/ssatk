@@ -58,6 +58,7 @@ def groundtrack_video(
     bitrate=2400,
     max_frames=2000,
     progress=True,
+    camera="overview",
     mode="map",              # <<< NEW: "map" (2D lon/lat; matches your plot), "surface3d", "eci3d"
     **save_kwargs,
 ):
@@ -102,6 +103,9 @@ def groundtrack_video(
         )
     rcParams["animation.ffmpeg_path"] = ff
 
+    from .camera import _camera_spec
+    if _camera_spec(camera).mode != "overview":
+        raise ValueError("groundtrack_video is a flat map; use orbit_plot(view='globe') for moving cameras")
     # Normalize and validate inputs
     r_list = [_ensure_Nx3(ri) for ri in _as_list(r)]
     t_list = _broadcast_time_list(r_list, t)

@@ -236,8 +236,8 @@ def _plot_error_vs_time(results, recon_cache, prefix):
         r_ke = np.asarray(recon_cache[name]["ke"][0], float)
         ax.plot(t, _norm(r_fit - r_ke, axis=1), label=f"Kepler err {name}")
     ax.set_xlabel("t_rel [s]")
-    ax.set_ylabel("|r_fit - r_ssapy| [m]")
-    ax.set_title("ellipse_fit vs SSAPy position error (Kepler reconstruction)")
+    ax.set_ylabel("|r_fit - r_SSATK| [m]")
+    ax.set_title("ellipse_fit vs SSATK position error (Kepler reconstruction)")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -252,8 +252,8 @@ def _plot_error_vs_time(results, recon_cache, prefix):
         r_sv = np.asarray(recon_cache[name]["sv"][0], float)
         ax.plot(t, _norm(r_fit - r_sv, axis=1), label=f"SV err {name}")
     ax.set_xlabel("t_rel [s]")
-    ax.set_ylabel("|r_fit - r_ssapy| [m]")
-    ax.set_title("ellipse_fit vs SSAPy position error (SV reconstruction)")
+    ax.set_ylabel("|r_fit - r_SSATK| [m]")
+    ax.set_title("ellipse_fit vs SSATK position error (SV reconstruction)")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -271,10 +271,10 @@ def _plot_radius_and_speed(results, recon_cache, prefix):
         r_fit = np.asarray(results[name]["r"], float)
         r_ke = np.asarray(recon_cache[name]["ke"][0], float)
         ax.plot(t, _norm(r_fit, axis=1), label=f"|r| fit {name}")
-        ax.plot(t, _norm(r_ke, axis=1), label=f"|r| ssapy {name}")
+        ax.plot(t, _norm(r_ke, axis=1), label=f"|r| SSATK {name}")
     ax.set_xlabel("t_rel [s]")
     ax.set_ylabel("|r| [m]")
-    ax.set_title("Radius vs time (ellipse_fit vs SSAPy)")
+    ax.set_title("Radius vs time (ellipse_fit vs SSATK)")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -288,10 +288,10 @@ def _plot_radius_and_speed(results, recon_cache, prefix):
         v_fit = np.asarray(results[name]["v"], float)
         v_ke = np.asarray(recon_cache[name]["ke"][1], float)
         ax.plot(t, _norm(v_fit, axis=1), label=f"|v| fit {name}")
-        ax.plot(t, _norm(v_ke, axis=1), label=f"|v| ssapy {name}")
+        ax.plot(t, _norm(v_ke, axis=1), label=f"|v| SSATK {name}")
     ax.set_xlabel("t_rel [s]")
     ax.set_ylabel("|v| [m/s]")
-    ax.set_title("Speed vs time (ellipse_fit vs SSAPy)")
+    ax.set_title("Speed vs time (ellipse_fit vs SSATK)")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -367,7 +367,7 @@ def _plot_recon_overlays(results, recon_cache, prefix):
         all_pts.extend([r_fit, r_sv])
     pts = np.vstack([p.reshape(-1, 3) for p in all_pts])
     _set_equal_3d_cube(ax, pts, pad=0.08)
-    ax.set_title("SSAPy reconstruction via state vectors")
+    ax.set_title("SSATK reconstruction via state vectors")
     ax.legend()
     fig.tight_layout()
     figsave(fig, f"{prefix}_recons_sv.png")
@@ -384,7 +384,7 @@ def _plot_recon_overlays(results, recon_cache, prefix):
         all_pts.extend([r_fit, r_ke])
     pts = np.vstack([p.reshape(-1, 3) for p in all_pts])
     _set_equal_3d_cube(ax, pts, pad=0.08)
-    ax.set_title("SSAPy reconstruction via Kepler elements")
+    ax.set_title("SSATK reconstruction via Kepler elements")
     ax.legend()
     fig.tight_layout()
     figsave(fig, f"{prefix}_recons_kepler.png")
@@ -574,8 +574,10 @@ def main():
         recon_cache[name] = recon
 
     if SAVE_PLOTS:
-        prefix = "figures/testing_ellipse_fit"
+        prefix = "testing_ellipse_fit"
+        # gallery-call: testing_ellipse_fit_arcs.png
         _plot_arcs_3d(results, P1_m, P2_m, prefix, title="ellipse_fit arcs (baseline)")
+        # gallery-end
         try:
             orbit_plot(
                 [results["A"]["r"], results["B"]["r"]],
@@ -586,10 +588,18 @@ def main():
             )
         except Exception:
             pass
+        # gallery-call: testing_ellipse_fit_recons_*.png
         _plot_recon_overlays(results, recon_cache, prefix)
+        # gallery-end
+        # gallery-call: testing_ellipse_fit_error_*.png
         _plot_error_vs_time(results, recon_cache, prefix)
+        # gallery-end
+        # gallery-call: testing_ellipse_fit_radius.png | testing_ellipse_fit_speed.png
         _plot_radius_and_speed(results, recon_cache, prefix)
+        # gallery-end
+        # gallery-call: testing_ellipse_fit_separation_AB.png
         _plot_sep_AB(results, prefix)
+        # gallery-end
 
     # Inclination sweep
     print("\n=== Inclination sweep: 1*RGEO equatorial -> 2*RGEO sphere, inc=0..90 step 15 ===")
@@ -655,8 +665,10 @@ def main():
             print(f"  inc={item['inc_deg']:+.0f} branch={item['branch']}: {item['error']}")
 
     if SAVE_PLOTS:
-        prefix = "figures/testing_ellipse_fit_incsweep_geo2_polar15"
+        prefix = "testing_ellipse_fit_incsweep_geo2_polar15"
+        # gallery-call: testing_ellipse_fit_incsweep_geo2_polar15_all_transfers.png
         _plot_incsweep_all_transfers_3d(sweep_store, P1s_m, prefix)
+        # gallery-end
 
         sweep_pts = [np.asarray(P1s_m, float)]
         for item in sweep_store:
@@ -682,6 +694,7 @@ def main():
 
             P2s_m = item["P2"]
             pp = f"{prefix}_{inc_deg:+.0f}deg"
+            # gallery-call: testing_ellipse_fit_incsweep_geo2_polar15_*deg_arcs.png
             _plot_arcs_3d(
                 rdict,
                 P1s_m,
@@ -690,6 +703,7 @@ def main():
                 title=f"Transfer arcs to 2*RGEO sphere, inc={inc_deg:+.0f} deg",
                 cube_limits=sweep_cube_limits,
             )
+            # gallery-end
 
     print("\nDONE! (baseline checks passed; sweep processed)")
     return {

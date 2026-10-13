@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from ._body_surfaces import BodySurface as _BodySurface, body_rotation as _body_rotation, body_disc as _body_disc
+import inspect as _inspect
+
 from ssapy import get_body as _get_body
 import matplotlib.cm as _cm
 import matplotlib.pyplot as _plt
@@ -64,6 +67,7 @@ def _orbit_plot_core(
         raise ValueError(f"Unsupported orbit plot views: {unsupported}")
 
     special_plot_kwargs = dict(special_plot_kwargs or {})
+    input_times = t
     r, t = _valid_orbits(r, t)
 
     if "w" in c:
@@ -117,6 +121,8 @@ def _orbit_plot_core(
             bounds["upper"] = _np.maximum(bounds["upper"], upper_bound_temp)
 
             stn = _plot_settings(frame_key, r_moon, r_earth, unit_conversion)
+            stn["bodies"] = [(body, pos[0], radius/unit_conversion, _body_rotation(body, t_current[0], frame_key))
+                             for body, pos, radius in [("earth", r_earth, _EARTH_RADIUS), ("moon", r_moon, _MOON_RADIUS)]] if orbit_index == 0 else []
             if len(r) == 1:
                 scatter_dot_colors = _cm.rainbow(_np.linspace(0, 1, len(xyz[:, 0])))
             else:
@@ -157,7 +163,7 @@ def _orbit_plot_core(
         _set_orbit_limits(axes, bounds)
         _style_orbit_axes([axes[view] for view in coordinate_views], plotcolor, textcolor)
 
-    _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs)
+    _plot_special_views(axes, views, r, t if input_times is not None else None, title, c, special_plot_kwargs, frame)
 
     if save_path:
         _figsave(fig, save_path)
@@ -168,6 +174,11 @@ def _orbit_plot_core(
 
 
 def _create_orbit_axes(fig, views):
+    # Reserve room for labels on mixed map/3-D dashboards as well as slices.
+    # Fixed gutters remain stable while mplot3d changes its projected labels.
+    # Constrained-layout can collapse a mixed 2-D/3-D animation mid-frame.
+    fig.subplots_adjust(left=.12, right=.91, bottom=.16, top=.90,
+                        hspace=.55, wspace=.42)
     if views == ("xy",):
         return {"xy": fig.add_subplot(1, 1, 1)}
 
@@ -244,7 +255,7 @@ def _auto_grid_shape(nviews):
     return nrows, ncols
 
 
-def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs):
+def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs, frame):
     if "groundtrack" in views:
         groundtrack_kwargs = _filter_kwargs(_groundtrack_plot, special_plot_kwargs)
         _groundtrack_plot(
@@ -262,6 +273,7 @@ def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs):
             r,
             t=t,
             ax=axes["globe"],
+            frame=frame,
             save_path=None,
             title=globe_kwargs.pop("title", title),
             c=globe_kwargs.pop("c", c),
@@ -270,7 +282,7 @@ def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs):
 
 
 def _filter_kwargs(func, kwargs):
-    allowed = func.__code__.co_varnames[:func.__code__.co_argcount + func.__code__.co_kwonlyargcount]
+    allowed = _inspect.signature(func).parameters
     excluded = {"r", "t", "ax", "save_path"}
     return {key: value for key, value in kwargs.items() if key in allowed and key not in excluded}
 
@@ -353,17 +365,11 @@ def _plot_orbit_view(
     x_idx, y_idx, x_name, y_name = _VIEW_AXES[view]
     secondary_y_key = f"secondary_{y_name}"
 
-    ax.scatter(xyz[:, x_idx], xyz[:, y_idx], color=scatter_dot_colors, s=1)
+    from .occultation import _projected_orbit
+    _projected_orbit(ax.scatter(xyz[:, x_idx], xyz[:, y_idx], color=scatter_dot_colors, s=1), xyz, view)
     ax.add_patch(_plt.Circle(xy=(0, 0), radius=1, color=textcolor, linestyle="dashed", fill=False))
-    ax.add_patch(
-        _plt.Circle(
-            xy=(0, 0),
-            radius=stn["primary_size"],
-            color=stn["primary_color"],
-            linestyle="dashed",
-            fill=False,
-        )
-    )
+    for body, center, radius, rotation in stn.get("bodies", []):
+        _body_disc(ax, body, radius, center, rotation, view=view)
     ax.scatter(stn[f"secondary_{x_name}"], stn[secondary_y_key], color=stn["secondary_color"], s=stn["secondary_size"])
     ax.set_aspect("equal")
     ax.set_xlabel(f"{x_name} [{unit_label}]", color=textcolor)
@@ -389,14 +395,10 @@ def _plot_orbit_view(
 
 
 def _plot_orbit_3d(ax, xyz, stn, bounds, unit_label, unit_conversion, scatter_dot_colors, textcolor, frame_key, lunar_transform):
-    u = _np.linspace(0, 2 * _np.pi, 180)
-    v = _np.linspace(-_np.pi / 2, _np.pi / 2, 180)
-
-    ax.scatter3D(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=scatter_dot_colors, s=1)
-    mesh_x = _np.outer(_np.cos(u), _np.cos(v)).T * stn["primary_size"]
-    mesh_y = _np.outer(_np.sin(u), _np.cos(v)).T * stn["primary_size"]
-    mesh_z = _np.outer(_np.ones(_np.size(u)), _np.sin(v)).T * stn["primary_size"]
-    ax.plot_surface(mesh_x, mesh_y, mesh_z, color=stn["primary_color"], alpha=0.3, edgecolor="none")
+    ax.scatter3D(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=scatter_dot_colors,
+                 s=1, label="Orbit Path")
+    for body, center, radius, rotation in stn.get("bodies", []):
+        _BodySurface(ax, body, radius, center, rotation)
     ax.scatter3D(stn["secondary_x"], stn["secondary_y"], stn["secondary_z"], color=stn["secondary_color"], s=stn["secondary_size"])
     ax.set_xlabel(f"x [{unit_label}]", color=textcolor)
     ax.set_ylabel(f"y [{unit_label}]", color=textcolor)

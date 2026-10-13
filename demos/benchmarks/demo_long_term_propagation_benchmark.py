@@ -174,7 +174,9 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
             continue
         case["tools"] = tool_results
         if make_figures:
+            # gallery-call: *_residuals.png
             case["plots"] = _write_case_plot(case, residuals, figure_dir)
+            # gallery-end
         results.append(case)
 
     if not results:
@@ -193,12 +195,16 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         "cases": results,
     }
     if make_figures:
+        # gallery-call: *_summary.png
         summary["summary_plot"] = _write_summary_plot(results, figure_dir)
+        # gallery-end
     result_path = Path(ssatk_data("data/benchmarks/long_term_propagation_results.json"))
     result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary["results_path"] = str(result_path)
     if make_figures:
+        # gallery-call: benchmark_regime_matrix.png
         summary["report_path"] = write_benchmark_report()
+        # gallery-end
         result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if verbose:
         print(json.dumps(summary, indent=2, sort_keys=True))

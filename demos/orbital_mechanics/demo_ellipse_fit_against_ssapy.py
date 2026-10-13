@@ -13,6 +13,7 @@ import inspect
 
 import numpy as np
 import matplotlib.pyplot as plt
+from astropy.time import Time
 
 from ssatk.constants import RGEO
 from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
@@ -109,6 +110,7 @@ def main(make_figures=None, fast=None, verbose=None):
         dt_s = 0.0
 
     r_efit = resample_cartesian(t_rel, r_arc, t_grid)
+    epochs = Time(Time("2025-01-01", scale="utc").gps + t_grid, format="gps")
 
     prop_kep = keplerian_prop()
     prop_nom = ssapy_prop()
@@ -118,11 +120,10 @@ def main(make_figures=None, fast=None, verbose=None):
         r, v, t = ssapy_orbit(
             r=r0,
             v=v0,
-            duration=(T_flight, "s"),
-            freq=((dt_s, "s") if N_native > 1 else (0.0, "s")),
+            t=epochs,
             prop=prop,
         )
-        return trim_or_pad_to(r, N_native), t
+        return r, t
 
     r_kep, t_kep = run_with_prop(prop_kep)
     r_nom, t_nom = run_with_prop(prop_nom)
@@ -130,33 +131,34 @@ def main(make_figures=None, fast=None, verbose=None):
 
     r_back, _, t_back = ssapy_orbit(
         r=r2,
-        v=-v2,
-        duration=(T_flight, "s"),
-        freq=((dt_s, "s") if N_native > 1 else (0.0, "s")),
+        v=v2,
+        t=epochs[::-1],
         prop=prop_nom,
     )
-    r_back = trim_or_pad_to(r_back, N_native)
-
     t_fit = t_kep
-    t_fit_desc = t_back[::-1] if hasattr(t_back, "__getitem__") else t_fit
+    # Propagate from the arrival state to earlier epochs with its actual
+    # velocity. Negating velocity and advancing time is not equivalent for
+    # dated lunar/solar forces and a rotating Earth gravity field.
+    t_fit_desc = t_back
 
     r_list = [r_efit, r_kep, r_nom, r_best, r_back]
     t_list = [t_fit, t_kep, t_nom, t_best, t_fit_desc]
     labels = [
         "ellipse_fit",
         "keplerian_prop",
-        "ssapy_prop",
+        "SSATK numerical",
         "best_prop",
-        "backward(ssapy_prop)",
+        "SSATK numerical, backward",
     ]
 
     if make_figures:
-        save_path = figpath("testing_ellipse_fit_vs_ssapy.jpg")
+        save_path = figpath("testing_ellipse_fit_vs_ssatk.jpg")
+        # gallery-call: testing_ellipse_fit_vs_ssatk.jpg
         if _supports_kwarg(orbit_plot, "labels"):
             orbit_plot(
                 r_list,
                 t_list,
-                title="Ellipse-fit vs SSAPy (keplerian, ssapy_prop, best_prop, backward)",
+                title="SSATK ellipse-fit and propagation comparison",
                 save_path=save_path,
                 frame="gcrf",
                 labels=labels,
@@ -165,12 +167,14 @@ def main(make_figures=None, fast=None, verbose=None):
             orbit_plot(
                 r_list,
                 t_list,
-                title="Ellipse-fit vs SSAPy (keplerian, ssapy_prop, best_prop, backward)",
+                title="SSATK ellipse-fit and propagation comparison",
                 save_path=save_path,
                 frame="gcrf",
             )
+        # gallery-end
 
-        save_dash = figpath("testing_ellipse_fit_vs_ssapy_dashboard.jpg")
+        save_dash = figpath("testing_ellipse_fit_vs_ssatk_dashboard.jpg")
+        # gallery-call: testing_ellipse_fit_vs_ssatk_dashboard.jpg
         if _supports_kwarg(groundtrack_dashboard, "labels"):
             groundtrack_dashboard(
                 r_list,
@@ -184,6 +188,7 @@ def main(make_figures=None, fast=None, verbose=None):
                 t_list,
                 save_path=save_dash,
             )
+        # gallery-end
 
         t_minutes = t_grid / 60.0
         curves = [
@@ -194,9 +199,9 @@ def main(make_figures=None, fast=None, verbose=None):
         ]
         names = [
             "keplerian_prop vs ellipse_fit",
-            "ssapy_prop vs ellipse_fit",
+            "SSATK numerical vs ellipse_fit",
             "best_prop vs ellipse_fit",
-            "backward(ssapy_prop) vs reverse(ellipse_fit)",
+            "SSATK backward vs reversed ellipse_fit",
         ]
 
         dash_styles = [
@@ -206,6 +211,7 @@ def main(make_figures=None, fast=None, verbose=None):
             (0, (4, 1, 1, 1)),
         ]
 
+        # gallery-call: testing_ellipse_fit_distance.jpg
         fig = plt.figure(figsize=(10, 6))
         ax = fig.add_subplot(111)
         for i, (d, n) in enumerate(zip(curves, names)):
@@ -220,6 +226,7 @@ def main(make_figures=None, fast=None, verbose=None):
 
         save_dist = figpath("testing_ellipse_fit_distance.jpg")
         fig.savefig(save_dist, dpi=200, bbox_inches="tight")
+        # gallery-end
         plt.close(fig)
 
     return {

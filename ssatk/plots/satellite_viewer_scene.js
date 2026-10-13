@@ -255,6 +255,8 @@ let scene, camera, renderer, earthMesh, cloudMesh, atmosphereMesh, starfield, su
 let sunMesh, sunGlowMesh, moonMesh;
 let sunDirection = new THREE.Vector3(1, 0.35, 0.25).normalize();
 let camTheta = 0.9, camPhi = 1.1, camDist = 26000;
+let shotController = null;
+const shotEpochMs = Date.now();
 const camTarget = new THREE.Vector3(0, 0, 0);
 let isDragging = false, lastX = 0, lastY = 0;
 let cloudsGroup;
@@ -836,16 +838,27 @@ function buildStarfield() {
 }
 
 // ---------------------------------------------------------------------------
-// Earth -- custom day/night/specular shader on a smooth 128-segment sphere
+// Earth -- custom day/night/specular shader on a 256 x 128 sphere
 // ---------------------------------------------------------------------------
 function buildEarth() {
+  if (LOW_SPEC) {
+    earthMesh = new THREE.Mesh(new THREE.SphereGeometry(R_EARTH_KM, 36, 18),
+      new THREE.MeshLambertMaterial({color: 0x1a4f8a}));
+    scene.add(earthMesh);
+    return;
+  }
   const loader = new THREE.TextureLoader();
   const dayTex = loader.load(DAY_TEXTURE_DATAURI);
   const nightTex = loader.load(NIGHT_TEXTURE_DATAURI);
   const specTex = loader.load(SPECULAR_TEXTURE_DATAURI);
   [dayTex, nightTex, specTex].forEach(t => { t.colorSpace = THREE.SRGBColorSpace; });
+  // Anisotropic filtering retains detail at grazing angles near the limb.
+  // Three.js also resizes textures to the GPU's maxTextureSize if necessary.
+  [dayTex, nightTex, specTex].forEach(t => {
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  });
 
-  const geom = new THREE.SphereGeometry(R_EARTH_KM, 128, 128);
+  const geom = new THREE.SphereGeometry(R_EARTH_KM, 256, 128);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       dayTexture: { value: dayTex },
@@ -925,8 +938,10 @@ function buildEarth() {
 // sun direction with the Earth shader.
 // ---------------------------------------------------------------------------
 function buildClouds() {
+  if (LOW_SPEC) { cloudsGroup = new THREE.Group(); return; }
   const loader = new THREE.TextureLoader();
   const cloudTex = loader.load(CLOUDS_TEXTURE_DATAURI);
+  cloudTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   // Mipmaps are safe here now: the texture itself was reprocessed so every
   // pixel's RGB sits near true cloud-white, with only the alpha channel
   // varying to encode cloud shape. Previously, "transparent" pixels held a
@@ -936,7 +951,7 @@ function buildClouds() {
   // mipmaps entirely (the first fix attempted) removed that, but introduced
   // visible shimmer/aliasing when the cloud layer was minified at middle
   // zoom levels -- fixing the source texture avoids both problems at once.
-  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.006, 96, 96);
+  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.006, 256, 128);
   const mat = new THREE.MeshLambertMaterial({
     map: cloudTex, transparent: true, depthWrite: false, opacity: 0.85,
   });
@@ -950,7 +965,8 @@ function buildClouds() {
 // Atmosphere -- Fresnel rim glow, additive-blended, brighter on the day side
 // ---------------------------------------------------------------------------
 function buildAtmosphere() {
-  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.025, 96, 96);
+  if (LOW_SPEC) return;
+  const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.025, 256, 128);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       glowColor: { value: new THREE.Color(0x4fa8ff) },
@@ -3020,6 +3036,7 @@ function updateOneSatellitePosition(key) {
     inst.model.visible = true;
     const pos = eciToScene(pv.position);
     const vel = eciToScene(pv.velocity);
+    inst.cameraTangent = vel.clone();
     // Live readouts. Altitude/lat/lon come from satellite.js's WGS84 geodetic
     // conversion (eciToGeodetic), NOT geocentric radius minus a spherical mean
     // radius -- the ellipsoid's ~21 km equator-to-pole difference makes the
@@ -3348,6 +3365,23 @@ function animate() {
     lastClockDisplayUpdateMs = performance.now();
   }
   updateAllActiveSatellitePositions();
+  if (!shotController) {
+    shotController = new SSATKAnimationCamera(camera, CAMERA_CONFIG, [0,1,0], camDist/2.1);
+    if (shotController.initialEye) {
+      camDist = shotController.initialEye.length();
+      camPhi = Math.acos(shotController.initialEye.y/camDist);
+      camTheta = Math.atan2(shotController.initialEye.z,shotController.initialEye.x);
+    }
+  }
+  const subjects = Array.from(activeSatellites.values()).filter(i => i.model && i.model.visible);
+  const subject = shotController.selectTarget(subjects, i=>i.entry.name);
+  const track = subject && subject.stateTrack;
+  const start = track ? track.t[0] : shotEpochMs;
+  const span = track ? track.t[track.t.length-1]-start : 86400000;
+  shotController.update(subject ? subject.model.position : null,
+    subject ? subject.cameraTangent : null, (simDate.getTime()-start)/Math.max(1,span),
+    Math.max(R_EARTH_KM, ...subjects.map(i=>i.framingR)), subject ? subject.entry.name : 'target');
+  if (starfield) starfield.position.copy(camera.position);
   updateSubPointMarkers();       // frame-exact nadir dots (cheap)
   updateEclipseShading();        // darken satellites inside Earth's shadow (throttled)
   refreshAllOrbitLinesIfNeeded();

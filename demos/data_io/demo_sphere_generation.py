@@ -24,6 +24,7 @@ def main(make_figures=None, fast=None):
     A_random = generate_sphere_vectors(n, mag, seed=seed, distribution="random")
 
     if make_figures:
+        # gallery-call: *.png
         fig = plt.figure(figsize=(12, 6))
 
         ax1 = fig.add_subplot(1, 2, 1, projection="3d")
@@ -56,6 +57,7 @@ def main(make_figures=None, fast=None):
 
         fig.tight_layout()
         figsave(fig, "spheres_subplots.png")
+        # gallery-end
 
     return {"uniform": A_uniform, "random": A_random}
 

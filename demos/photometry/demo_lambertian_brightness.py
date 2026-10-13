@@ -282,6 +282,7 @@ def _demo_figures():
     shadow = ~lit
 
     # ---- Figure 1: phase-curve benchmark vs analytic reference --------
+    # gallery-call: demo_phase_curve_benchmark.jpg
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(8, 7), sharex=True,
         gridspec_kw={"height_ratios": [3, 1]})
@@ -309,9 +310,11 @@ def _demo_figures():
     ax2.legend(fontsize=9)
     fig.tight_layout()
     figsave(fig, "demo_phase_curve_benchmark.jpg")
+    # gallery-end
     plt.close(fig)
 
     # ---- Figure 2: fractional-flux agreement (machine precision) ------
+    # gallery-call: demo_fractional_flux_benchmark.jpg
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ratio = np.where(b["ref_frac"] > 0,
                      b["ours_frac"] / np.maximum(b["ref_frac"], 1e-300), np.nan)
@@ -323,19 +326,24 @@ def _demo_figures():
     ax.grid(alpha=0.3)
     fig.tight_layout()
     figsave(fig, "demo_fractional_flux_benchmark.jpg")
+    # gallery-end
     plt.close(fig)
 
     # ---- Figure 3: airmass benchmark + multi-band magnitudes ----------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+    # gallery-call: demo_airmass_and_bands.jpg
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(12, 4.8), layout="constrained")
     z = np.linspace(0, 89.9, 300)
     ax1.semilogy(z, airmass_kasten_young(z), "C0-", label="Kasten-Young 1989")
     ax1.semilogy(z[z < 80], 1 / np.cos(np.radians(z[z < 80])), "k--",
                  lw=1, label="sec(z) (plane-parallel)")
-    for zr, Xr in [(0, 1.0), (60, 1.994), (85, 10.32)]:
-        ax1.plot(zr, Xr, "rs")
-    ax1.set_xlabel("zenith angle [deg]"); ax1.set_ylabel("airmass")
-    ax1.set_title("Airmass model vs reference values (red squares)")
-    ax1.legend(); ax1.grid(alpha=0.3)
+    ax1.plot([0, 60, 85], [1.0, 1.994, 10.32], "s", color="C3",
+             ms=5, label="Reference values", zorder=3)
+    ax1.set_xlabel("Zenith angle [deg]")
+    ax1.set_ylabel("Airmass")
+    ax1.set_title("Atmospheric airmass", pad=12)
+    ax1.legend(frameon=False, fontsize=9)
+    ax1.grid(alpha=0.2)
 
     site = ssapy.EarthObserver(lon=-156.26, lat=20.71, elevation=3055.0)
     r_site, _ = site.getRV(T0)
@@ -347,14 +355,21 @@ def _demo_figures():
                 temperature_K=290.0, radius_m=1.0, albedo=0.3,
                 time=T0, band=bb, k_extinction=0.0)["ab_mag_exoatmospheric"]
             for bb in bands]
-    ax2.bar(bands, mags, color="C1")
+    # Bands are categorical; connecting segments guide the eye, rather than
+    # representing a continuously sampled spectrum or wavelength spacing.
+    ax2.plot(bands, mags, "o-", color="C1", lw=2, ms=6,
+             markerfacecolor="white", markeredgewidth=1.5)
     ax2.invert_yaxis()
-    ax2.set_ylabel("exoatmospheric AB magnitude")
-    ax2.set_title("1 m sphere, 290 K, albedo 0.3, 800 km overhead:\n"
-                  "reflection-dominated VIS -> thermal-dominated LWIR")
-    ax2.grid(alpha=0.3, axis="y")
-    fig.tight_layout()
+    ax2.set_xlabel("Observing band (categorical)")
+    ax2.set_ylabel("Exoatmospheric AB magnitude (brighter upward)")
+    ax2.set_title("Brightness across visible and infrared bands\n"
+                  "1 m radius sphere · 290 K · albedo 0.3 · 800 km overhead",
+                  fontsize=10, pad=12)
+    ax2.grid(alpha=0.2, axis="y")
+    for ax in (ax1, ax2):
+        ax.spines[["top", "right"]].set_visible(False)
     figsave(fig, "demo_airmass_and_bands.jpg")
+    # gallery-end
     plt.close(fig)
 
     print("Saved via figsave: figures/demo_phase_curve_benchmark.jpg")

@@ -38,7 +38,7 @@ UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") 
 GALLERY_INCLUDE = False
 
 
-def main(make_figures=None, make_gif=None, fast=None):
+def main(make_figures=None, make_gif=None, fast=None, camera="overview"):
     """
     Run the rotate-vector demo.
 
@@ -78,6 +78,11 @@ def main(make_figures=None, make_gif=None, fast=None):
     num_phi = int(360 / phi_step) + 1
     total = num_theta * num_phi
 
+    from ssatk.plots.camera import _CameraPath
+    angles = [(theta, phi) for theta in range(0, 181, theta_step)
+              for phi in range(0, 361, phi_step)]
+    directions = np.array([rotate_vector(v_unit, theta, phi) for theta, phi in angles])
+    shot = _CameraPath(camera, directions, [[-1,-1,-1],[1,1,1]])
     gif_path = None
     frame_count = 0
 
@@ -92,7 +97,19 @@ def main(make_figures=None, make_gif=None, fast=None):
                     clear_output(wait=True)
 
                     frame_base = tmpdir / f"{i:06d}"
-                    rotate_vector(v_unit, theta, phi, save_path=str(frame_base))
+                    import matplotlib.pyplot as plt
+                    from ssatk.plots import figsave
+                    fig = plt.figure(facecolor="black")
+                    ax = fig.add_subplot(111, projection="3d", facecolor="black")
+                    for vector, color in [(v_unit, "#73bfff"),
+                            (rotate_vector(v_unit, theta, 0), "#62e6ad"),
+                            (directions[i], "#ff737a")]:
+                        ax.quiver(0,0,0,*vector,color=color)
+                    shot.mpl(ax, i)
+                    ax.set_title(f"Vector rotation · theta {theta}°, phi {phi}°",color="white")
+                    ax.tick_params(colors="white")
+                    figsave(fig, save_path=str(frame_base))
+                    plt.close(fig)
 
                     frame_path = str(frame_base)
                     if not frame_path.lower().endswith(".jpg"):
@@ -106,7 +123,7 @@ def main(make_figures=None, make_gif=None, fast=None):
 
             if make_gif and frames:
                 gif_base_jpg_like = figpath(
-                    f"figures/rotate_vectors_{v_unit[0]:.0f}_{v_unit[1]:.0f}_{v_unit[2]:.0f}"
+                    f"rotate_vectors_{v_unit[0]:.0f}_{v_unit[1]:.0f}_{v_unit[2]:.0f}"
                 )
                 if gif_base_jpg_like.lower().endswith(".jpg"):
                     gif_path = gif_base_jpg_like[:-4] + ".gif"

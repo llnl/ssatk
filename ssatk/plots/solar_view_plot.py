@@ -12,11 +12,13 @@ Reads GUI_CONFIG from environment or falls back to defaults.
 
 Output
 ------
-  <output_dir>/solar_view_plot.html   — interactive Plotly HTML
-  <output_dir>/solar_view_plot.jpg    — static snapshot (requires the ``static`` extra)
+  <output_dir>/solar_system_plot.html   — interactive Plotly HTML
+  <output_dir>/solar_system_plot.jpg    — static snapshot (requires the ``static`` extra)
 """
 
 from __future__ import annotations
+
+from .rendering import _with_low_spec
 
 import json
 import math
@@ -36,7 +38,7 @@ from ssatk.plots.solar_bodies import (
     make_saturn_ring_traces,
     make_sun_traces,
 )
-from ssatk.plots.starfield import starfield_traces
+from ssatk.plots._solar_scene import SolarFigure, add_sky, body_position_au, scale_caption
 
 # Always define these locally — importing toolkit_gui.py here is unsafe:
 # it's a Streamlit *app* script, not a library, and merely importing it
@@ -93,53 +95,22 @@ def _fallback_planet_positions_au(name: str, t_jd):
 
 
 def _body_positions_au(name: str, time, ephemeris: str = "builtin"):
-    """Return heliocentric body positions in AU using Astropy ephemerides."""
-    try:
-        from astropy import units as u
-        from astropy.coordinates import get_body_barycentric, solar_system_ephemeris
-
-        with solar_system_ephemeris.set(ephemeris):
-            body = get_body_barycentric(name.lower(), time)
-            sun = get_body_barycentric("sun", time)
-        xyz = (body.xyz - sun.xyz).to_value(u.au)
-        return np.moveaxis(np.asarray(xyz, dtype=float), 0, -1)
-    except Exception as exc:
-        jd = getattr(time, "jd", time)
-        print(
-            f"[solar_view_plot] Astropy ephemeris '{ephemeris}' failed for {name} "
-            f"({exc}); using low-precision Kepler fallback."
-        )
-        return _fallback_planet_positions_au(name, jd)
+    """Geometric heliocentric AU in mean J2000 ecliptic axes."""
+    return body_position_au(name, time, ephemeris=ephemeris)
 
 
-def _orbit_trail_au(
-    name: str,
-    t_jd: float,
-    time=None,
-    ephemeris: str = "builtin",
-    n_pts: int = 360,
-):
-    p = _PLANETS[name]
-    T_orbit_days = 365.25 * math.sqrt(p["a"] ** 3)
-    offsets = np.linspace(-T_orbit_days, 0.0, n_pts + 1)
-    if time is not None:
-        sample_years = float(time.jyear) + offsets / 365.25
-        if (
-            np.nanmin(sample_years) >= 1972.0
-            and np.nanmax(sample_years) <= 2100.0
-        ):
-            try:
-                from astropy import units as u
-                samples = time + offsets * u.day
-                pos = np.asarray(
-                    _body_positions_au(name, samples, ephemeris=ephemeris),
-                    dtype=float,
-                )
-                return pos[:, 0], pos[:, 1], pos[:, 2]
-            except Exception:
-                pass
-
-    pos = _fallback_planet_positions_au(name, t_jd + offsets)
+def _orbit_trail_au(name, t_jd, time=None, ephemeris="builtin", n_pts=720):
+    from astropy import units as u
+    from astropy.time import Time
+    epoch = time if time is not None else Time(t_jd, format="jd", scale="utc")
+    period_days = 365.25 * math.sqrt(_PLANETS[name]["a"] ** 3)
+    if ephemeris == "builtin" and epoch.tdb.jd >= 2415021.5:
+        # epv00 (used for the barycentric Sun) is validated over 1900–2100.
+        # Show a partial historical trail for Neptune rather than silently
+        # changing to a differently oriented Kepler approximation before 1900.
+        period_days = min(period_days, float(epoch.tdb.jd - 2415021.5))
+    samples = epoch.tdb + np.linspace(-period_days, 0.0, n_pts + 1) * u.day
+    pos = _body_positions_au(name, samples, ephemeris=ephemeris)
     return pos[:, 0], pos[:, 1], pos[:, 2]
 
 
@@ -164,7 +135,7 @@ def _view_radius_au(cfg: dict, full_content_radius_au: float) -> float:
 
 def _camera_eye_from_cfg(cfg: dict):
     value = cfg.get("camera_eye", cfg.get("sol_camera_eye"))
-    default = dict(x=0.75, y=-0.95, z=0.09)
+    default = dict(x=0.75, y=-0.95, z=0.65)
     if value is None:
         return default
     if isinstance(value, dict):
@@ -198,9 +169,10 @@ def _scene_time(cfg: dict):
 
 # ── Figure builder ────────────────────────────────────────────────────────────
 
+@_with_low_spec
 def build_figure(cfg: dict) -> go.Figure:
-    # Resolve epoch. Planet positions are heliocentric: Astropy barycentric
-    # body positions minus the Astropy Sun position, with a Kepler fallback.
+    # Resolve epoch; every body and trail uses geometric heliocentric
+    # positions in the same mean J2000 ecliptic axes.
     d, t_jd, time = _scene_time(cfg)
     ephemeris = str(cfg.get("sol_ephemeris", "builtin"))
 
@@ -215,34 +187,15 @@ def build_figure(cfg: dict) -> go.Figure:
     show_moon     = bool(cfg.get("sol_show_moon",     True))
     scale_au      = float(cfg.get("planet_scale",     1.0))
     sun_scale     = float(cfg.get("sun_scale",        1.0))
-    star_mag_limit = float(cfg.get("star_mag_limit", 6.5))
-    catalog_path = cfg.get("star_catalog")
     sphere_res    = int(cfg.get("sphere_resolution",  50))
     bg            = cfg.get("bg_color", "#060810")
     outer_a = max((p["a"] for n, p in _PLANETS.items() if show_planets.get(n)), default=1.5)
     full_content_radius_au = max(outer_a * 1.25, 3.0)
     view_radius_au = _view_radius_au(cfg, full_content_radius_au)
-    star_radius_au = view_radius_au * float(cfg.get("star_backdrop_radius_factor", 0.98))
     camera_eye = _camera_eye_from_cfg(cfg)
 
-    fig = go.Figure()
-
-    # ── Starfield ─────────────────────────────────────────────────────────────
-    # Stars use real catalogue directions, projected onto the back half of the
-    # current view shell so the default Mars view reads as a distant backdrop.
-    if show_stars:
-        for trace in starfield_traces(
-            star_radius_au,
-            when=time if time is not None else t_jd,
-            frame="gcrf",
-            mag_limit=star_mag_limit,
-            opacity=0.72,
-            fallback_random=True,
-            catalog_path=catalog_path,
-            hemisphere_away_from=(camera_eye["x"], camera_eye["y"], camera_eye["z"]),
-        ):
-            trace.showlegend = True
-            fig.add_trace(trace)
+    caption = scale_caption(cfg)
+    fig = SolarFigure()
 
     # ── Ecliptic grid — faint teal reference circles (radii 1/5/10/20/30 AU)
     # + 12 radial spokes every 30°, all centred on the Sun. Purely a visual
@@ -274,7 +227,8 @@ def build_figure(cfg: dict) -> go.Figure:
             ))
 
     # ── Sun ───────────────────────────────────────────────────────────────────
-    for t in make_sun_traces(r_display_au=_R_AU["Sun"] * sun_scale):
+    for t in make_sun_traces(r_display_au=_R_AU["Sun"] * sun_scale,
+                             show_glow=bool(cfg.get("sun_glow", False))):
         fig.add_trace(t)
 
     # ── Planets ───────────────────────────────────────────────────────────────
@@ -328,16 +282,14 @@ def build_figure(cfg: dict) -> go.Figure:
             for t in make_saturn_ring_traces(pos, scale_au=scale_au):
                 fig.add_trace(t)
 
-    # ── Moon ──────────────────────────────────────────────────────────────────
-    # Was a fixed offset at a constant angle regardless of date (and smaller
-    # than Earth's own display radius, so it rendered inside the Earth
-    # sphere). Now a real position for t_jd, shaded like the other bodies.
+    # Moon uses the same ephemeris and ecliptic frame as Earth.
     if show_moon and earth_pos is not None:
-        for t in make_moon_traces(earth_pos, t_jd, show_label=show_labels):
+        for t in make_moon_traces(earth_pos, time, show_label=show_labels,
+                                  orbit_scale=float(cfg.get("moon_orbit_scale", 1.0)),
+                                  scale_au=scale_au, ephemeris=ephemeris, n=sphere_res):
             fig.add_trace(t)
 
     # ── Layout ────────────────────────────────────────────────────────────────
-    T_yr = (t_jd - 2_451_545.0) / 365.25
     rng = view_radius_au
 
     fig.update_layout(
@@ -360,15 +312,17 @@ def build_figure(cfg: dict) -> go.Figure:
         font=dict(color="#C8D8E8"),
         title=dict(
             text=(
-                f"Heliocentric Solar System — Mars view — "
-                f"{2000+T_yr:.3f} ({ephemeris} ephemeris)"
+                f"Heliocentric Solar System — {d.isoformat()} ({ephemeris})"
+                f"<br><sup>J2000 ecliptic · {caption}</sup>"
             ),
             x=0.5, font=dict(color="#00FF9C", size=14),
         ),
         legend=dict(bgcolor="rgba(0,0,0,0.5)", bordercolor="#333",
                     borderwidth=1, font=dict(size=10)),
-        margin=dict(l=0, r=0, t=50, b=0),
+        margin=dict(l=0, r=0, t=70, b=0),
     )
+    if show_stars:
+        add_sky(fig, cfg, time)
     return fig
 
 
@@ -383,12 +337,11 @@ DEFAULT_CFG = dict(
     star_mag_limit=6.5,
     view_radius_au="mars",
     mars_view_margin=1.10,
-    star_backdrop_radius_factor=0.98,
     camera_projection="perspective",
     star_catalog=None,
     sol_ephemeris="builtin",
     planet_scale=1.0,
-    sun_scale=1.0,
+    sun_scale=1.0, moon_orbit_scale=1.0, sun_glow=False,
     sphere_resolution=50,
     bg_color="#060810",
     output_dir=str(output_root() / "figures"),
@@ -411,11 +364,11 @@ if __name__ == "__main__":
           f"{cfg['sol_year']}-{cfg['sol_month']:02d} ...")
     fig = build_figure(cfg)
 
-    html_path = output_dir / "solar_view_plot.html"
+    html_path = output_dir / "solar_system_plot.html"
     fig.write_html(str(html_path))
     print(f"[solar_view_plot] Saved → {html_path}")
 
-    jpg_path = output_dir / "solar_view_plot.jpg"
+    jpg_path = output_dir / "solar_system_plot.jpg"
     try:
         fig.write_image(str(jpg_path), width=1920, height=1080, scale=2)
         print(f"[solar_view_plot] Saved → {jpg_path}")
