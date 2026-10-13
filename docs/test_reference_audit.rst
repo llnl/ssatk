@@ -249,9 +249,9 @@ Workflow contracts outside the numerical suite
 The original testing policy excludes rendering and demo execution from
 ``tests/``. Publishing/export checks therefore run separately in the gallery
 workflow with ``python -m pytest scripts/tests -q``. The default pytest command
-selects ``tests/`` explicitly in ``pyproject.toml``. The scene follow-up has
-658 core cases (103 files, 389 functions) and 155 workflow cases (4 files,
-29 functions): 813 total. The browser contract runs in gallery CI and skips
+selects ``tests/`` explicitly in ``pyproject.toml``. The current gallery follow-ups have
+658 core cases (103 files, 389 functions) and 157 workflow cases (5 files,
+31 functions): 815 total. The browser contract runs in gallery CI and skips
 locally unless ``SSATK_BROWSER_TESTS=1`` is set. Relative to the preceding
 792-case handoff, this adds eight numerical and ten rendering/export cases.
 The subsequent gallery dependency fix adds three publishing cases: both CLI
@@ -298,3 +298,10 @@ circular trails under playback decimation, and 60-second frame timing.
 ``scripts/tests/test_solar_sky_browser.py`` uses two prescribed opposite rays
 and a green occluder: it checks actual browser pixels on camera reversal and
 resize. It does not treat file existence as evidence of rendering correctness.
+
+The full-period divergence example adds two demo regressions in
+``scripts/tests/test_divergence_gallery.py``. A circular GEO solution checks
+all nominal epochs analytically; SSAPy's separate Kepler solver checks every
+perturbed DOP853 trajectory. Absolute budgets are 1 cm and 1 micrometre/s over
+one period, with a 0.5 microsecond epoch-span allowance and at most 120 seconds
+between samples. These validate synthetic point-mass dynamics, not flight data.
