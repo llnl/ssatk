@@ -40,8 +40,8 @@ PLOT_ORDER = (
 
 CAPTIONS = {
     "artemis_benchmark_cislunar_context.png": "Cislunar context for the Artemis II/Orion benchmark; the trajectory is compared with JPL Horizons state-vector data.",
-    "artemis_benchmark_position_error.png": "Artemis II/Orion position residuals for the SSAPy Kepler propagation against the JPL Horizons reference states.",
-    "artemis_benchmark_velocity_error.png": "Artemis II/Orion velocity residuals for the SSAPy Kepler propagation against the JPL Horizons reference states.",
+    "artemis_benchmark_position_error.png": "Artemis II/Orion position residuals for the SSATK Kepler propagation against the JPL Horizons reference states.",
+    "artemis_benchmark_velocity_error.png": "Artemis II/Orion velocity residuals for the SSATK Kepler propagation against the JPL Horizons reference states.",
     "artemis_benchmark_burn_events.png": "Executed Artemis II/Orion burn matches from the NASA mission timeline overlaid on position and velocity residuals. Vertical lines mark the nearest Horizons sample used for each burn synchronization.",
     "gmat_two_body_position_error.png": "Short two-body position residuals: SSATK DOP853 versus GMAT R2026a RungeKutta89 using an Earth degree/order-0 point mass.",
     "gmat_two_body_velocity_error.png": "Short two-body velocity residuals: SSATK DOP853 versus GMAT R2026a RungeKutta89 using an Earth degree/order-0 point mass.",
@@ -102,7 +102,7 @@ def _summary_lines(summaries: dict[str, dict]) -> list[str]:
         ephemerides = nbody.get("ephemeris_sources", {})
         lines.append(
             "N-body ephemerides: "
-            f"SSAPy {ephemerides.get('ssatk', 'unknown')}, "
+            f"SSATK {ephemerides.get('ssatk', 'unknown')}, "
             f"GMAT {ephemerides.get('gmat', 'unknown')}, "
             f"Orekit {ephemerides.get('orekit', 'unknown')}."
         )

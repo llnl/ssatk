@@ -758,7 +758,7 @@ def plot_magfield_3d(
     t=None,
     r_units="auto",
     v_units="auto",
-    orbit_name="SSAPy orbit",
+    orbit_name="SSATK orbit",
     orbit_color="#ff4d4d",
     orbit_width=5,
     split_topology=True,

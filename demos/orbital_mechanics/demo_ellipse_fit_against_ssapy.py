@@ -146,19 +146,19 @@ def main(make_figures=None, fast=None, verbose=None):
     labels = [
         "ellipse_fit",
         "keplerian_prop",
-        "ssapy_prop",
+        "SSATK numerical",
         "best_prop",
-        "backward(ssapy_prop)",
+        "SSATK numerical, backward",
     ]
 
     if make_figures:
-        save_path = figpath("testing_ellipse_fit_vs_ssapy.jpg")
-        # gallery-call: testing_ellipse_fit_vs_ssapy.jpg
+        save_path = figpath("testing_ellipse_fit_vs_ssatk.jpg")
+        # gallery-call: testing_ellipse_fit_vs_ssatk.jpg
         if _supports_kwarg(orbit_plot, "labels"):
             orbit_plot(
                 r_list,
                 t_list,
-                title="Ellipse-fit vs SSAPy (keplerian, ssapy_prop, best_prop, backward)",
+                title="SSATK ellipse-fit and propagation comparison",
                 save_path=save_path,
                 frame="gcrf",
                 labels=labels,
@@ -167,14 +167,14 @@ def main(make_figures=None, fast=None, verbose=None):
             orbit_plot(
                 r_list,
                 t_list,
-                title="Ellipse-fit vs SSAPy (keplerian, ssapy_prop, best_prop, backward)",
+                title="SSATK ellipse-fit and propagation comparison",
                 save_path=save_path,
                 frame="gcrf",
             )
         # gallery-end
 
-        save_dash = figpath("testing_ellipse_fit_vs_ssapy_dashboard.jpg")
-        # gallery-call: testing_ellipse_fit_vs_ssapy_dashboard.jpg
+        save_dash = figpath("testing_ellipse_fit_vs_ssatk_dashboard.jpg")
+        # gallery-call: testing_ellipse_fit_vs_ssatk_dashboard.jpg
         if _supports_kwarg(groundtrack_dashboard, "labels"):
             groundtrack_dashboard(
                 r_list,
@@ -199,9 +199,9 @@ def main(make_figures=None, fast=None, verbose=None):
         ]
         names = [
             "keplerian_prop vs ellipse_fit",
-            "ssapy_prop vs ellipse_fit",
+            "SSATK numerical vs ellipse_fit",
             "best_prop vs ellipse_fit",
-            "backward(ssapy_prop) vs reverse(ellipse_fit)",
+            "SSATK backward vs reversed ellipse_fit",
         ]
 
         dash_styles = [

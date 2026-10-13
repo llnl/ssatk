@@ -480,7 +480,7 @@ def _draw_ladder_key_two_columns(
 
 def make_accel_ladder_dashboard_figures(
     calc,
-    plot_title="SSAPy accel ladder divergences",
+    plot_title="SSATK accel ladder divergences",
     show_legend=True,
     epsilon_m=1e-3,
     max_error_m=1e7,
@@ -640,7 +640,7 @@ def compare_models(
     assume_times="auto",
     ode_kwargs=None,
     reference=None,
-    plot_title="SSAPy accel ladder divergences",
+    plot_title="SSATK accel ladder divergences",
     show_legend=True,
     epsilon_m=1e-3,
     max_error_m=1e7,

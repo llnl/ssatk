@@ -104,7 +104,7 @@ GALLERY_GROUPS = (
         "data_io/demo_sphere_generation",
     )),
     GalleryGroup("references", "Reference comparisons",
-                 "Compare selected results with SSAPy, external propagators, or reference "
+                 "Compare SSATK propagation methods with external propagators or reference "
                  "trajectories. A successful run alone does not establish physical accuracy; "
                  "inspect each comparison's assumptions and residuals.", (
         "orbital_mechanics/demo_ellipse_fit_against_ssapy",
@@ -158,10 +158,10 @@ def gallery_title(name: str, title: str) -> str:
         "demo_gifify": "Export an animated GIF",
         "demo_sun_view": "Sun direction and day/night shading",
         "demo_globe_orbit_daynight": "Earth orbit with day/night shading",
-        "demo_groundtrack_accuracy": "Transfer ground track versus SSAPy",
-        "demo_ellipse_fit_against_ssapy": "Ellipse-fit propagation versus SSAPy",
+        "demo_groundtrack_accuracy": "SSATK transfer and Kepler propagation",
+        "demo_ellipse_fit_against_ssapy": "SSATK ellipse-fit and propagation comparison",
         "demo_compare_models": "Acceleration model comparisons",
-        "demo_ssapy_orbits": "Orbit creation and sampling with SSAPy",
+        "demo_ssapy_orbits": "Orbit creation and sampling with SSATK",
         "demo_build_dashboard": "Build a dashboard from synthetic data",
         "demo_ellipse_fit": "Transfer ellipse fitting and checks",
         "demo_station_keeping": "Perturbed orbit versus Kepler reference",
@@ -169,7 +169,7 @@ def gallery_title(name: str, title: str) -> str:
     if stem in overrides:
         return overrides[stem]
     words = stem.removeprefix("demo_").split("_")
-    acronyms = {"ssapy": "SSAPy", "gcrf": "GCRF", "ntw": "NTW", "itrf": "ITRF",
+    acronyms = {"ssapy": "SSATK", "ssatk": "SSATK", "gcrf": "GCRF", "ntw": "NTW", "itrf": "ITRF",
                 "hdf5": "HDF5", "api": "API", "nbody": "N-body", "rv": "state vectors",
                 "orekit": "Orekit", "artemis": "ARTEMIS", "lambertian": "Lambertian",
                 "moon": "Moon", "van": "Van", "allen": "Allen"}

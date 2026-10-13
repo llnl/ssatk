@@ -1187,7 +1187,7 @@ SATELLITES, _SATELLITES_SOURCE = _load_default_satellites()
 # ═════════════════════════════════════════════════════════════════════════════
 
 def select_satellites_from_args():
-    parser = argparse.ArgumentParser(description="SSAPy point analysis", add_help=False)
+    parser = argparse.ArgumentParser(description="SSATK point analysis", add_help=False)
     parser.add_argument("--sats", type=str, default=None,
                         help="Comma-separated satellite names or indices, e.g. "
                              "--sats ISS,Hubble  or  --sats 0,3,7")
@@ -1290,7 +1290,7 @@ def resolve_satellites():
 # ═════════════════════════════════════════════════════════════════════════════
 
 def get_point_from_args():
-    parser = argparse.ArgumentParser(description="SSAPy point analysis")
+    parser = argparse.ArgumentParser(description="SSATK point analysis")
     parser.add_argument("--lat",  type=float, default=None)
     parser.add_argument("--lon",  type=float, default=None)
     parser.add_argument("--name", type=str,   default=None)
@@ -1725,7 +1725,7 @@ def _site_folder_name(site_name, lat, lon):
 
 
 def main():
-    print("\n-- SSAPy Analysis -- Multiple Satellites, Any Point -----")
+    print("\n-- SSATK Analysis -- Multiple Satellites, Any Point -----")
 
     # Satellites asked first now — was after resolve_point() before.
     selected = resolve_satellites()

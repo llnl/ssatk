@@ -137,21 +137,21 @@ def main(make_figures=None, fast=None):
     # Plot: GCRF and lunar frames — save with figpath
     # ------------------------------------------------------------
     if make_figures:
-        # gallery-call: ssapy_orbit_gcrf.jpg
+        # gallery-call: ssatk_orbit_gcrf.jpg
         fig, _ax = orbit_plot(r, times, frame="gcrf")
         # gallery-end
-        out_gcrf = figpath("ssapy_orbit_gcrf")
+        out_gcrf = figpath("ssatk_orbit_gcrf")
         figsave(fig, save_path=out_gcrf)
 
-        # gallery-call: ssapy_orbit_lunar.jpg
+        # gallery-call: ssatk_orbit_lunar.jpg
         fig, _ax = orbit_plot(r, times, frame="lunar")
         # gallery-end
-        out_lunar = figpath("ssapy_orbit_lunar")
+        out_lunar = figpath("ssatk_orbit_lunar")
         figsave(fig, save_path=out_lunar)
 
         # Ground track
-        # gallery-call: ssapy_ground_track.jpg
-        groundtrack_plot(r, times, save_path=figpath("ssapy_ground_track"))
+        # gallery-call: ssatk_ground_track.jpg
+        groundtrack_plot(r, times, save_path=figpath("ssatk_ground_track"))
         # gallery-end
 
     # ------------------------------------------------------------

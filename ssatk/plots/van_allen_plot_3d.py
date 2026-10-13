@@ -178,7 +178,7 @@ def plot_van_allen_3d(
     t=None,
     r_units="auto",
     v_units="auto",
-    orbit_name="SSAPy orbit",
+    orbit_name="SSATK orbit",
     orbit_color="#ff4d4d",
     orbit_width=5,
     pitch_angle_deg=25.0,

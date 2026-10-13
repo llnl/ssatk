@@ -236,7 +236,7 @@ def _write_case_plot(case: dict, residuals: dict[str, np.ndarray], out_dir: Path
     axes[1].set_xlabel("Elapsed time [hr]")
     axes[0].set_title(
         f"SSATK n-body residuals: {case['label']} — {case['mode_label']}\n"
-        "Earth μ = GMAT JGM2; SSAPy / GMAT / Orekit DE430"
+        "Earth μ = GMAT JGM2; SSATK / GMAT / Orekit DE430"
     )
     for axis in axes:
         axis.grid(True, alpha=0.3)
@@ -271,7 +271,7 @@ def _write_summary_plot(cases: list[dict], out_dir: Path) -> str:
     fig.text(
         0.5,
         0.01,
-        "Earth μ = GMAT JGM2; SSAPy / GMAT / Orekit DE430",
+        "Earth μ = GMAT JGM2; SSATK / GMAT / Orekit DE430",
         ha="center",
         fontsize=9,
     )
