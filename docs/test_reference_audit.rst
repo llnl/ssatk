@@ -316,3 +316,26 @@ span and the default 27.3217-day mean lunar revolution from NASA's Moon Fact
 Sheet. Both decode to the requested playback length; the physical endpoint
 allows 1 microsecond for GPS rounding and path sampling is at most one hour.
 This adds one parametrized case, not another test function or propagation oracle.
+
+
+Star-finder extension
+----------------------
+
+``tests/test_star_tracker.py`` adds five tests with literal quarter-turn
+rotations, exactly intersecting finite-distance rays, loss of observability
+for parallel rays, analytic tangent motion at a celestial pole, and the
+Moon viewer's epoch/rotation contract. The new Cartesian proper-motion
+calculation avoids division by cos(Dec); the former linear RA/Dec update
+was displaced by up to 0.1492 arcsec from Astropy's zero-distance-information
+space-motion model for the 83,123 stellar rows at 2026-10-12. This is a
+comparison of calculations on the same catalogue, not independent
+validation of the original astrometric measurements.
+
+``scripts/tests/test_star_finder_demo.py`` adds two tests: an end-to-end
+noise-free simulation compared with a separate analytic circular orbit and
+prescribed attitude/position truth, and explicit catalogue-source/unit
+contracts. The simulation's approximate aberration correction uses a
+100-km/50-m/s coarse orbit offset, so a 0.1-arcsec attitude and 2-m position
+budget is retained even with zero centroid noise. Full-cycle DOP853
+positions must agree with the analytic circle within 2 mm. Rendering and
+file metadata contracts are not counted as physical validation.
