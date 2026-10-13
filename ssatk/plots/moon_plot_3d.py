@@ -1,42 +1,23 @@
-"""
-moon_plot_3d.py — Standalone 3D Moon surface plot with star background
-======================================================================
-Renders the Moon as a textured 3D sphere with accurate star field,
-Lagrange points, optional satellite orbit tracks, AND a real Sun model
-that shades the Moon/Earth textures based on true solar ephemeris.
-
-Drop into:
-  ~/ssatk/ssatk/plots/moon_plot_3d.py
-
-Usage:
-    from ssatk.plots.moon_plot_3d import moon_plot_3d
-    fig, ax = moon_plot_3d(r=r, t=t, save_path="moon_orbit.jpg")
-"""
-
+"""Dated, textured lunar scenes in Moon-centred inertial or rotating axes."""
 import os
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from astropy.time import Time
 from PIL import Image
+from ssapy import get_body
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
-from .starfield import add_starfield
 from .plotutils import valid_orbits, figsave
+from ._textures import earth_texture_path
+from ._globe_scene import earth_to_scene
+from .sun_mpl import get_sun_position
+from .sun_render import render_sun, background_sun_radius
 from ..constants import MOON_RADIUS, EARTH_RADIUS
-from ..coordinates import gcrf_to_lunar_fixed
-
-# Real Sun ephemeris + texture shading (diffuse lighting on the Moon/Earth)
-from .sun_mpl import (
-    sun_direction_in_frame,
-    apply_shading,
-)
-# Dedicated Sun renderer (limb-darkened, camera-angle-based) + light
-# projection helper that ties the Sun's position to the shading above
-from .sun_render import (
-    render_sun,
-    background_sun_radius,
-)
+from ..coordinates import gcrf_to_lunar, gcrf_to_lunar_fixed
+from ..coordinates.lunar import lunar_body_rotation
 
 
 def _split_orbit_segments_for_bodies(xyz, bodies, elev_deg, azim_deg):
@@ -55,581 +36,254 @@ def _split_orbit_segments_for_bodies(xyz, bodies, elev_deg, azim_deg):
         relative = midpoints - center
         depth = relative @ camera
         perpendicular = relative - depth[:, None] * camera
+        hidden |= np.einsum("ij,ij->i", relative, relative) < radius**2
         hidden |= (depth < 0.0) & (np.einsum("ij,ij->i", perpendicular, perpendicular) < radius**2)
     return segments[hidden], segments[~hidden]
 
 
 def _ssapy_texture(name):
-    """Return a base SSAPy texture path, or None if unavailable."""
-    try:
-        from ssapy.utils import find_file
-        return find_file(name, ext=".png")
-    except Exception:
-        return None
+    """Resolve installed textures without downloading anything."""
+    if name == "earth":
+        try:
+            return earth_texture_path()
+        except FileNotFoundError:
+            return None
+    from .starfield import find_data_file
+    return find_data_file("moon.png")
 
 
+def _textured_body(ax, center, radius, path, rotation, sun_hat, *,
+                   n=180, ambient=0.22, diffuse=0.78, color=0.6):
+    """North-up -180..180 degree map on a rotated spherical mesh.
 
-def _textured_moon(ax, cx, cy, cz, radius, moon_img_path, n=64, sun_hat=None,
-                    ambient=0.22, diffuse=0.78, zorder=10):
-    """Render Moon as a textured 3D sphere, optionally shaded by sun_hat.
-
-    sun_hat : array-like (3,), unit vector toward the Sun in the same
-        local frame as (cx, cy, cz) — i.e. lunar-fixed frame, centred on
-        the Moon. If None, texture is rendered unshaded (original behavior).
+    Lunar map coordinates approximate the DE440 principal-axis frame (the
+    mean-Earth map-frame offset is sub-kilometre). Colours are illustrative
+    ambient + Lambert shading, not calibrated photometry.
     """
-    try:
-        img     = Image.open(moon_img_path).convert("RGB")
-        img     = img.resize((512, 256), Image.LANCZOS)
-        img_arr = np.array(img) / 255.0
-
-        phi   = np.linspace(0,    np.pi,  n)
-        theta = np.linspace(0, 2*np.pi, 2*n)
-        PHI, THETA = np.meshgrid(phi, theta)
-
-        x = cx + radius * np.sin(PHI) * np.cos(THETA)
-        y = cy + radius * np.sin(PHI) * np.sin(THETA)
-        z = cz + radius * np.cos(PHI)
-
-        row = np.clip((PHI   / np.pi    * (img_arr.shape[0]-1)).astype(int),
-                      0, img_arr.shape[0]-1)
-        col = np.clip((THETA / (2*np.pi) * (img_arr.shape[1]-1)).astype(int),
-                      0, img_arr.shape[1]-1)
-
-        if sun_hat is not None:
-            facecolors = apply_shading(img_arr, row, col, PHI, THETA, sun_hat,
-                                        ambient=ambient, diffuse=diffuse)
-        else:
-            facecolors = img_arr[row, col]
-
-        ax.plot_surface(x, y, z, facecolors=facecolors,
-                        rstride=1, cstride=1,
-                        linewidth=0, antialiased=True, zorder=zorder,
-                        shade=False)
-        return True
-    except Exception as e:
-        print(f"[moon_plot_3d] Moon texture failed: {e}")
-        return False
+    width, height = n * 2, n
+    if path is None:
+        rgb = np.full((height, width, 3), color)
+    else:
+        with Image.open(path) as image:
+            rgb = np.asarray(image.convert("RGB").resize(
+                (width, height), Image.Resampling.BOX), dtype=float) / 255.
+    lon, lat = np.meshgrid(np.linspace(-np.pi, np.pi, width + 1),
+                          np.linspace(np.pi/2, -np.pi/2, height + 1))
+    vertices = np.stack((np.cos(lat)*np.cos(lon), np.cos(lat)*np.sin(lon),
+                         np.sin(lat)), axis=-1) @ rotation.T
+    quads = np.stack((vertices[:-1, :-1], vertices[:-1, 1:],
+                      vertices[1:, 1:], vertices[1:, :-1]), axis=2).reshape(-1, 4, 3)
+    colors = rgb.reshape(-1, 3)
+    if sun_hat is not None:
+        normals = quads.mean(axis=1)
+        normals /= np.linalg.norm(normals, axis=1)[:, None]
+        colors = np.clip(colors * (ambient + diffuse * np.maximum(0, normals @ sun_hat))[:, None], 0, 1)
+    artist = Poly3DCollection(center + radius * quads, facecolors=colors,
+                              edgecolors="none", linewidths=0, antialiased=False, zorder=10)
+    ax.add_collection3d(artist)
+    return artist
 
 
-def _textured_earth(ax, cx, cy, cz, radius, earth_img_path, n=128, sun_hat=None,
-                     ambient=0.22, diffuse=0.78, zorder=10):
-    """Render Earth as a small textured sphere, optionally shaded by sun_hat.
+def _scene_stars(ax, rotation, epoch, elev, azim, mag_limit):
+    """Catalogue sky behind the scene, in a 120-degree gnomonic window.
 
-    sun_hat : array-like (3,), unit vector toward the Sun in the same
-        local frame as (cx, cy, cz) — i.e. lunar-fixed frame, centred on
-        Earth's plotted position. If None, texture is unshaded.
+    The orthographic orbital diagram has no physical field of view. This
+    separate sky projection supplies directional context, not an astrometric
+    camera model. No random fallback or finite-distance star sphere is used.
     """
-    try:
-        img     = Image.open(earth_img_path).convert("RGB")
-        img     = img.resize((1024, 512), Image.LANCZOS)
-        img_arr = np.array(img) / 255.0
-
-        phi   = np.linspace(0,    np.pi,  n)
-        theta = np.linspace(0, 2*np.pi, 2*n)
-        PHI, THETA = np.meshgrid(phi, theta)
-
-        x = cx + radius * np.sin(PHI) * np.cos(THETA)
-        y = cy + radius * np.sin(PHI) * np.sin(THETA)
-        z = cz + radius * np.cos(PHI)
-
-        row = np.clip((PHI   / np.pi    * (img_arr.shape[0]-1)).astype(int),
-                      0, img_arr.shape[0]-1)
-        col = np.clip((THETA / (2*np.pi) * (img_arr.shape[1]-1)).astype(int),
-                      0, img_arr.shape[1]-1)
-
-        if sun_hat is not None:
-            facecolors = apply_shading(img_arr, row, col, PHI, THETA, sun_hat,
-                                        ambient=ambient, diffuse=diffuse)
-        else:
-            facecolors = img_arr[row, col]
-
-        ax.plot_surface(x, y, z, facecolors=facecolors,
-                        rstride=1, cstride=1,
-                        linewidth=0, antialiased=True, zorder=zorder,
-                        shade=False)
-        return True
-    except Exception as e:
-        print(f"[moon_plot_3d] Earth texture failed: {e}")
-        return False
+    from .starfield import _load_stars, _to_datetime
+    stars = _load_stars(mag_limit=mag_limit, when=_to_datetime(epoch), frame="gcrf")
+    if stars is None:
+        return
+    el, az = np.radians([elev, azim])
+    forward = -np.array([np.cos(el)*np.cos(az), np.cos(el)*np.sin(az), np.sin(el)])
+    right = np.array([-np.sin(az), np.cos(az), 0.])
+    up = np.cross(right, forward)
+    vectors = stars['v'] @ rotation.T
+    depth = vectors @ forward
+    visible = depth > 0
+    vectors, depth = vectors[visible], depth[visible]
+    scale = np.tan(np.radians(60))
+    xy = np.column_stack((vectors @ right, vectors @ up)) / (depth[:, None]*scale)
+    mask = np.all(np.abs(xy) < 1, axis=1)
+    bg = ax.figure.add_axes(ax.get_position(), zorder=-1)
+    bg.scatter(xy[mask, 0], xy[mask, 1], s=stars['sizes'][visible][mask],
+               c=stars['rgb'][visible][mask], alpha=.65, linewidths=0)
+    bg.set(xlim=(-1, 1), ylim=(-1, 1))
+    bg.set_axis_off()
+    ax.patch.set_alpha(0)
 
 
 def moon_plot_3d(r=None, t=None, title='', figsize=(10, 10),
-                 save_path=False, show=False,
-                 elev=30, azim=45,
-                 show_lagrange=True,
-                 show_stars=True,
-                 show_sun=True,
-                 show_sun_graphic=None,
-                 show_earth=None,
-                 mag_limit=5.5,
-                 sun_azimuth_deg=None,
-                 sun_elevation_deg=None,
-                 shade_ambient=0.22,
-                 shade_diffuse=0.78,
-                 scene_pad=0.30,
-                 view_zoom=1.0,
-                 physical_body_sizes=False,
-                 r_frame='gcrf'):
+                 save_path=False, show=False, elev=30, azim=45,
+                 show_lagrange=True, show_stars=True, show_sun=True,
+                 show_sun_graphic=None, show_earth=None, mag_limit=5.5,
+                 sun_azimuth_deg=None, sun_elevation_deg=None,
+                 shade_ambient=0.22, shade_diffuse=0.78,
+                 scene_pad=0.30, view_zoom=1.0,
+                 physical_body_sizes=False, r_frame='gcrf', reference_time=None):
+    """Plot lunar trajectories and a textured Moon at a dated reference epoch.
+
+    ``r`` contains positions in metres; ``t`` contains absolute GPS seconds or
+    Astropy Time. GCRF input is Earth-centred and transformed at every sample
+    into Moon-centred Earth-Moon rotating axes (+X away from Earth). Input
+    ``r_frame='moon_centered'`` is already Moon-centred in GCRF-aligned inertial
+    axes and is used unchanged. These are distinct from the lunar body axes.
+
+    ``reference_time`` (scalar Time or GPS seconds) sets the texture, Earth and
+    lighting snapshot. Otherwise use the midpoint of the trajectory's time
+    extent, standalone ``t``, or the current time for an undated surface view.
+    Trajectories require explicit times. Multi-epoch tracks are shown with
+    body textures and illumination frozen at this stated reference epoch.
+
+    Camera angles are degrees. Equal-axis orthographic limits always contain
+    the Moon and tracks. ``show_earth=True`` expands the limits to include
+    Earth; None includes it only if already in the view; False omits it.
+    ``scene_pad`` is a nonnegative fractional margin; ``view_zoom`` is positive.
+    ``physical_body_sizes=True`` uses physical radii; False permits enlarged
+    bodies in wide views, with their display scale printed on the figure.
+
+    ``show_sun`` enables ephemeris shading. ``show_sun_graphic`` defaults to
+    False: if requested, the labelled Sun symbol indicates direction only,
+    without physical distance or size. Optional solar azimuth/elevation override
+    ephemeris lighting in scene axes. Ambient/diffuse terms are display gains.
+    Stars are a separate catalogue sky projection, not a camera measurement.
+    Lagrange points are approximate markers in rotating axes, shown only when
+    inside the view. Return the Matplotlib ``(fig, ax)``; optionally save/show.
     """
-    3D Moon surface plot with star background, real Sun shading, and
-    optional orbit tracks.
-
-    Parameters
-    ----------
-    r : ssapy.Orbit, numpy array, or list, optional
-        SSAPy ``Orbit``/``Orbit.at`` object or satellite position vectors in
-        GCRF [m].  Raw ``ssapy.rv`` position output can be passed directly.
-    t : numpy array, astropy Time, or list, optional
-        Times corresponding to r [GPS seconds] or Astropy Time samples.
-    title : str
-        Plot title.
-    figsize : tuple
-        Figure size.
-    save_path : str or False
-        Path to save figure.
-    show : bool
-        Display figure interactively.
-    elev : float
-        Camera elevation [degrees].
-    azim : float
-        Camera azimuth [degrees].
-    show_lagrange : bool
-        Show Earth-Moon Lagrange points.
-    show_stars : bool
-        Show star background.
-    show_earth : bool or None, default None
-        Whether to draw Earth. None (default) keeps the original
-        auto-by-zoom-level behavior: Earth is only drawn when the scene's
-        plot_range exceeds 100,000 km, since at tighter zoom levels
-        (e.g. a close-up on a small portion of cislunar space) Earth
-        would normally fall outside any reasonable view anyway. Pass
-        True to force Earth to render regardless of zoom level (e.g. for
-        a close-up that should still show Earth for context), or False
-        to force it off.
-    show_sun : bool
-        Compute real solar ephemeris, shade Moon/Earth textures by true
-        illumination.
-    show_sun_graphic : bool or None, default None
-        Draw the Sun sphere. ``None`` preserves the historical behavior and
-        follows ``show_sun``; set ``False`` to retain solar illumination
-        without a visible Sun graphic.
-    mag_limit : float
-        Star magnitude limit.
-    sun_azimuth_deg : float, optional
-        Manually override the Sun's azimuth (degrees, measured from the
-        +x axis toward +y in the lunar-fixed xy-plane), bypassing real
-        ephemeris. Use together with sun_elevation_deg to pose the Sun
-        at any angle — e.g. to illustrate a quarter-phase terminator
-        for a demo, independent of the true current solar position.
-        If only one of sun_azimuth_deg / sun_elevation_deg is given, the
-        other defaults to 0.
-    sun_elevation_deg : float, optional
-        Manually override the Sun's elevation (degrees above the
-        lunar-fixed xy-plane). See sun_azimuth_deg.
-    shade_ambient : float, default 0.22
-        Minimum brightness on the Moon/Earth night side (0-1). Raise this
-        to make the unlit hemisphere less dark; lower it for a starker
-        terminator.
-    shade_diffuse : float, default 0.78
-        Additional brightness added on the sun-facing side (0-1).
-        shade_ambient + shade_diffuse should not exceed 1.0. Together
-        these two act as the "shading percentage" control — e.g.
-        ambient=0.5, diffuse=0.5 gives a soft, low-contrast terminator;
-        ambient=0.05, diffuse=0.95 gives a harsh, high-contrast one.
-    scene_pad : float, default 0.30
-        Fractional padding around the trajectory bounds. Smaller values give
-        a tighter orbit framing.
-    view_zoom : float, default 1.0
-        Camera zoom applied after framing; values above one fill more of the
-        figure canvas.
-    physical_body_sizes : bool, default False
-        Draw Earth and Moon at physical radii rather than applying the
-        visibility enlargement used for wide cislunar scenes.
-    r_frame : str, default 'gcrf'
-        Frame that `r` is already expressed in.
-          'gcrf'          : r is Earth-centered GCRF/equatorial (the
-                            normal case for orbits propagated by
-                            OrbitalState). Transformed into the Moon-fixed
-                            frame internally via gcrf_to_lunar_fixed.
-          'moon_centered' : r is ALREADY Moon-centered (e.g. real JPL
-                            Horizons data queried with CENTER='coord@301'),
-                            in an inertial equatorial-aligned frame. Used
-                            as-is, with NO additional frame transform —
-                            passing Moon-centered data through with
-                            r_frame='gcrf' would incorrectly re-center it
-                            a second time.
-
-    Returns
-    -------
-    fig, ax
-    """
-    from ..orbital_mechanics import lagrange_points_lunar_fixed_frame
-
-    if show_sun_graphic is None:
-        show_sun_graphic = show_sun
-
-    moon_img = _ssapy_texture("moon")
-    earth_img = _ssapy_texture("earth")
-
-    plotcolor = '#000008'
-    textcolor = 'white'
-
-    # ── Figure ────────────────────────────────────────────────────────────────
-    fig = plt.figure(dpi=120, figsize=figsize, facecolor=plotcolor)
-    ax  = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.set_facecolor(plotcolor)
-    fig.patch.set_facecolor(plotcolor)
-    ax.view_init(elev=elev, azim=azim)
-    ax.set_proj_type("ortho")
-    ax.xaxis.pane.set_facecolor(plotcolor)
-    ax.yaxis.pane.set_facecolor(plotcolor)
-    ax.zaxis.pane.set_facecolor(plotcolor)
-    ax.set_axis_off()
-    ax.set_clip_on(False)
-    ax.computed_zorder = False
-
-    # ── Unit conversion ───────────────────────────────────────────────────────
-    unit_conversion = 1e3   # km
-    unit_label      = 'km'
-    moon_r          = MOON_RADIUS / unit_conversion
-
-    # ── Orbit tracks in lunar fixed frame ────────────────────────────────────
-    plot_range = moon_r * 10   # default range around Moon
-    xyz_list   = []
-
-    # Reference epoch for Sun direction (use first orbit time if available,
-    # else "now" via the orbit time array; falls back to t=0 if nothing given)
-    t_ref = None
-
+    if r_frame not in {'gcrf', 'moon_centered'}:
+        raise ValueError("r_frame must be 'gcrf' or 'moon_centered'")
+    if not np.isfinite(scene_pad) or scene_pad < 0 or not np.isfinite(view_zoom) or view_zoom <= 0:
+        raise ValueError("scene_pad must be nonnegative and view_zoom positive")
+    tracks = []
+    epochs = []
     if r is not None:
+        if t is None:
+            raise ValueError("Lunar trajectories require absolute times in t")
         r_list, t_list = valid_orbits(r, t)
-
-        raw_lower = np.array([ np.inf,  np.inf,  np.inf])
-        raw_upper = np.array([-np.inf, -np.inf, -np.inf])
-        _all_t_for_midpoint = []
-
-        for orbit_index in range(len(r_list)):
-            xyz       = r_list[orbit_index] / unit_conversion
-            t_current = t_list[orbit_index]
-            if t_ref is None:
-                t_ref = t_current
-            _all_t_for_midpoint.append(np.atleast_1d(t_current))
-
-            # Transform to lunar fixed frame (only if r is GCRF/Earth-
-            # centered to begin with — already-Moon-centered data, e.g.
-            # real Horizons ephemeris queried with CENTER='coord@301',
-            # is used directly with no further transform).
-            if r_frame == 'moon_centered':
-                xyz_lunar = r_list[orbit_index] / unit_conversion
-            else:
-                xyz_lunar = gcrf_to_lunar_fixed(
-                    r_list[orbit_index], t_current) / unit_conversion
-
-            raw_lower = np.minimum(raw_lower, xyz_lunar.min(axis=0))
-            raw_upper = np.maximum(raw_upper, xyz_lunar.max(axis=0))
-            xyz_list.append((orbit_index, xyz_lunar.copy()))
-
-        # Use the MIDPOINT of the full displayed time range for Sun
-        # direction, not just the first instant. A single static Sun
-        # snapshot is necessarily an approximation for any multi-day
-        # trajectory plotted in the rotating lunar-fixed frame (the
-        # apparent Sun direction in that frame sweeps through a real arc
-        # as the Moon orbits Earth — about 13 deg/day). Freezing on the
-        # very first timestamp made that approximation badly wrong for
-        # anything spanning more than ~1 day; the midpoint at least
-        # centers the error across the displayed range instead of
-        # concentrating it entirely at one end.
-        #
-        # t_current may be either an astropy.time.Time array or a plain
-        # float array of GPS seconds, depending on caller convention.
-        # Time + Time isn't a valid operation (only Time + duration is),
-        # so convert to plain GPS-second floats first, do the midpoint
-        # arithmetic in that numeric space, then hand back a plain float
-        # array — downstream code (sun_direction_in_frame's epoch
-        # reduction) already accepts plain floats just as well as Time.
-        if _all_t_for_midpoint:
-            try:
-                from astropy.time import Time as _Time
-            except ImportError:
-                _Time = None
-            _numeric_arrays = []
-            for _t_arr in _all_t_for_midpoint:
-                if _Time is not None and isinstance(_t_arr, _Time):
-                    _numeric_arrays.append(np.atleast_1d(_t_arr.gps))
-                else:
-                    _numeric_arrays.append(np.atleast_1d(np.asarray(_t_arr, dtype=float)))
-            _t_concat = np.concatenate(_numeric_arrays)
-            t_ref = np.array([(_t_concat.min() + _t_concat.max()) / 2.0])
-
-        plot_range = max(
-            raw_upper[0] - raw_lower[0],
-            raw_upper[1] - raw_lower[1],
-            raw_upper[2] - raw_lower[2],
-            moon_r * 6,
-        )
-
-        # Set axis limits
-        cx_ = (raw_lower[0] + raw_upper[0]) / 2
-        cy_ = (raw_lower[1] + raw_upper[1]) / 2
-        cz_ = (raw_lower[2] + raw_upper[2]) / 2
-        pad = plot_range * scene_pad
-        ax.set_xlim(cx_ - plot_range/2 - pad, cx_ + plot_range/2 + pad)
-        ax.set_ylim(cy_ - plot_range/2 - pad, cy_ + plot_range/2 + pad)
-        ax.set_zlim(cz_ - plot_range/2 - pad, cz_ + plot_range/2 + pad)
-
-        # IMPORTANT: plot_range must reflect the FULL rendered span the
-        # axes actually show (including pad), not just the orbit's raw
-        # bounding-box diagonal. Everything placed below (Sun distance,
-        # Moon's minimum visible size, starfield) is scaled from
-        # plot_range — if it under-counts the pad, those placements end
-        # up smaller/closer than what the axes actually display, and
-        # matplotlib's mplot3d has no true depth perspective to fall back
-        # on: anything placed outside the axis limits doesn't render
-        # "farther away," it just risks rendering outside the canvas
-        # entirely (as seen when the Sun's label got clipped at the
-        # figure edge).
-        plot_range = plot_range + 2 * pad
-
+        for positions, times in zip(r_list, t_list):
+            if not len(positions) or not np.all(np.isfinite(positions)):
+                raise ValueError("r must contain nonempty finite positions")
+            gps = np.atleast_1d(times.gps if isinstance(times, Time) else times).astype(float)
+            epochs.extend(gps)
+            tracks.append(np.asarray(positions if r_frame == 'moon_centered' else
+                                     gcrf_to_lunar_fixed(positions, times)) / 1000.)
+    elif t is not None:
+        epochs.extend(np.atleast_1d(t.gps if isinstance(t, Time) else t).astype(float))
+    if reference_time is not None:
+        epoch = reference_time if isinstance(reference_time, Time) else Time(reference_time, format='gps')
+        if not epoch.isscalar:
+            raise ValueError("reference_time must be scalar")
+    elif epochs:
+        epoch = Time((min(epochs) + max(epochs)) / 2., format='gps')
     else:
-        # No orbit — show Moon with some surrounding space.
-        # IMPORTANT: plot_range must match these axis limits (full span,
-        # not half-span) or the Sun/starfield placement below — which is
-        # scaled from plot_range — will be inconsistent with what the
-        # camera actually sees, making the Sun appear far closer than
-        # intended relative to the visible frame.
-        half_span = moon_r * 3
-        ax.set_xlim(-half_span, half_span)
-        ax.set_ylim(-half_span, half_span)
-        ax.set_zlim(-half_span, half_span)
-        plot_range = half_span * 2
+        epoch = Time.now()
+    if (epochs and not np.all(np.isfinite(epochs))) or not np.isfinite(epoch.gps):
+        raise ValueError("Times must be finite")
 
-    # Equal aspect ratio on all three axes — without this, matplotlib
-    # scales each axis independently and every sphere (Moon, Earth, Sun)
-    # renders as a squashed ellipsoid instead of a circle.
-    ax.set_box_aspect([1, 1, 1], zoom=view_zoom)
-
-    # ── Sun direction ──────────────────────────────────────────────────────
-    # By default this comes from real ephemeris (get_body("sun") transformed
-    # into the lunar-fixed frame). If sun_azimuth_deg / sun_elevation_deg are
-    # given, those override it entirely — useful for posing a specific
-    # phase/terminator for a demo regardless of the true current Sun
-    # position. Azimuth is measured from +x toward +y in the lunar-fixed
-    # xy-plane; elevation is measured up from that plane toward +z.
+    moon = get_body('moon')
+    moon_gcrf = np.asarray(moon.position(epoch.gps)).reshape(3)
+    rotation = np.eye(3) if r_frame == 'moon_centered' else gcrf_to_lunar(np.eye(3), epoch).T
+    earth_pos = rotation @ -moon_gcrf / 1000.
+    moon_rotation = rotation @ lunar_body_rotation(epoch)[0].T
+    earth_rotation = rotation @ earth_to_scene(epoch.gps)
+    moon_r, earth_r = MOON_RADIUS/1000., EARTH_RADIUS/1000.
+    lower, upper = np.full(3, -moon_r), np.full(3, moon_r)
+    for xyz in tracks:
+        lower, upper = np.minimum(lower, xyz.min(axis=0)), np.maximum(upper, xyz.max(axis=0))
+    if show_earth is True:
+        lower, upper = np.minimum(lower, earth_pos-earth_r), np.maximum(upper, earth_pos+earth_r)
+    center = (lower+upper)/2
+    span = float(max(upper-lower)) * (1+2*scene_pad)
+    lower, upper = center-span/2, center+span/2
+    draw_earth = bool(show_earth) if show_earth is not None else bool(
+        np.all(earth_pos-earth_r >= lower) and np.all(earth_pos+earth_r <= upper))
+    moon_display = moon_r if physical_body_sizes else max(moon_r, span*.03)
+    earth_display = earth_r if physical_body_sizes else max(earth_r, span*.03)
+    # Include enlarged bodies as well as their physical bounds.
+    lower, upper = np.minimum(lower, -moon_display), np.maximum(upper, moon_display)
+    if draw_earth:
+        lower, upper = np.minimum(lower, earth_pos-earth_display), np.maximum(upper, earth_pos+earth_display)
+    center, half = (lower+upper)/2, max(upper-lower)/2
+    lower, upper = center-half, center+half
+    span = 2*half
     sun_hat = None
+    earth_sun_hat = None
     if sun_azimuth_deg is not None or sun_elevation_deg is not None:
-        az = np.radians(sun_azimuth_deg if sun_azimuth_deg is not None else 0.0)
-        el = np.radians(sun_elevation_deg if sun_elevation_deg is not None else 0.0)
-        sun_hat = np.array([
-            np.cos(el) * np.cos(az),
-            np.cos(el) * np.sin(az),
-            np.sin(el),
-        ])
+        az, el = np.radians([sun_azimuth_deg or 0., sun_elevation_deg or 0.])
+        sun_hat = np.array([np.cos(el)*np.cos(az), np.cos(el)*np.sin(az), np.sin(el)])
+        earth_sun_hat = sun_hat
     elif show_sun or show_sun_graphic:
-        try:
-            if t_ref is None:
-                # No orbit time given — default to "now"
-                from astropy.time import Time
-                t_ref = Time.now()
-            if r_frame == 'moon_centered':
-                # r is already Moon-centered, INERTIAL, equatorial-aligned
-                # (e.g. real Horizons data) — gcrf_to_lunar_fixed outputs a
-                # frame that ROTATES with the Moon's orbital motion, which
-                # would put the Sun direction in a different, inconsistent
-                # frame from the trajectory. Use the raw equatorial
-                # direction instead (origin shift Earth->Moon is
-                # negligible at solar distance, same approximation already
-                # used for Earth's shading elsewhere in this file).
-                sun_hat = sun_direction_in_frame(t_ref, transform_func=None)
-            else:
-                sun_hat = sun_direction_in_frame(t_ref, gcrf_to_lunar_fixed)
-        except Exception as e:
-            print(f"[moon_plot_3d] Sun ephemeris failed, rendering unshaded: {e}")
-            sun_hat = None
+        sun_gcrf = np.asarray(get_sun_position(epoch)).reshape(3)
+        sun_hat = rotation @ (sun_gcrf-moon_gcrf)
+        sun_hat /= np.linalg.norm(sun_hat)
+        earth_sun_hat = rotation @ sun_gcrf
+        earth_sun_hat /= np.linalg.norm(earth_sun_hat)
 
-    # NOTE: the camera (elev, azim) is NOT auto-rotated to face the Sun.
-    # If it were, the entire visible hemisphere would always be the day
-    # side and no terminator/shading would ever be visible. Leaving the
-    # camera angle independent of the Sun angle is what lets shading show
-    # up at all — adjust `azim`/`elev` (or sun_azimuth_deg/sun_elevation_deg)
-    # to dial in whatever phase you want to see.
-
-    # ── Sun's actual position in this scene (a true background object) ───
-    # Computed once here so both the Sun's own rendering AND the light
-    # projected onto the Moon/Earth come from the SAME position — this is
-    # the explicit "project the Sun's light onto the body" step, rather
-    # than just reusing the raw ephemeris unit vector everywhere.
-    #
-    # IMPORTANT: mplot3d has no true depth perspective — an object placed
-    # outside the axes' set xlim/ylim/zlim does NOT render smaller/farther
-    # the way a real camera would; it just risks rendering partially or
-    # fully outside the figure canvas (this is exactly what was happening
-    # before — the Sun's "Sun" label was getting clipped at the image
-    # edge). So distance is placed at a fraction strictly INSIDE the axis
-    # half-width, and the "distant background object" feel comes from a
-    # small display radius (see background_sun_radius below) instead.
-    sun_pos_local = None
-    if sun_hat is not None:
-        axis_half_width = plot_range / 2.0
-        sun_pos_local = sun_hat * (axis_half_width * 0.78)
-
-    # ── Stars ─────────────────────────────────────────────────────────────────
+    fig = plt.figure(dpi=120, figsize=figsize, facecolor='#000008')
+    ax = fig.add_subplot(111, projection='3d', computed_zorder=False)
+    ax.set_facecolor('#000008')
+    ax.set_position([.04, .12, .92, .76])
+    ax.view_init(elev=elev, azim=azim)
+    ax.set_proj_type('ortho')
+    ax.set_axis_off()
+    ax.set(xlim=(lower[0], upper[0]), ylim=(lower[1], upper[1]), zlim=(lower[2], upper[2]))
+    ax.set_box_aspect([1, 1, 1], zoom=view_zoom)
     if show_stars:
-        add_starfield(ax, plot_range, elev=elev, azim=azim,
-                      mag_limit=mag_limit, epoch=t_ref)
-
-    # ── Earth — only show if plot range is large enough to see it ────────────
-    # The Earth-Moon line only sits fixed along the x-axis in the ROTATING
-    # lunar-fixed frame (that's the gcrf_to_lunar_fixed convention this
-    # hardcoded position assumed). For r_frame='moon_centered' inertial
-    # data, Earth's actual position relative to the Moon depends on the
-    # real calendar date and is NOT pinned to any particular axis — it
-    # has to be computed from the Moon's real ephemeris instead.
-    if r_frame == 'moon_centered':
-        try:
-            from ssapy import get_body
-            from astropy.time import Time
-            t_for_earth = t_ref if t_ref is not None else Time.now()
-            # Reduce to a single epoch the same way sun direction does —
-            # get_body().position() and downstream code expect array-
-            # shaped time, even for N=1, not a bare scalar.
-            if isinstance(t_for_earth, Time):
-                t_single = t_for_earth if not t_for_earth.isscalar else t_for_earth.reshape(1)
-                t_single = t_single[0:1]
-            else:
-                t_single = np.atleast_1d(np.asarray(t_for_earth, dtype=float))[0:1]
-            moon_body = get_body("moon")
-            moon_pos_gcrf_m = moon_body.position(t_single).T
-            moon_pos_gcrf_m = np.atleast_2d(moon_pos_gcrf_m)[0]
-            # Earth relative to Moon = -(Moon relative to Earth).
-            # get_body().position() returns meters; convert to km to match this
-            # function's internal
-            # units (unit_conversion=1e3, unit_label='km').
-            earth_pos_km = -moon_pos_gcrf_m / 1e3
-        except Exception as e:
-            print(f"[moon_plot_3d] Could not compute real Earth position "
-                  f"for moon_centered frame: {e} — Earth will not be drawn.")
-            earth_pos_km = None
-    else:
-        # Rotating lunar-fixed frame: Earth-Moon line fixed along x-axis
-        earth_pos_km = np.array([-384400.0, 0.0, 0.0])
-
-    _earth_visible = (plot_range > 100000) if show_earth is None else show_earth
-    earth_draw = None
-    if earth_pos_km is not None and _earth_visible:
-        earth_r = EARTH_RADIUS / unit_conversion
-        visible_earth_r = earth_r if physical_body_sizes else max(earth_r, plot_range * 0.03)
-        # Use the real sun_hat directly — NOT a projection from
-        # sun_pos_local. sun_pos_local is a STYLIZED rendering position
-        # (scaled to plot_range so the Sun fits inside the visible box,
-        # typically tens-to-hundreds of thousands of km), not the Sun's
-        # true ~150,000,000 km distance. That stand-in works fine for the
-        # Moon, which sits at the origin (the projection trivially cancels
-        # out to sun_hat regardless of distance — verified earlier), but
-        # for Earth — whose real distance from the Moon (~384,400 km) is
-        # comparable in magnitude to the stylized sun_pos_local — using
-        # that projection introduces direction errors of 60-80+ degrees,
-        # nowhere close to the true solar direction. The real Sun is far
-        # enough away (~150M km) that the same sun_hat direction is
-        # correct (to well under 1 degree of parallax) for every body in
-        # the Earth-Moon system, so just reuse it directly.
-        earth_light_dir = sun_hat
-        earth_draw = (earth_pos_km, visible_earth_r, earth_light_dir)
-   # ── Orbit tracks ──────────────────────────────────────────────────────────
-    visible_moon_r = moon_r if physical_body_sizes else max(moon_r, plot_range * 0.03)
-    bodies = [(np.zeros(3), visible_moon_r)]
-    if earth_draw is not None:
-        bodies.append((earth_draw[0], earth_draw[1]))
-    foreground_tracks = []
-    for orbit_index, xyz in xyz_list:
-        from mpl_toolkits.mplot3d.art3d import Line3DCollection
-        background, foreground = _split_orbit_segments_for_bodies(xyz, bodies, elev, azim)
-        color = "#ff6600" if len(xyz_list) == 1 else cm.rainbow(np.linspace(0, 1, len(xyz_list)))[orbit_index]
-        linewidth = 2.0 if len(xyz_list) == 1 else 1.5
-        if len(background):
-            ax.add_collection(Line3DCollection(background, colors=[color], linewidth=linewidth, alpha=0.9, zorder=5))
-        foreground_tracks.append((foreground, color, linewidth))
- # ── Moon ─────────────────────────────────────────────────────────────────
-    # Visibility floor matching Earth's existing pattern (visible_earth_r =
-    # max(earth_r, plot_range*0.03)) — without this, the Moon renders at
-    # its true physical radius (~1737 km) regardless of scene scale, so
-    # any plot spanning hundreds of thousands of km (e.g. a real cislunar
-    # trajectory) shrinks it to an invisible sub-pixel dot.
-    if earth_draw is not None:
-        earth_pos, earth_radius, earth_light_dir = earth_draw
-        _textured_earth(ax, earth_pos[0], earth_pos[1], earth_pos[2],
-                        earth_radius, earth_img, n=128, sun_hat=earth_light_dir,
-                        ambient=shade_ambient, diffuse=shade_diffuse, zorder=10)
-    # Use sun_hat directly (same reasoning as Earth's shading above) — the
-    # Moon sits at the origin, so light_direction_from_positions(
-    # sun_pos_local, zeros(3)) would reduce to exactly sun_hat anyway,
-    # just through an unnecessary detour. Using sun_hat directly here
-    # keeps both bodies' shading logic consistent and avoids relying on
-    # that projection pattern at all, given how easily it goes wrong for
-    # any body NOT at the origin (see the Earth shading fix above).
-    moon_light_dir = sun_hat
-    drawn = _textured_moon(ax, 0, 0, 0, visible_moon_r, moon_img, n=96,
-                           sun_hat=moon_light_dir,
-                           ambient=shade_ambient, diffuse=shade_diffuse, zorder=10)
-    if not drawn:
-        u = np.linspace(0, 2*np.pi, 30)
-        v = np.linspace(0, np.pi,   30)
-        ax.plot_surface(
-            visible_moon_r * np.outer(np.cos(u), np.sin(v)),
-            visible_moon_r * np.outer(np.sin(u), np.sin(v)),
-            visible_moon_r * np.outer(np.ones(30), np.cos(v)),
-            color='#aaaaaa', alpha=0.9, zorder=10)
-    for foreground, color, linewidth in foreground_tracks:
-        if len(foreground):
-            from mpl_toolkits.mplot3d.art3d import Line3DCollection
-            ax.add_collection(Line3DCollection(foreground, colors=[color], linewidth=linewidth, alpha=0.9, zorder=15))
-    # Moon position indicator
-    theta = np.linspace(0, 2*np.pi, 200)
-    ax.plot(visible_moon_r*np.cos(theta), visible_moon_r*np.sin(theta),
-            np.zeros(200), color='white', linewidth=0.8, alpha=0.4, linestyle='--')
-    ax.text(0, 0, visible_moon_r*1.35, 'Moon', color='white', fontsize=13,
-            alpha=0.9, zorder=30)
-
-    # ── Sun sphere — rendered as a true background object: pushed well
-    #    behind the Moon (2.5x plot_range, vs. the Moon's ~3x moon_r extent)
-    #    with a correspondingly small display radius, so it reads as
-    #    distant rather than as a nearby second body. Limb darkening is
-    #    computed from the actual camera angle (elev/azim) so the Sun
-    #    looks genuinely spherical from whatever viewpoint is chosen. ──────
-    if show_sun_graphic and sun_pos_local is not None:
-        sun_radius = background_sun_radius(plot_range, size_factor=0.018)
-        render_sun(ax, sun_pos_local, radius=sun_radius,
+        _scene_stars(ax, rotation, epoch, elev, azim, mag_limit)
+    bodies = [(np.zeros(3), moon_display)]
+    if draw_earth:
+        bodies.append((earth_pos, earth_display))
+    for index, xyz in enumerate(tracks):
+        behind, front = _split_orbit_segments_for_bodies(xyz, bodies, elev, azim)
+        color = '#ff9234' if len(tracks) == 1 else plt.cm.rainbow(index/max(1, len(tracks)-1))
+        for segments, order in [(behind, 5), (front, 15)]:
+            if len(segments):
+                ax.add_collection3d(Line3DCollection(segments, colors=[color], linewidth=1.5, zorder=order))
+    _textured_body(ax, np.zeros(3), moon_display, _ssapy_texture('moon'), moon_rotation,
+                   sun_hat, ambient=shade_ambient, diffuse=shade_diffuse)
+    if draw_earth:
+        earth_artist = _textured_body(ax, earth_pos, earth_display, _ssapy_texture('earth'), earth_rotation,
+                                      earth_sun_hat, n=90, ambient=shade_ambient, diffuse=shade_diffuse)
+        el, az = np.radians([elev, azim])
+        camera = np.array([np.cos(el)*np.cos(az), np.cos(el)*np.sin(az), np.sin(el)])
+        earth_artist.set_zorder(11 if earth_pos @ camera > 0 else 9)
+        ax.text(*earth_pos, '  Earth', color='white', zorder=30)
+        ax.text(0, 0, 0, '  Moon', color='white', zorder=30)
+        ax.plot(*np.stack((np.zeros(3), earth_pos)).T, color='#60738a',
+                linestyle=':', linewidth=.8, zorder=4)
+    if show_sun_graphic and sun_hat is not None:
+        symbol_pos = center + sun_hat*span*.35
+        render_sun(ax, symbol_pos, radius=background_sun_radius(span, size_factor=.018),
                    elev_deg=elev, azim_deg=azim)
-
-    # ── Lagrange points ───────────────────────────────────────────────────────
-    # Lagrange points are fixed positions only in the ROTATING lunar-fixed
-    # frame, at a single instant. Real moon-centered inertial data (e.g.
-    # Horizons ephemeris) typically spans hours-to-days, during which the
-    # Moon moves tens of degrees around Earth — overlaying static L-point
-    # markers on that data would misrepresent the geometry, so they're
-    # skipped automatically for r_frame='moon_centered'.
-    if show_lagrange and r_frame != 'moon_centered':
-        label_offset = plot_range * 0.02
-        for point, pos in lagrange_points_lunar_fixed_frame().items():
-            pos_geo = pos / unit_conversion
-            ax.scatter([pos_geo[0]], [pos_geo[1]], [pos_geo[2]],
-                       color='white', s=15, zorder=6, clip_on=False)
-            ax.text(pos_geo[0], pos_geo[1] + label_offset,
-                    pos_geo[2] + label_offset, point,
-                    color='white', fontsize=12, zorder=30)
-    elif show_lagrange and r_frame == 'moon_centered':
-        print("[moon_plot_3d] Skipping Lagrange points: they're only valid "
-              "in the rotating lunar-fixed frame at a single instant, not "
-              "over a multi-day inertial trajectory.")
-
-    # ── Title ─────────────────────────────────────────────────────────────────
-    ax.set_title(f'Moon — Lunar Fixed Frame\n{title}',
-                 color=textcolor, fontsize=11, pad=15)
-
+        ax.text(*symbol_pos, '  Sun direction only', color='white', fontsize=8, zorder=30)
+    if show_lagrange and r_frame == 'gcrf':
+        from ..orbital_mechanics import lagrange_points_lunar_fixed_frame
+        for name, pos in lagrange_points_lunar_fixed_frame().items():
+            pos = pos/1000.
+            if np.all(pos >= lower) and np.all(pos <= upper):
+                ax.scatter(*pos, color='white', s=15, zorder=20)
+                ax.text(*pos, ' '+name+' (approx.)', color='white', fontsize=8, zorder=30)
+    axes_label = 'Moon-centred inertial axes' if r_frame == 'moon_centered' else 'Earth–Moon rotating axes'
+    fig.suptitle(title or 'Textured Moon', color='white', fontsize=17, y=.96)
+    fig.text(.5, .90, f'{axes_label}  |  {epoch.utc.isot[:19]} UTC', ha='center', color='#ccd6e0', fontsize=10, zorder=50)
+    scale_note = f'Moon radius {moon_r:,.1f} km'
+    if moon_display != moon_r or (draw_earth and earth_display != earth_r):
+        scale_note += f'  |  display radii: Moon ×{moon_display/moon_r:.1f}'
+        if draw_earth:
+            scale_note += f', Earth ×{earth_display/earth_r:.1f}'
+    else:
+        scale_note += '  |  physical body and orbit scale'
+    if draw_earth:
+        scale_note += f'\nCentre-to-centre distance {np.linalg.norm(earth_pos):,.0f} km at the stated epoch'
+    else:
+        scale_note += f'\nEarth is {np.linalg.norm(earth_pos):,.0f} km from the Moon, outside this close-up'
+    fig.text(.5, .06, scale_note, ha='center', color='#ccd6e0', fontsize=10, zorder=50)
     if save_path:
         figsave(fig, save_path)
     if show:
         plt.show()
-    plt.close()
+    plt.close(fig)
     return fig, ax
 
 

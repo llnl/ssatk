@@ -141,3 +141,49 @@ They also check north/south and longitude texture mapping, km and GEO axis units
 TT-to-UTC date handling, selected snapshot epochs, and actual raster pixels for
 a spacecraft in front of and behind an opaque Earth. These validate geometry
 and rendering contracts, not measured orbit accuracy.
+
+Dated lunar plots
+-----------------
+
+``moon_plot_3d`` distinguishes Earth-centred GCRF input from
+``r_frame="moon_centered"`` inertial positions. GCRF tracks become Moon-centred
+Earth–Moon rotating coordinates at each sample; Moon-centred input retains
+GCRF-aligned axes. The texture uses the separate DE440 lunar principal-axis
+orientation at ``reference_time`` (scalar GPS seconds or Astropy Time), or the
+midpoint of the supplied epochs. Surface-only ``t`` inputs also set the date.
+An undated surface view uses the current time; an undated trajectory is rejected.
+The date and frame appear on every export. Multi-epoch tracks have a frozen
+reference-epoch surface and illumination, not a time-varying exposure.
+
+The demo previously propagated with SSAPy's default Earth gravitational
+parameter and then subtracted the Moon's position from an already Moon-centred
+orbit. It now explicitly uses ``MOON_MU`` and ``r_frame="moon_centered"``.
+Its synthetic ellipse has a 2,738.1-km semi-major axis, eccentricity 0.01 and
+90-degree inclination in inertial equatorial axes. One revolution lasts
+12,856.767 s; fast/full modes sample 361/721 positions. Mean altitude is
+1,000 km above SSAPy's 1,738.1-km reference sphere, ranging from 972.619 to
+1,027.381 km. This two-body example omits lunar harmonics and third-body forces;
+its inertial polar plane is not exactly the Moon's equatorial polar plane.
+
+Both orbit views and the surface close-up retain physical sizes. Limits include
+the entire Moon as well as the track. A fourth Earth–Moon overview includes
+both bodies, their ephemeris centre separation and explicit radius enlargement
+factors. It omits the tiny lunar track rather than drawing it inside an enlarged
+Moon. ``show_earth=True`` expands the view; automatic Earth display only occurs
+if it fits. Earth uses its dated full GCRF/ITRF texture rotation; its distance
+is no longer a fixed 384,400 km. Moon and Earth use their own Sun directions.
+The Moon map approximates the DE440 principal-axis coordinates: the map's
+mean-Earth-frame offset is sub-kilometre and is not resolved by this display.
+
+The installed lunar map is north-up and east-positive, spanning -180 to +180
+degrees; the mesh has 360 by 180 texture cells. Ambient plus Lambert shading
+is illustrative, not calibrated radiometry. Missing textures give visible
+plain spheres; available Earth split-package textures are supported. No new
+binary assets are committed or downloaded by the renderer.
+
+A catalogue sky is projected onto a separate 120-degree gnomonic backdrop in
+the same reference-epoch axes. It is directional context for an orthographic
+orbital diagram, not a sensor measurement. The former finite star sphere is
+removed from this renderer. The Sun symbol is off by default; explicitly
+requesting ``show_sun_graphic=True`` draws a labelled direction symbol with
+schematic size and distance. Physical solar illumination remains enabled.

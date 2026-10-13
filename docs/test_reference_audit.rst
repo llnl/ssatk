@@ -389,3 +389,22 @@ comparing two uses of the same SSATK transform. The frame comparison allows
 reject absent, repeated, reversed or asynchronous animation epochs and suppress
 a highlighted satellite marker at an unsupplied time. They do not establish telemetry
 accuracy or physical surface fidelity of the Earth imagery.
+
+Lunar plot follow-up
+--------------------
+
+``scripts/tests/test_moon_plot_rendering.py`` adds seven functions/thirteen
+cases. An independent scalar Kepler-equation solution checks the demo's lunar
+ellipse and velocity to 1 mm and 1 micrometre/s, including GPS-time rounding.
+An end-to-end renderer check catches a repeated origin subtraction, and literal
+spherical coordinates plus an asymmetric texture catch longitude shifts and
+latitude flips. Astropy ERFA Moon positions and apparent Sun directions provide
+independent 20-km and 0.02-degree model-comparison budgets against DE440.
+Tidal locking constrains the rendered prime meridian within the 9-degree optical
+libration envelope. Radius checks include the analytically bounded second-order
+error of the SSAPy-compatible first-order polar-motion matrix.
+
+Separate C checks cover short-arc framing, visible/occluded raster pixels,
+standalone TT-to-UTC epochs, gnomonic sky projection and invalid inputs. These
+checks validate geometry and output contracts, not measured lunar flight states,
+terrain elevation or calibrated surface photometry.

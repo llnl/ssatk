@@ -248,6 +248,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     # ------------------------------------------------------------------
     moon_fig, _ = moon_plot_3d(
         title="moon_plot_3d: Moon surface context",
+        reference_time=Time("2025-01-01T00:00:00", scale="utc"),
         save_path=figpath(f"{FIGDIR}/plotting_quickstart_moon.jpg"),
         show=False,
     )
