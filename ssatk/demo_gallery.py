@@ -14,7 +14,7 @@ import sys
 import time
 import traceback
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -328,7 +328,7 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
             files.append(relpath_for_report(stdout_file, output_root))
         if stderr_text:
             files.append(relpath_for_report(stderr_file, output_root))
-        files = sorted(set(files))
+        files = sorted(set(files), key=_file_preview_sort_key)
 
         return DemoResult(
             name=name,
@@ -379,7 +379,7 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
             status="failed",
             runtime_seconds=time.time() - start,
             output_dir=str(output_root),
-            files=sorted(files),
+            files=sorted(files, key=_file_preview_sort_key),
             stdout=stdout_text,
             stderr=stderr_text,
             error=err,
@@ -387,10 +387,26 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
         )
 
 
+def _file_preview_sort_key(file_rel: str) -> tuple[int, str, str, str]:
+    """Animations/viewers, stills, downloads, then logs; stable names within each."""
+    decoded = unquote(file_rel)
+    path = Path(decoded)
+    ext = path.suffix.lower()
+    if ext in {".gif", ".mp4", ".webm", ".html", ".htm"}:
+        group = 0
+    elif ext in IMAGE_EXTS:
+        group = 1
+    elif ext in {".txt", ".log"} or "logs" in {part.casefold() for part in path.parts}:
+        group = 3
+    else:
+        group = 2
+    return group, decoded.casefold(), decoded, file_rel
+
+
 def render_file_preview(file_rel: str) -> str:
     path = html.escape(file_rel)
     name = html.escape(unquote(Path(file_rel).name))
-    ext = Path(file_rel).suffix.lower()
+    ext = Path(unquote(file_rel)).suffix.lower()
 
     if ext in {".png", ".jpg", ".jpeg", ".svg", ".webp"}:
         return (
@@ -456,6 +472,9 @@ def render_file_preview(file_rel: str) -> str:
 
 
 def build_html_report(results: list[DemoResult], out_root: Path) -> None:
+    # Rebuilding an existing/externally supplied manifest must follow the same
+    # order as a fresh run, without mutating the caller's DemoResult objects.
+    results = [replace(r, files=sorted(r.files, key=_file_preview_sort_key)) for r in results]
     cards = []
     for r in results:
         badge_class = {"success": "ok", "skipped": "skip"}.get(r.status, "fail")

@@ -32,6 +32,13 @@ search and category filters, image previews, animation controls, downloadable
 artifacts and links to interactive HTML viewers. Images load lazily and videos
 start when the visitor requests playback.
 
+Every demo lists animations and interactive HTML views first, static images
+next, other downloads (such as CSV and JSON) after images, and text logs last.
+Within each group, paths sort alphabetically without regard to case, with a
+stable tie-break for case variants. The manifest uses the same order, including
+when the report is rebuilt from existing results. Console output, warnings and
+error details follow the file previews.
+
 If the default user cache is read-only, set ``SSATK_CACHE`` to a writable
 directory outside the site before running the demos. The gallery workflow
 uses the runner's temporary directory for this cache; cached inputs are not
