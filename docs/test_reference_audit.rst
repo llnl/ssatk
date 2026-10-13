@@ -374,3 +374,18 @@ Two workflow cases separately check plotted speeds against straight/circular
 motion and direction symbols against cardinal/radial geometry. The demo's
 full-period comparison and explicit frame conventions are documented in
 :doc:`gamma_heading_validation`.
+
+
+Dated globe rendering follow-up
+-------------------------------
+
+``scripts/tests/test_globe_rendering.py`` contains six test functions, thirteen
+parametrized cases. R1/R2 references are the explicit spherical-coordinate map,
+prescribed satellite positions, opaque-sphere visibility and Astropy GCRS/ITRS
+coordinates. They inspect rendered polygon vertices and pixels, rather than
+comparing two uses of the same SSATK transform. The frame comparison allows
+0.5 arcsecond for IAU model differences; arithmetic-only coordinates allow
+0.1 micrometre at Earth radius and 20 nanometres for marker placement. C cases
+reject absent, repeated, reversed or asynchronous animation epochs and suppress
+a highlighted satellite marker at an unsupplied time. They do not establish telemetry
+accuracy or physical surface fidelity of the Earth imagery.

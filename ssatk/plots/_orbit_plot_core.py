@@ -64,6 +64,7 @@ def _orbit_plot_core(
         raise ValueError(f"Unsupported orbit plot views: {unsupported}")
 
     special_plot_kwargs = dict(special_plot_kwargs or {})
+    input_times = t
     r, t = _valid_orbits(r, t)
 
     if "w" in c:
@@ -157,7 +158,7 @@ def _orbit_plot_core(
         _set_orbit_limits(axes, bounds)
         _style_orbit_axes([axes[view] for view in coordinate_views], plotcolor, textcolor)
 
-    _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs)
+    _plot_special_views(axes, views, r, t if input_times is not None else None, title, c, special_plot_kwargs, frame)
 
     if save_path:
         _figsave(fig, save_path)
@@ -244,7 +245,7 @@ def _auto_grid_shape(nviews):
     return nrows, ncols
 
 
-def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs):
+def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs, frame):
     if "groundtrack" in views:
         groundtrack_kwargs = _filter_kwargs(_groundtrack_plot, special_plot_kwargs)
         _groundtrack_plot(
@@ -262,6 +263,7 @@ def _plot_special_views(axes, views, r, t, title, c, special_plot_kwargs):
             r,
             t=t,
             ax=axes["globe"],
+            frame=frame,
             save_path=None,
             title=globe_kwargs.pop("title", title),
             c=globe_kwargs.pop("c", c),

@@ -83,3 +83,61 @@ mesh radii, preserved double-precision AU coordinates, and a 7,000 km circle:
 limiting playback to three frames must retain its 360 one-degree chords.
 Browser checks cover opposite viewing directions and window resizing; encoded
 MP4 duration is checked from the generated file during the handoff review.
+
+
+Dated textured globe
+--------------------
+
+``orbit_plot(r, t, view="globe", save="earth.mp4")`` now rotates the textured
+Earth at every rendered epoch. PNG/JPEG stills and GIF/MP4 animations share
+one Earth surface implementation. The north-up, equirectangular texture maps
+longitude -180 to +180 degrees from left to right, with pixels at cell centres.
+The optional cached NASA 8K day map is preferred; otherwise the installed
+Earth texture is used. Rendering never downloads imagery. The sphere uses
+SSAPy's 6,378.137-km Earth radius; it does not represent terrain or oblateness.
+The day map is static imagery, not weather or day/night illumination at the date.
+
+Inputs are GCRF positions in metres and absolute Astropy ``Time`` values or
+GPS seconds. ``frame="gcrf"`` displays Earth rotating in inertial space;
+``frame="itrf"`` displays a fixed Earth with the trajectories transformed to
+Earth-fixed axes. The surface orientation uses the full SSAPy-compatible
+GCRF/ITRF chain: IAU 1976/1980 precession and nutation, apparent sidereal time
+at UT1, and IERS polar motion. A UTC label identifies the rendered instant.
+The camera is orthographic, and the Earth hides far-side spacecraft and trails.
+Trails omit segments with an occulted endpoint rather than bridging hidden arcs.
+
+Animated globe tracks require the same strictly increasing, finite time grid
+(to within one microsecond). Propagate tracks to common epochs before export;
+the renderer does not synchronize different times by array index or extrapolate.
+``max_frames`` selects playback samples without discarding intervening trail
+geometry. Static ``globe_time`` selects the Earth orientation. A track lacking a sample
+within one microsecond of that instant has no highlighted reference point. ``reference_index`` defaults
+to the first track's last sample when no explicit globe time is supplied.
+
+``earth_resolution=180`` gives 180 longitude by 90 latitude cells in animations;
+static plots also accept it, overriding the older ``scale`` knob. Only the
+Earth surface is meshed; satellites retain point markers and orbital trails.
+
+The demo shows a synthetic 420-km LEO in a close-up, plus a separate LEO/MEO
+overview. It is not an observed ISS trajectory. Fast gallery mode spans four
+hours in 120 frames at 8 fps (15 seconds playback); full mode spans twelve
+hours in 240 frames (30 seconds). Both retain ten-second trajectory samples
+and use 240 by 120 texture cells in the video; the close-up still uses
+720 by 360 cells. Set a different date with::
+
+    from demos.orbit_visualization.demo_globe_plot import main
+    main(start_time="2026-10-12T00:00:00", make_figures=True, make_video=True)
+
+For a supplied trajectory::
+
+    from ssatk.plots import orbit_plot
+    orbit_plot(r_gcrf_m, times, view="globe", earth_resolution=240,
+               save="earth.mp4")
+
+The globe regression tests inspect the actual polygon coordinates delivered to
+Matplotlib against Astropy's independent GCRS/ITRS transformation, with a
+0.5-arcsecond model-difference allowance, and supplied satellite positions.
+They also check north/south and longitude texture mapping, km and GEO axis units,
+TT-to-UTC date handling, selected snapshot epochs, and actual raster pixels for
+a spacecraft in front of and behind an opaque Earth. These validate geometry
+and rendering contracts, not measured orbit accuracy.
