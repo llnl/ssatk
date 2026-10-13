@@ -123,6 +123,29 @@ numerical inspection independently of image generation.
 Timing and camera
 -----------------
 
+The gallery's **Spacecraft Mesh, Attitude, and Sun Direction** demo includes a
+45-second MP4 showing **24 hours (86,400 seconds)** in a near-geostationary orbit.
+LLNL SSAPy's ``Orbit`` and default Keplerian ``rv`` propagator sample every
+movie epoch directly. The circular radius is derived from Earth's gravitational
+parameter and the mean sidereal period, 86,164.0905 seconds: approximately
+42,164 km from Earth's center, or 35,786 km altitude. A 24-hour movie therefore
+covers slightly more than one revolution, consistent with the sidereal-day
+distinction in `NASA's orbit catalogue
+<https://science.nasa.gov/earth/earth-observatory/catalog-of-earth-satellite-orbits/>`_.
+
+The initial plane is Earth's equator at the initial epoch, transformed into
+GCRF with ``eci_to_ecf_matrix``. Body +X points along track, +Y opposite the
+orbit normal and +Z toward Earth. The default camera moves with the spacecraft
+and keeps Earth's limb behind it. Earth's geography should remain nearly fixed
+in that view while the catalog sky, Sun direction and illumination change.
+The scene starts at Greenwich on 2026-10-11 at 12:00 UTC. It is an unperturbed
+two-body illustration with prescribed attitude, not a controlled flight orbit.
+
+Fast gallery mode exports 540 frames at 12 fps and 960 by 640 pixels; normal
+mode exports 1,080 frames at 24 fps and 1,280 by 720 pixels. Both retain the
+full 24-hour span and 45-second playback. MP4 streams frames to the encoder.
+The short Moon GIF is a separate one-minute lunar example.
+
 Animation duration is **playback time**. The entire physical input interval is
 resampled onto ``round(fps * duration_s)`` output frames, including both ends.
 Positions interpolate linearly in actual elapsed seconds, and attitude uses

@@ -441,3 +441,21 @@ The opt-in browser case runs with networking disabled and exercises an HST alias
 search, combined collection filtering, preset selection, referenced CubeSat
 dimensions, and local PNG/JPG downloads. Flight-model fidelity remains limited
 to the separately documented referenced features in :doc:`spacecraft_presets`.
+
+GEO chase-camera demo follow-up
+-------------------------------
+
+``scripts/tests/test_geo_spacecraft_demo.py`` adds three functions/four cases.
+An analytic circular-orbit solution checks the propagated 24-hour track to
+1 mm and 1 micrometre/s; the radius and speed correspond to the mean sidereal
+period, rather than a 24-hour orbital period. Astropy independently transforms
+the track to Earth-fixed coordinates, requiring longitude and latitude to
+remain within 0.001 degree of the initial Greenwich subpoint. The angular budget
+includes frame-model differences and the unperturbed orbit plane's small drift
+relative to Earth's evolving equator over one day.
+
+Scene geometry checks constrain nadir/along-track body axes to 1e-12 and camera
+placement to 10 nm. Export contracts require 45-second playback in both fast
+and normal modes and one propagated position per output frame, with no sparse
+chord interpolation. These are model and display checks; no measured GEO
+telemetry, attitude-control dynamics or station-keeping performance is claimed.
