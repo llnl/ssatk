@@ -57,8 +57,9 @@ GALLERY_GROUPS = (
         "orbital_mechanics/demo_structured_transfer_api",
     )),
     GalleryGroup("attitude", "Spacecraft attitude and dynamics",
-                 "View spacecraft meshes and attitude vectors, then explore coupled translation "
+                 "Choose a spacecraft mesh, view attitude vectors, then explore coupled translation "
                  "and rotation with six degrees of freedom (6-DoF).", (
+        "six_dof/demo_spacecraft_mesh_catalog",
         "six_dof/demo_spacecraft_view",
         "six_dof/demo_6dof_gravity_gradient",
         "six_dof/demo_6dof_attitude_control",

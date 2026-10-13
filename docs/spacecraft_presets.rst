@@ -43,6 +43,24 @@ or validated radiation-pressure properties are inferred from the presets.
 Selection
 ---------
 
+The gallery's **Spacecraft and Telescope Mesh Catalogue** demo shows every
+canonical preset as a rendered card. Search names and aliases, filter by
+collection, and select a card to obtain a viewer example. Geometry notes,
+visual axes, referenced features and source links accompany each preview.
+The standalone HTML includes its images and works offline. PNG and JPG
+overview sheets are also exported; tiles use independent scales.
+
+To regenerate the complete catalogue and overview sheets locally:
+
+.. code-block:: bash
+
+   python -m demos.six_dof.demo_spacecraft_mesh_catalog
+
+Fast gallery mode reduces image resolution without dropping presets. Images
+are generated from the current registry; no mesh or preview binaries are
+stored in the repository. This demo appears first in the gallery's
+``Spacecraft attitude and dynamics`` topic.
+
 .. code-block:: python
 
    from ssatk.plots.spacecraft_view import SpacecraftMesh, spacecraft_view

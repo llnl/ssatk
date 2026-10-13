@@ -425,3 +425,19 @@ must remain tied to the lunar radius despite a large vertical excursion.
 Canvas containment, legend suppression and fractional tick placement are
 explicit C contracts. These tests validate framing and coordinate/unit wiring;
 they do not provide an independent real lunar ephemeris or propagation oracle.
+
+Mesh catalogue demo follow-up
+-----------------------------
+
+``scripts/tests/test_mesh_catalog_demo.py`` adds three functions/four cases.
+A literal 4-by-2-m rectangle in the camera plane must retain its 2:1 shape and
+90% width fit in landscape and portrait thumbnails, within one raster pixel.
+Translation and uniform scaling must leave those bounds unchanged. This R1
+reference validates display geometry, not mission dimensions.
+
+C contracts check the complete current registry, one embedded and decodable
+actual-mesh preview per canonical name, escaped metadata and standalone assets.
+The opt-in browser case runs with networking disabled and exercises an HST alias
+search, combined collection filtering, preset selection, referenced CubeSat
+dimensions, and local PNG/JPG downloads. Flight-model fidelity remains limited
+to the separately documented referenced features in :doc:`spacecraft_presets`.
