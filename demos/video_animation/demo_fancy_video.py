@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
-from ssapy import rv, Orbit
+from ssapy import rv, Orbit, get_body
 from ssapy.propagator import default_numerical
 from astropy.time import Time
 
@@ -24,11 +24,13 @@ GALLERY_CATEGORY = "video_animation"
 # NASA Moon Fact Sheet: mean sidereal revolution period, not the phase cycle.
 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
 LUNAR_ORBIT_DAYS = 27.3217
-TITLE = "Fancy video — one lunar orbit"
+TITLE = "Fancy video — retrograde lunar encounter"
 DESCRIPTION = (
-    "A cislunar spacecraft trajectory and the Moon's motion around Earth over "
-    "one mean lunar revolution (27.3217 days), compressed into a 60-second "
-    "movie. Frames advance about 54.7 simulated minutes; full trails remain visible."
+    "The original DRO-like retrograde initial state near the Moon, propagated "
+    "for one mean lunar revolution (27.3217 days) in a 30-second movie. "
+    "This is a perturbed encounter trajectory, not a validated periodic DRO. "
+    "Full trails retain at most one-hour spacing independently of playback. "
+    "A dated, Earth-facing Moon close-up shows the surface on a separate scale."
 )
 
 
@@ -85,7 +87,7 @@ def orbit_moon_video_demo(
     duration_days=LUNAR_ORBIT_DAYS,
     fps=12,
     seconds_per_frame=3600,
-    playback_seconds=60.0,
+    playback_seconds=30.0,
     trail_len=None,
     out_name="demo_orbit_moon_video.mp4",
     save_gif=False,
@@ -150,7 +152,10 @@ def orbit_moon_video_demo(
     omega_vec = omega * k_hat
 
     r_rel_m = r0 - rm0
-    v_rel = np.cross(omega_vec, r_rel_m)
+    # Restore the original retrograde seed from commit 8103d54. The negative
+    # sign is intentional: Moon-relative angular momentum opposes its orbit
+    # about Earth. This seed is DRO-like, not a corrected periodic solution.
+    v_rel = -np.cross(omega_vec, r_rel_m)
     v_rel = 0.95 * v_rel
     radial_nudge = 5.0
     v0 = vm0 + v_rel + radial_nudge * x_hat
@@ -159,8 +164,8 @@ def orbit_moon_video_demo(
     r_sc_f = _propagate_complete(orbit, t_geometry)
     t_frames_ok = t_geometry
     all_positions = np.vstack([np.zeros((1, 3)), r_moon, r_sc_f])
-    center = (all_positions.min(axis=0) + all_positions.max(axis=0)) / 2
-    lim = 0.60 * np.ptp(all_positions, axis=0).max()
+    lower = all_positions.min(axis=0)-EARTH_RADIUS
+    upper = all_positions.max(axis=0)+EARTH_RADIUS
 
     if not make_figures:
         return {"r_sc_f": r_sc_f, "r_moon": r_moon, "t_frames_ok": t_frames_ok, "frame_times": t_frames}
@@ -172,13 +177,14 @@ def orbit_moon_video_demo(
     COLOR_SC_TRAIL  = "#FF6A00"   # deeper orange trail
 
 
-    fig = plt.figure(figsize=(8, 8), dpi=100 if fast else 150)
+    fig = plt.figure(figsize=(10, 8), dpi=100 if fast else 150)
     fig.patch.set_facecolor("black")
-    fig.suptitle(f"Cislunar trajectory · {duration_days:.3f} days", color="white")
-    fig.text(0.5, 0.03, "Earth/Moon at physical scale · cross marks Moon centre",
+    fig.suptitle(f"Retrograde lunar encounter · {duration_days:.3f} days", color="white")
+    fig.text(0.5, 0.03, "Main view: Earth/Moon at physical scale · inset: Moon close-up",
              ha="center", color="#aebacb", fontsize=9)
 
     ax = fig.add_subplot(111, projection="3d")
+    ax.set_position([.02, .13, .75, .75])
     ax.set_facecolor("black")
 
     # Kill all panes, grid lines, and tick labels
@@ -197,28 +203,38 @@ def orbit_moon_video_demo(
     earth_surface = BodySurface(ax, "earth", EARTH_RADIUS, n=30)
     moon_surface = BodySurface(ax, "moon", MOON_RADIUS, r_moon[0], n=30)
 
+    # A physical lunar radius is only a few pixels across in a cislunar scene.
+    # Show the same dated mesh in an explicitly separate, Earth-facing view.
+    moon_ax = fig.add_axes([.76, .61, .23, .26], projection="3d", facecolor="black")
+    moon_ax.set_axis_off()
+    moon_ax.set_proj_type("ortho")
+    _set_axes_equal_3d(moon_ax, 1.05*MOON_RADIUS)
+    closeup = BodySurface(moon_ax, "moon", MOON_RADIUS, n=120)
+    moon_ax.set_title("Moon close-up\nEarth-facing · separate scale", color="white", fontsize=10, pad=8)
+    sun_positions = np.asarray(get_body("sun").position(t_geometry)).reshape(3, -1).T
+
     # Animated artists
-    moon_pt,   = ax.plot([], [], [], marker="+", markersize=7,  color=COLOR_MOON,       linewidth=0)
     sc_pt,     = ax.plot([], [], [], marker="o", markersize=4,  color=COLOR_SC,         linewidth=0)
     moon_trail,= ax.plot([], [], [], color=COLOR_MOON_TRAIL,    linewidth=1.2, alpha=0.45)
     sc_trail,  = ax.plot([], [], [], color=COLOR_SC_TRAIL,      linewidth=1.6, alpha=0.65)
     title      = ax.text2D(0.03, 0.92, "", transform=ax.transAxes, color="white")
 
-    ax.set_xlim(center[0] - lim, center[0] + lim)
-    ax.set_ylim(center[1] - lim, center[1] + lim)
-    ax.set_zlim(center[2] - lim, center[2] + lim)
+    for j, limits in enumerate((ax.set_xlim, ax.set_ylim, ax.set_zlim)):
+        limits(lower[j], upper[j])
     ax.set_box_aspect((1, 1, 1))
-    ax.text2D(0.03, 0.06, "+ Moon centre", transform=ax.transAxes, color=COLOR_MOON)
+    ax.text2D(0.03, 0.06, "Moon: textured surface", transform=ax.transAxes, color=COLOR_MOON)
     ax.text2D(0.03, 0.03, "● Spacecraft", transform=ax.transAxes, color=COLOR_SC)
 
     from ssatk.plots.camera import _mpl_camera, _camera_spec
+    if camera == "overview":
+        # View along the initial lunar orbit normal instead of almost edge-on.
+        camera = dict(mode="overview", elevation=float(np.degrees(np.arcsin(k_hat[2]))),
+                      azimuth=float(np.degrees(np.arctan2(k_hat[1], k_hat[0]))))
     if _camera_spec(camera).target != 0:
         raise ValueError("the cislunar video has one spacecraft camera target (index 0)")
     shot = _mpl_camera(camera, ax, r_sc_f, times=t_frames_ok)
 
     def init():
-        moon_pt.set_data([], [])
-        moon_pt.set_3d_properties([])
         sc_pt.set_data([], [])
         sc_pt.set_3d_properties([])
         moon_trail.set_data([], [])
@@ -226,7 +242,7 @@ def orbit_moon_video_demo(
         sc_trail.set_data([], [])
         sc_trail.set_3d_properties([])
         title.set_text("")
-        return moon_pt, sc_pt, moon_trail, sc_trail, title
+        return sc_pt, moon_trail, sc_trail, title
 
     def update(frame):
         i = frame_indices[frame]
@@ -234,9 +250,14 @@ def orbit_moon_video_demo(
         rm = r_moon[i]
         rs = r_sc_f[i]
         earth_surface.update(rotation=body_rotation("earth", t_geometry[i]))
-        moon_surface.update(rm, body_rotation("moon", t_geometry[i]))
-        moon_pt.set_data([rm[0]], [rm[1]])
-        moon_pt.set_3d_properties([rm[2]])
+        rotation = body_rotation("moon", t_geometry[i])
+        sun_hat = sun_positions[i]-rm
+        sun_hat /= np.linalg.norm(sun_hat)
+        moon_surface.update(rm, rotation, sun_hat)
+        closeup.update(rotation=rotation, sun_hat=sun_hat)
+        earth_hat = -rm/np.linalg.norm(rm)
+        moon_ax.view_init(elev=np.degrees(np.arcsin(earth_hat[2])),
+                          azim=np.degrees(np.arctan2(earth_hat[1], earth_hat[0])))
         sc_pt.set_data([rs[0]], [rs[1]])
         sc_pt.set_3d_properties([rs[2]])
 
@@ -250,7 +271,7 @@ def orbit_moon_video_demo(
 
         days = (t_frames_ok[i] - t_frames_ok[0]) / 86400.0
         title.set_text(f"t0 = {t0}   +{days:6.2f} days")
-        return moon_pt, sc_pt, moon_trail, sc_trail, title
+        return sc_pt, moon_trail, sc_trail, title, closeup.artist
 
     ani = FuncAnimation(
         fig,
@@ -287,7 +308,7 @@ def main(make_figures=None, fast=None, save_gif=False):
         t0="2024-01-01",
         duration_days=LUNAR_ORBIT_DAYS,
         fps=12,
-        playback_seconds=60.0,
+        playback_seconds=30.0,
         seconds_per_frame=3600,
         trail_len=None,
         out_name="demo_orbit_moon_video.mp4",

@@ -87,7 +87,7 @@ def test_fancy_movie_encoded_duration_is_independent_of_physical_span(tmp_path, 
     """C/R3: decode 1-second MP4s with custom and mean-lunar-month spans.
 
     This checks the encoder output, not just len(time)/fps arithmetic. The
-    full 60-second default is also generated and inspected in the handoff.
+    full 30-second default is also generated and inspected in the handoff.
     Default span: NASA Moon Fact Sheet's 27.3217-day revolution period,
     https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html . Allow 1 us
     for float64 GPS endpoint rounding; this is not a trajectory accuracy test.
@@ -107,6 +107,33 @@ def test_fancy_movie_encoded_duration_is_independent_of_physical_span(tmp_path, 
     assert epochs[-1] - epochs[0] == pytest.approx(expected_days * 86400.0, abs=1e-6)
     assert np.all(np.diff(epochs) > 0)
     assert np.max(np.diff(epochs)) <= 3600.0 + 1e-6
+
+
+def test_fancy_default_preserves_original_retrograde_seed_and_lunar_month(monkeypatch):
+    """R1/C: positive lunar +Z momentum must oppose the relative spacecraft's.
+
+    A synthetic circular Moon ephemeris isolates the handedness from any DE
+    kernel. Reversing the seed's cross-product sign must fail. Playback is
+    360 frames / 12 fps = 30 s; physical endpoints retain 27.3217 days.
+    """
+    from demos.video_animation import demo_fancy_video as demo
+    moon_r = np.array([384400000., 0., 0.])
+    moon_v = np.array([0., 1000., 0.])
+    monkeypatch.setattr(demo, 'get_lunar_rv', lambda t: (
+        np.tile(moon_r, (len(t), 1)), np.tile(moon_v, (len(t), 1))))
+    seeds = []
+    def capture(orbit, times):
+        seeds.append(orbit)
+        return np.tile(orbit.r, (len(times), 1))
+    monkeypatch.setattr(demo, '_propagate_complete', capture)
+    result = demo.main(make_figures=False, fast=True)
+    seed = seeds[0]
+    relative_r, relative_v = seed.r-moon_r, seed.v-moon_v
+    assert np.cross(relative_r, relative_v)[2] < 0
+    assert relative_r[0] < 0  # Earthward of the Moon, near L1.
+    np.testing.assert_array_equal(relative_r[1:], [70000000., 2000000.])
+    assert len(result['frame_times']) == 360
+    assert np.ptp(result['frame_times']) == pytest.approx(27.3217*86400, abs=1e-6)
 
 
 def test_solar_export_retains_double_precision_body_coordinates():
