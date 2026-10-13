@@ -2,11 +2,18 @@ Hosting and sharing the gallery
 ===============================
 
 Build a portable site from a source checkout with the project dependencies
-installed, including the ``dev`` and ``all-data`` extras:
+installed. The publishing environment requires a Java 17 JDK, Maven, FFmpeg,
+and Chrome in addition to these Python extras:
 
 .. code-block:: bash
 
-   ssatk-demo-gallery --output site
+   python -m pip install -e ".[dev,all-data,geomagnetics,video,static,browser]"
+   plotly_get_chrome -y
+   export SSATK_CACHE="/path/to/writable/ssatk-cache"
+   export OREKIT_DATA_DIR="$SSATK_CACHE/orekit"
+   mvn -B -q -f demos/benchmarks/orekit/pom.xml dependency:build-classpath
+   python -m scripts.prepare_gallery_data
+   ssatk-demo-gallery --output site --timeout 900 --strict
    python -m ssatk.gallery_validation site
    python -m http.server --directory site 8000
 
@@ -14,7 +21,10 @@ The output directory must be separate from the demo source tree; a build
 refuses to clean a source directory or one of its parents. Use a dedicated
 output directory: existing contents are removed unless ``--no-clean`` is set.
 A rebuild removes the previous adjacent ZIP first and creates a replacement
-only if all demos and link checks succeed (explicit optional skips are allowed).
+only if all demos and link checks succeed. With ``--strict``, any skipped demo
+also prevents the ZIP and returns a nonzero exit status. The publishing
+workflow uses this mode; a local exploratory build may omit it to retain
+explicitly labeled skips.
 
 Open ``http://localhost:8000/`` to preview. Upload the entire ``site`` directory,
 or extract the adjacent ``site.zip`` onto a static host. The gallery includes
@@ -26,6 +36,24 @@ If the default user cache is read-only, set ``SSATK_CACHE`` to a writable
 directory outside the site before running the demos. The gallery workflow
 uses the runner's temporary directory for this cache; cached inputs are not
 published unless an exporter explicitly includes them in its output.
+
+``scripts.prepare_gallery_data`` downloads checksummed NASA SVS LOLA elevation
+and LROC color products and bakes the Moon viewer's maps. Normals retain the
+5760 × 2880 elevation grid; gallery color and horizon maps are 4096 × 2048 and
+720 × 360 respectively. The latter is a rendering approximation for terrain
+shadows. The texture colors are intended for visualization, not radiometry.
+Credit: `NASA's Scientific Visualization Studio <https://svs.gsfc.nasa.gov/4720/>`_.
+
+The same step installs JPL's Linux-format DE430 file and a pinned Orekit
+UTC–TAI history covering the benchmark's January 2026 epoch in
+``OREKIT_DATA_DIR``. The DE430 bytes are unchanged; its local name is
+``lnxp1550p2650.430`` to match Orekit's file-discovery convention.
+The dedicated directory must not contain conflicting
+ephemerides. It is not published. Orekit 10.3.1 provides the independent
+two-body, long-term, and n-body comparisons. No GMAT installation is required
+for this gallery: ``demo_gmat_benchmark.py`` is explicitly excluded and remains
+available as a standalone benchmark. The multi-tool comparisons run with
+Orekit when GMAT is absent.
 
 ``--output`` selects both the report directory and the plotting output root.
 During each demo, ``SSATK_OUTPUT_DIR`` and the legacy
@@ -62,8 +90,9 @@ The separate workflow suite, ``python -m pytest scripts/tests -q``, also serves 
 under ``/ssatk/`` and checks actual HTTP responses against literal asset bytes.
 
 Demos that explicitly report missing optional data or software are labeled
-``skipped`` with their reason. Failed demos remain failures and make the CLI
-return a nonzero status, preventing publication. Internal exceptions are never
+``skipped`` with their reason. Such skips and failures both block publication
+under ``--strict``. The HTML report and logs are still written for diagnosis.
+Internal exceptions are never
 used to retry a demo with different arguments. Demos with a top-level ``def run``
 or ``def main`` are imported once and called using recognized parameter names
 (``output_dir``/``output_root``, ``make_figures``, ``fast``, ``verbose``).

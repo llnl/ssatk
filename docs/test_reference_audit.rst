@@ -250,10 +250,14 @@ The original testing policy excludes rendering and demo execution from
 ``tests/``. Publishing/export checks therefore run separately in the gallery
 workflow with ``python -m pytest scripts/tests -q``. The default pytest command
 selects ``tests/`` explicitly in ``pyproject.toml``. The scene follow-up has
-658 core cases (103 files, 389 functions) and 152 workflow cases (4 files,
-27 functions): 810 total. The browser contract runs in gallery CI and skips
+658 core cases (103 files, 389 functions) and 155 workflow cases (4 files,
+29 functions): 813 total. The browser contract runs in gallery CI and skips
 locally unless ``SSATK_BROWSER_TESTS=1`` is set. Relative to the preceding
 792-case handoff, this adds eight numerical and ten rendering/export cases.
+The subsequent gallery dependency fix adds three publishing cases: both CLI
+skip policies (including stale archive removal) and discovery of the real
+gallery membership with standalone GMAT excluded. These are deployment
+contracts, not physical reference tests.
 
 In the preceding audit, the former 775-case combined suite became 792 cases: one duplicated path
 layout was removed and 18 targeted cases were added. Moving 125 cases out of

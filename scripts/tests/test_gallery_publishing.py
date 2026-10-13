@@ -13,7 +13,7 @@ import zipfile
 
 import pytest
 
-from ssatk.demo_gallery import run_all_demos, run_demo_script
+from ssatk.demo_gallery import discover_demo_files, run_all_demos, run_demo_script
 from ssatk.gallery_validation import validate_gallery
 
 
@@ -115,6 +115,40 @@ def test_skipped_demo_is_not_claimed_successful(tmp_path):
     page = (site / "index.html").read_text()
     assert '<strong>Skipped</strong><br>1' in page
     assert '<strong>Successful</strong><br>0' in page
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_cli_skip_policy_blocks_publication_but_preserves_diagnostics(tmp_path, strict):
+    """C: execute the CLI with a real skipped fixture and a stale archive."""
+    from ssatk.run_all_demos import main
+
+    demos, site = tmp_path / "demos", tmp_path / "site"
+    _demo(demos, 'def main(): return {"skipped": True, "reason": "Missing reference data"}\n')
+    archive = tmp_path / "site.zip"
+    archive.write_bytes(b"stale previous build")
+    args = ["--demos-dir", str(demos), "--output", str(site)]
+    status = main(args + (["--strict"] if strict else []))
+    assert status == (1 if strict else 0)
+    assert archive.exists() is not strict
+    manifest = json.loads((site / "manifest.json").read_text())
+    assert manifest[0]["status"] == "skipped"
+    assert "Missing reference data" in (site / "index.html").read_text()
+    if not strict:
+        assert zipfile.is_zipfile(archive)
+
+
+def test_gallery_excludes_standalone_gmat_but_keeps_other_comparisons():
+    """C: discover real demo metadata without importing optional runtimes."""
+    demos = Path(__file__).resolve().parents[2] / "demos"
+    included = {p.relative_to(demos).as_posix() for p in discover_demo_files(demos)}
+    assert "benchmarks/demo_gmat_benchmark.py" not in included
+    assert {
+        "benchmarks/demo_orekit_benchmark.py",
+        "benchmarks/demo_long_term_propagation_benchmark.py",
+        "benchmarks/demo_nbody_propagation_benchmark.py",
+        "orbit_visualization/demo_moon_webgl.py",
+        "space_environment/demo_magfield_plot.py",
+    } <= included
 
 
 @pytest.mark.parametrize("url", [

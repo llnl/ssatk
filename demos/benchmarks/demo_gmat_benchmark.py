@@ -20,6 +20,7 @@ from ssatk.propagators_orbit import propagate_orbit_state
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "benchmarks"
+GALLERY_INCLUDE = False  # Standalone comparison requiring a local GMAT installation.
 GMAT_IMAGE = "ubuntu:24.04"
 # POTFIELD value in GMAT's data/gravity/earth/JGM2.cof.
 GMAT_JGM2_MU_M3_S2 = 3.986004415e14

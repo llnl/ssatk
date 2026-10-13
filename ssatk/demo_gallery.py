@@ -721,6 +721,7 @@ def run_all_demos(
     *,
     fast: bool = True,
     timeout_seconds: float | None = 180,
+    strict: bool = False,
 ) -> list[DemoResult]:
     demos_dir = Path(demos_dir).expanduser().resolve()
     output_root = Path(output_root).expanduser().resolve()
@@ -757,7 +758,8 @@ def run_all_demos(
     build_html_report(results, output_root)
     validate_gallery(output_root)
 
-    if all(result.status != "failed" for result in results):
+    if all(result.status == "success" if strict else result.status != "failed"
+           for result in results):
         shutil.make_archive(str(output_root), "zip", root_dir=str(output_root))
 
     return results
