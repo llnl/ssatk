@@ -30,7 +30,7 @@ def main(make_figures=None, fast=None):
     ap = EARTH_RADIUS + 1000e3
 
     rs = []
-    peris = np.linspace(10e3, EARTH_RADIUS, 4 if fast else 10)
+    peris = EARTH_RADIUS + np.linspace(200e3, 900e3, 4 if fast else 10)
     for peri in peris:
         a = (peri + ap) / 2
         e = (ap - peri) / (peri + ap)
@@ -46,7 +46,7 @@ def main(make_figures=None, fast=None):
             view="xy",
             save_path=figpath("testing_ellipses.jpg"),
             pad=500,
-            title="Point source Earth",
+            title="Exterior Earth orbits: 200–900 km perigee, 1,000 km apogee",
         )
 
     return {"trajectories": rs}

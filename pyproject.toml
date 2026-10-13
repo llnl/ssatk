@@ -71,6 +71,7 @@ notebook = [
 
 static = [
   "kaleido",
+  "plotly>=6.1.1",
 ]
 
 browser = [

@@ -50,14 +50,14 @@ def main(make_figures=None, make_video=None, fast=None):
 
     if fast:
         duration_hr = 4.0
-        dt_s = 300.0
-        video_frames = 6
+        dt_s = 10.0
+        video_frames = 120
         fps = 8
         globe_scale = 16.0
     else:
         duration_hr = 12.0
-        dt_s = 180.0
-        video_frames = 8
+        dt_s = 10.0
+        video_frames = 240
         fps = 8
         globe_scale = 16.0
 

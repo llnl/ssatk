@@ -51,6 +51,8 @@ def orbit_animation(
     This is the animation backend for :func:`ssatk.plots.orbit_plot`.
     Static image extensions still use the normal full-track plot; ``.gif`` and
     ``.mp4`` save an animation with moving heads and short fading tails.
+    ``max_frames`` limits the playback frames; trails retain input samples.
+    ``tail_points``/``tail`` counts playback frames, not trajectory samples.
     """
     _raise_unrecognized_kwargs(animation_kwargs, "orbit_animation")
     save_path = _animation_save_path(save_path)
@@ -76,7 +78,8 @@ def orbit_animation(
     r_list, t_list = _valid_orbits(r, t)
     if not r_list:
         raise ValueError("Empty trajectory; nothing to animate.")
-    r_list, t_list = _downsample_tracks(r_list, t_list, max_frames=max_frames)
+    # Limit rendered frames, not the geometry used to draw each trail.
+    frame_indices = _animation_indices(r_list, max_frames=max_frames)
 
     if "w" in c:
         textcolor = "black"
@@ -101,15 +104,15 @@ def orbit_animation(
 
     colors = _cm.rainbow(_np.linspace(0, 1, max(1, len(prepared["tracks"]))))
     artists = _init_animation_artists(axes, views, prepared["tracks"], colors)
-    frame_count = max(len(track["xyz"]) for track in prepared["tracks"])
+    frame_count = len(frame_indices[0])
 
     def update(frame_index):
         frame_artists = []
         for track_index, track in enumerate(prepared["tracks"]):
             color = colors[track_index % len(colors)]
-            idx = min(frame_index, len(track["xyz"]) - 1)
+            idx = frame_indices[track_index][frame_index]
             xyz = track["xyz"]
-            start = max(0, idx - tail_points + 1)
+            start = frame_indices[track_index][max(0, frame_index - tail_points + 1)]
             tail_xyz = xyz[start: idx + 1]
             for view in views:
                 artist_group = artists[(track_index, view)]
@@ -128,7 +131,7 @@ def orbit_animation(
                 artist_group["tail"] = tail_artist
                 frame_artists.extend([artist_group["head"], tail_artist])
 
-        _update_secondary_markers(axes, views, artists, prepared, frame_index, frame_artists)
+        _update_secondary_markers(axes, views, artists, prepared, frame_indices[0][frame_index], frame_artists)
         return frame_artists
 
     animation = FuncAnimation(
@@ -176,18 +179,10 @@ def _animation_writer(suffix, *, fps, bitrate):
     )
 
 
-def _downsample_tracks(r_list, t_list, *, max_frames):
-    max_len = max(len(track) for track in r_list)
-    if max_len <= max_frames:
-        return r_list, t_list
-
-    r_downsampled = []
-    t_downsampled = []
-    for track, time in zip(r_list, t_list):
-        indices = _np.linspace(0, len(track) - 1, max_frames).astype(int)
-        r_downsampled.append(track[indices])
-        t_downsampled.append(time[indices])
-    return r_downsampled, t_downsampled
+def _animation_indices(r_list, *, max_frames):
+    """Select head positions; all intervening input samples remain in the tail."""
+    count = min(max(len(track) for track in r_list), max_frames)
+    return [_np.linspace(0, len(track) - 1, count).astype(int) for track in r_list]
 
 
 def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad):

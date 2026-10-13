@@ -36,7 +36,7 @@ def main(make_figures=None, fast=None):
     cfg["frame_duration_ms"] = 45 if fast else 35
     cfg["sphere_resolution"] = 20 if fast else 36
     cfg["hero_resolution"] = 64 if fast else 180
-    cfg["show_stars"] = False
+    cfg["show_stars"] = True
     cfg["show_labels"] = True
     cfg["show_moon_trail"] = True
 

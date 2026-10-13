@@ -57,8 +57,10 @@ def _make_demo_orbit(fast=False):
         t=t0,
     )
 
-    n_points = 48 if fast else 120
     duration_seconds = 2.0 * 3600.0 if fast else 6.0 * 3600.0
+    # Propagate at <=10 s cadence (LEO chords sag by <~100 m); rendering fewer
+    # animation frames must not reduce the trajectory sampling.
+    n_points = int(np.ceil(duration_seconds / 10.0)) + 1
     times = Time(t0.gps + np.linspace(0.0, duration_seconds, n_points), format="gps")
 
     r_m, v_mps = ssatk.rv(orbit, times)

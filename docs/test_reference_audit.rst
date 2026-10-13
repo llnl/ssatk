@@ -1,7 +1,7 @@
 Test reference audit
 ====================
 
-This audit covers all 102 ``tests/test_*.py`` files and their 384 test
+This audit covers all 103 ``tests/test_*.py`` files and their 389 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
@@ -236,6 +236,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_tle_iter_pairs.py,1,C,Literal validated-checksum TLE line/name records,Serialization contract only
    tests/test_transfer_optimal.py,1,R1,Analytic Hohmann cost and transfer time,Selected coplanar circular case; not proof of general global optimality
    tests/test_two_body_closed_forms.py,2,R1,Vis-viva apsidal speeds and haversine great-circle distance,Ideal two-body/spherical models
+   tests/test_solar_scene_geometry.py,5,R1 R2,ERFA ecm06; SSAPy DE ephemeris; analytic pinhole projection,Approximate built-in ephemeris; not a measured-sky calibration
    tests/test_viewer_star_reference.py,1,R2 R6,Astropy GCRS-to-TEME sky at 2008 and 2026 epochs,0.5 arcsec transform/serialization budget; catalog astrometry itself is not recalibrated
 
 The inventory is a review record, not a proof of completeness over all
@@ -248,9 +249,13 @@ Workflow contracts outside the numerical suite
 The original testing policy excludes rendering and demo execution from
 ``tests/``. Publishing/export checks therefore run separately in the gallery
 workflow with ``python -m pytest scripts/tests -q``. The default pytest command
-selects ``tests/`` explicitly in ``pyproject.toml``. There are 650 core cases
-(102 files, 384 functions) and 142 workflow cases (2 files, 20 functions).
-The former 775-case combined suite becomes 792 cases: one duplicated path
+selects ``tests/`` explicitly in ``pyproject.toml``. The scene follow-up has
+658 core cases (103 files, 389 functions) and 152 workflow cases (4 files,
+27 functions): 810 total. The browser contract runs in gallery CI and skips
+locally unless ``SSATK_BROWSER_TESTS=1`` is set. Relative to the preceding
+792-case handoff, this adds eight numerical and ten rendering/export cases.
+
+In the preceding audit, the former 775-case combined suite became 792 cases: one duplicated path
 layout was removed and 18 targeted cases were added. Moving 125 cases out of
 ``tests/`` changes their classification, not the total number checked.
 
@@ -280,3 +285,12 @@ GPS epoch could accept a whole-second time error. Copied segment epochs now
 require exact equality. Analytic frame arithmetic allows float64 rounding;
 OEM elapsed-time conversions retain a 1 ns absolute budget. These budgets
 validate specified computations, not measured model fidelity.
+
+The solar scene follow-up adds analytic pinhole projection checks, an ERFA
+J2000 ecliptic rotation reference, and four-epoch comparisons against SSAPy's
+separate DE ephemeris. ``scripts/tests/test_solar_gallery.py`` checks physical
+mesh radii, explicit scale labels, precise UTC dates and AU coordinates, dense
+circular trails under playback decimation, and 60-second frame timing.
+``scripts/tests/test_solar_sky_browser.py`` uses two prescribed opposite rays
+and a green occluder: it checks actual browser pixels on camera reversal and
+resize. It does not treat file existence as evidence of rendering correctness.

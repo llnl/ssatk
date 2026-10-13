@@ -496,7 +496,7 @@ def _summarize_delta_v(results_by_family):
 
 
 def _build_maneuver_results(fast):
-    samples = 32 if fast else 180
+    samples = 360
     r0, v0, _ = _circular_state(7000e3)
     transfer_angle = np.deg2rad(150.0)
     r_target, v_target, _ = _circular_state(9000e3, transfer_angle)

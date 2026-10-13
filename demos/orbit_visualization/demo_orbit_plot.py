@@ -6,7 +6,7 @@ from astropy.time import Time
 
 from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
 from ssatk.plots.orbit_plot import orbit_plot
-from ssatk.constants import RGEO
+from ssatk.constants import RGEO, MOON_RADIUS, MOON_MU
 from ssatk.coordinates.lunar import get_lunar_rv
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -37,20 +37,27 @@ def main(make_figures=None, fast=None):
     if fast is None:
         fast = UNDER_PYTEST
 
-    times = Time("2024-1-1").gps
+    epoch = Time("2024-01-01", scale="utc")
+    times = epoch.gps
     print(times)
 
     r_moon, v_moon = get_lunar_rv(times)
     print(r_moon, v_moon)
 
-    r0 = r_moon[0] + (1000e3 * r_moon[0] / np.linalg.norm(r_moon[0]))
-    v0 = v_moon[0] + 100
+    # 1,000 km altitude above the lunar surface, not 1,000 km from its center.
+    radial = r_moon[0] / np.linalg.norm(r_moon[0])
+    normal = np.cross(r_moon[0], v_moon[0])
+    normal /= np.linalg.norm(normal)
+    tangent = np.cross(normal, radial)
+    radius = MOON_RADIUS + 1000e3
+    r0 = r_moon[0] + radius * radial
+    v0 = v_moon[0] + np.sqrt(MOON_MU / radius) * tangent
     print(r0, v0)
 
     # single orbit
     print("\nCalculating orbit.")
     single_duration = (3, "day") if fast else (4, "day")
-    r, v, t = ssapy_orbit(r=r0, v=v0, duration=single_duration)
+    r, v, t = ssapy_orbit(r=r0, v=v0, duration=single_duration, t0=epoch)
     print(f"Plotting orbit. {np.shape(r)} {np.shape(t)}")
 
     if make_figures:
@@ -68,6 +75,7 @@ def main(make_figures=None, fast=None):
         i=0.25,
         pa=np.pi / 2,
         duration=single_duration,
+        t0=epoch,
     )
     print(f"Plotting two orbits same length. {np.shape(r)} {np.shape(r2)} {np.shape(t)}")
 
@@ -110,7 +118,7 @@ def main(make_figures=None, fast=None):
         )
 
     # groundtrack dashboard
-    r_dash, v_dash, t_dash = ssapy_orbit(a=RGEO, e=0.2, duration=((6, "hour") if fast else (12, "hour")))
+    r_dash, v_dash, t_dash = ssapy_orbit(a=RGEO, e=0.2, duration=((6, "hour") if fast else (12, "hour")), t0=epoch)
 
     if make_figures:
         orbit_plot(

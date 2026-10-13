@@ -40,23 +40,19 @@ from ssatk.plots.solar_bodies import (
     make_moon_traces,
     make_planet_traces,
     make_sun_traces,
-    moon_geocentric_ecliptic,
+    _moon_offset_au,
 )
 
 # ── Project imports ───────────────────────────────────────────────────────────
-# Earth's Keplerian elements and orbit math are already correct and validated
-# in solar_view_plot.py — reused here rather than re-derived, so both scenes
-# stay in sync if the elements are ever updated.
+# Share the same ephemeris and J2000 ecliptic convention as solar_view_plot.
 from ssatk.plots.solar_view_plot import (
     _PLANETS,
     _orbit_trail_au,
-    _planet_pos_au,
+    _body_positions_au,
 )
 
-# Real catalog + IAU 1976 precession (see _static_backdrop for why this calls
-# starfield.py's private loader directly rather than its public add_starfield,
-# which is matplotlib-only).
-from ssatk.plots.starfield import _load_stars as _sf_load_stars
+from ssatk.plots._solar_scene import SolarFigure, add_sky, scale_caption
+from astropy.time import Time
 
 _EARTH = _PLANETS["Earth"]
 _YEAR_DAYS = 365.25 * math.sqrt(_EARTH["a"] ** 3)   # ≈ 365.256 days
@@ -64,21 +60,13 @@ _SIDEREAL_MONTH_DAYS = 27.321661
 
 
 def _shrink_floats(fig: go.Figure) -> go.Figure:
-    """
-    Downcast large float64 array attributes (x/y/z/surfacecolor/etc.) to
-    float32 before writing HTML.
+    """Compact surface colours while preserving physical position precision.
 
-    Plotly embeds numeric arrays as raw binary (base64), sized by dtype, not
-    by how many decimals the values print with — so rounding values does
-    nothing, but the dtype itself is a real, free win. float32 keeps ~7
-    significant digits, far finer than anything visible at this AU-to-sphere
-    scale (the Moon's own display radius alone is ~1e-4 AU), and cuts the
-    animated file size by roughly 40% since x/y/z resend every frame.
-    Called only at save time — build_figure()/build_static_figure() still
-    return full-precision figures for anyone doing further math on them.
+    Float32 AU coordinates lose kilometres near Earth: retain x/y/z as
+    float64 now that bodies use their physical radii.
     """
     def _shrink_trace(trace):
-        for attr in list(trace):
+        for attr in ("surfacecolor",):
             try:
                 val = trace[attr]
             except Exception:
@@ -116,10 +104,10 @@ def _moon_phase_fraction(earth_pos_au: np.ndarray, moon_offset_km: np.ndarray) -
 
 
 def _jd_to_date(t_jd: float) -> _dt.date:
-    return _dt.date(2000, 1, 1) + _dt.timedelta(days=round(t_jd - 2_451_545.0))
+    return Time(t_jd, format="jd", scale="utc").to_datetime().date()
 
 
-def _title_text(t_jd: float, earth_pos_au: np.ndarray, moon_offset_km: np.ndarray) -> str:
+def _title_text(t_jd: float, earth_pos_au: np.ndarray, moon_offset_km: np.ndarray, cfg: dict) -> str:
     r_se_km = float(np.linalg.norm(earth_pos_au)) * _AU_KM
     r_em_km = float(np.linalg.norm(moon_offset_km))
     phase = _moon_phase_fraction(earth_pos_au, moon_offset_km)
@@ -128,6 +116,7 @@ def _title_text(t_jd: float, earth_pos_au: np.ndarray, moon_offset_km: np.ndarra
         f"  |  Sun–Earth {r_se_km/1e6:.2f} M km"
         f"  |  Earth–Moon {r_em_km:,.0f} km"
         f"  |  Moon illum. {phase*100:.0f}%"
+        f"<br><sup>J2000 ecliptic · {scale_caption(cfg)}</sup>"
     )
 
 
@@ -138,79 +127,15 @@ def _static_backdrop(cfg: dict, t_jd0: float) -> list:
     # Earth's full-year orbit — computed once; over one year the ellipse
     # itself doesn't visibly change, so it's a static reference rather than
     # something recomputed per frame.
-    ex, ey, ez = _orbit_trail_au("Earth", t_jd0, n_pts=300)
+    ex, ey, ez = _orbit_trail_au("Earth", t_jd0, ephemeris=cfg.get("sol_ephemeris", "builtin"), n_pts=720)
     traces.append(go.Scatter3d(
         x=ex, y=ey, z=ez, mode="lines",
         line=dict(color="rgba(90,160,230,0.45)", width=2),
         name="Earth's orbit", hoverinfo="skip",
     ))
 
-    for t in make_sun_traces(r_display_au=_R_AU["Sun"] * float(cfg.get("planet_scale", 1.0))):
+    for t in make_sun_traces(r_display_au=_R_AU["Sun"] * float(cfg.get("sun_scale", 1.0))):
         traces.append(t)
-
-    if bool(cfg.get("show_stars", True)):
-        # Real catalog + IAU 1976 precession to this scene's epoch, via the
-        # shared starfield.py module (same one the rest of the toolkit's
-        # matplotlib plots use). starfield.py's own add_starfield() draws
-        # directly onto a matplotlib Axes3D, which doesn't apply here — so
-        # this calls its underlying _load_stars() directly (the same
-        # pattern starfield_verification_plotly.py uses) and builds a
-        # Plotly trace from the returned precessed positions.
-        mag_limit = float(cfg.get("star_mag_limit", 6.5))
-        stars = _sf_load_stars(mag_limit=mag_limit, epoch_jd=t_jd0)
-
-        R_star = 1.8   # AU — just outside the orbit; must stay within the
-                       # scene's axis range (_scene_layout) or every star
-                       # gets clipped out of the visible scene entirely.
-                       # (Previously 6.0 AU against a ±1.3 AU range — every
-                       # star was silently outside the plot bounds.)
-        if stars is not None:
-            cx, cy, cz = stars["cx"], stars["cy"], stars["cz"]
-            colors = [f"rgb({int(r*255)},{int(g*255)},{int(b*255)})"
-                      for r, g, b in stars["colors"]]
-            # starfield.py's sizes are tuned for matplotlib's ax.scatter(s=...),
-            # which is an AREA in points² (needs values in the tens-to-hundreds
-            # to read clearly). Plotly's marker size is a pixel DIAMETER, where
-            # even "4.0" — starfield.py's own max — is a small dot, and its
-            # dimmer-star values (many stars sit well under 1.0) round down to
-            # sub-pixel and simply don't render. Rescaling by the actual loaded
-            # brightness range, rather than reusing the raw values, keeps the
-            # brightest-to-dimmest ordering but makes every star land in a
-            # size Plotly actually draws.
-            #
-            # IMPORTANT: keep this range fairly narrow (below ~3x smallest-to-
-            # largest). A wider range (originally 1.2–5.2) was confirmed, via
-            # extensive bisection against real headless-Chromium WebGL
-            # rendering, to trigger a Plotly/WebGL depth-sorting bug: larger
-            # star markers would render *in front of* the opaque Earth sphere
-            # instead of being occluded behind it, showing up as a dark blob
-            # on Earth's lit hemisphere. This wasn't a data bug (no single
-            # "bad" star was responsible — removing any one star didn't fix
-            # it) and wasn't fixed by angular exclusion, opacity changes, or
-            # reducing star count down to 168 — only reducing the marker
-            # *size range* eliminated it in every test.
-            raw = np.asarray(stars["sizes"], dtype=float)
-            lo, hi = raw.min(), raw.max()
-            sizes = 0.8 + 2.2 * (raw - lo) / (hi - lo + 1e-9)
-            print(f"[earth_sun_plot] Loaded {stars['n']} stars from the real "
-                  f"catalog, precessed to JD {t_jd0:.1f}.")
-        else:
-            print("[earth_sun_plot] No star catalog found via starfield.py's "
-                  "search paths — using a synthetic starfield.")
-            rng = np.random.default_rng(7)
-            n_syn = 1200
-            th = rng.uniform(0, 2 * np.pi, n_syn)
-            ph = np.arccos(rng.uniform(-1, 1, n_syn))
-            cx, cy, cz = np.sin(ph) * np.cos(th), np.sin(ph) * np.sin(th), np.cos(ph)
-            sizes = rng.uniform(1.2, 3.5, n_syn)   # same Plotly-pixel scale as above
-            colors = "white"
-
-        traces.append(go.Scatter3d(
-            x=cx * R_star, y=cy * R_star, z=cz * R_star,
-            mode="markers",
-            marker=dict(size=sizes, color=colors, opacity=0.85),
-            hoverinfo="skip", name="Stars", showlegend=True,
-        ))
 
     return traces
 
@@ -218,16 +143,17 @@ def _static_backdrop(cfg: dict, t_jd0: float) -> list:
 # ── Dynamic traces (Earth, Moon, trails — recomputed every frame) ────────────
 def _dynamic_traces(cfg: dict, t_jd: float, n: int):
     scale_au    = float(cfg.get("planet_scale", 1.0))
-    moon_scale  = float(cfg.get("moon_orbit_scale", 20.0))
+    moon_scale  = float(cfg.get("moon_orbit_scale", 1.0))
+    ephemeris = cfg.get("sol_ephemeris", "builtin")
     show_labels = bool(cfg.get("show_labels", True))
 
-    earth_pos = np.array(_planet_pos_au(_EARTH, t_jd))
+    earth_pos = _body_positions_au("Earth", t_jd, ephemeris=ephemeris)
     traces = list(make_planet_traces("Earth", tuple(earth_pos), scale_au=scale_au,
                                       show_label=show_labels, n=n, time=t_jd))
 
-    moon_offset_km = np.array(moon_geocentric_ecliptic(t_jd))
+    moon_offset_km = _moon_offset_au(t_jd, ephemeris=ephemeris) * _AU_KM
     traces.extend(make_moon_traces(tuple(earth_pos), t_jd, orbit_scale=moon_scale,
-                                    show_label=show_labels, n=n))
+                                    show_label=show_labels, n=n, scale_au=scale_au, ephemeris=ephemeris))
 
     if bool(cfg.get("show_moon_trail", True)):
         # The Moon's recent path around Earth, drawn relative to Earth's
@@ -235,12 +161,8 @@ def _dynamic_traces(cfg: dict, t_jd: float, n: int):
         # this is a local Earth–Moon diagram, so the trail should show the
         # Earth-relative geometry, not get smeared by Earth's own motion
         # around the Sun over that same month.
-        pts = []
-        for k in range(41):
-            tj = t_jd - _SIDEREAL_MONTH_DAYS + k * _SIDEREAL_MONTH_DAYS / 40.0
-            off_km = np.array(moon_geocentric_ecliptic(tj))
-            pts.append(earth_pos + off_km / _AU_KM * moon_scale)
-        pts = np.array(pts)
+        samples = np.linspace(t_jd - _SIDEREAL_MONTH_DAYS, t_jd, 361)
+        pts = earth_pos + _moon_offset_au(samples, ephemeris=ephemeris) * moon_scale
         traces.append(go.Scatter3d(
             x=pts[:, 0], y=pts[:, 1], z=pts[:, 2], mode="lines",
             line=dict(color="rgba(205,205,215,0.35)", width=1.5),
@@ -259,34 +181,15 @@ def _dynamic_traces(cfg: dict, t_jd: float, n: int):
 
 
 def _scene_layout(cfg: dict, bg: str) -> dict:
-    rng = 2.0   # must exceed the star radius (R_star, in _static_backdrop) or
-                # stars render outside the visible scene and get clipped
+    rng = 1.2
     axis_kw = dict(showbackground=False, showgrid=False, zeroline=False,
                    showticklabels=False, title="")
-    # A shallow camera elevation (previously ~27°) means that whenever the
-    # *current date* happens to put Earth near the same azimuth as the
-    # camera, Earth visually overlaps the Sun in the projection — they're
-    # still 1 AU apart in the data, but the near-edge-on view hides that
-    # separation. A steep, near-top-down elevation (~55°+) keeps Sun and
-    # Earth visibly separated across the whole orbit regardless of date
-    # (checked across several dates spanning the year before settling here).
     return dict(
         xaxis=dict(range=[-rng, rng], **axis_kw),
         yaxis=dict(range=[-rng, rng], **axis_kw),
-        # Was rng*0.25 (±0.5) — fine for the orbit itself (genuinely flat,
-        # z≈0), but the star sphere is isotropic and needs z-range out to
-        # its own radius (R_star=1.8) or every star outside a thin
-        # equatorial band gets clipped, which is exactly why stars were
-        # rendering in a ring instead of covering the sky. aspectratio z
-        # widened to match so spheres still render round, not squashed.
         zaxis=dict(range=[-rng, rng], **axis_kw),
-        bgcolor=bg, aspectmode="manual", aspectratio=dict(x=1, y=1, z=1),
+        bgcolor=bg, aspectmode="cube",
         camera=dict(eye=dict(x=0.31, y=-0.54, z=0.89), up=dict(x=0, y=0, z=1)),
-        # (Steepening the elevation angle last round also accidentally
-        # increased the camera *distance* — same angle, farther away — which
-        # shrank the whole scene down to a small fraction of the frame. This
-        # eye vector keeps the corrected elevation but at a distance that
-        # actually fills the frame.)
     )
 
 
@@ -301,7 +204,7 @@ def _resolve_start_jd(cfg: dict) -> float:
             d0 = _dt.date(int(yr), int(mo), int(dy))
         except ValueError:
             d0 = _dt.date.today()
-    return 2_451_545.0 + (d0 - _dt.date(2000, 1, 1)).days
+    return float(Time(d0.isoformat(), scale="utc").jd)
 
 
 # ── Figure builders ────────────────────────────────────────────────────────────
@@ -327,9 +230,9 @@ def build_figure(cfg: dict) -> go.Figure:
         dyn_traces, epos, moff = _dynamic_traces(cfg, t_jd, sphere_res)
         frames.append(go.Frame(
             data=dyn_traces, traces=dyn_idx, name=str(i),
-            layout=go.Layout(title=dict(text=_title_text(t_jd, epos, moff))),
+            layout=go.Layout(title=dict(text=_title_text(t_jd, epos, moff, cfg))),
         ))
-    fig = go.Figure(data=static_traces + frame0_traces, frames=frames)
+    fig = SolarFigure(data=static_traces + frame0_traces, frames=frames)
 
     slider_steps = [
         dict(
@@ -346,7 +249,7 @@ def build_figure(cfg: dict) -> go.Figure:
         scene=_scene_layout(cfg, bg),
         paper_bgcolor=bg,
         font=dict(color="#C8D8E8"),
-        title=dict(text=_title_text(t_jd0, earth_pos0, moon_off0),
+        title=dict(text=_title_text(t_jd0, earth_pos0, moon_off0, cfg),
                    x=0.5, font=dict(color="#00FF9C", size=13)),
         legend=dict(bgcolor="rgba(0,0,0,0.5)", bordercolor="#333",
                     borderwidth=1, font=dict(size=10)),
@@ -371,6 +274,8 @@ def build_figure(cfg: dict) -> go.Figure:
             pad=dict(t=0), steps=slider_steps,
         )],
     )
+    if cfg.get("show_stars", True):
+        add_sky(fig, cfg, Time(t_jd0, format="jd"))
     return fig
 
 
@@ -383,78 +288,32 @@ def build_static_figure(cfg: dict) -> go.Figure:
     static_traces = _static_backdrop(cfg, t_jd0)
     dyn_traces, earth_pos0, moon_off0 = _dynamic_traces(cfg, t_jd0, hero_n)
 
-    fig = go.Figure(data=static_traces + dyn_traces)
+    fig = SolarFigure(data=static_traces + dyn_traces)
     fig.update_layout(
         scene=_scene_layout(cfg, bg),
         paper_bgcolor=bg,
         font=dict(color="#C8D8E8"),
-        title=dict(text=_title_text(t_jd0, earth_pos0, moon_off0),
+        title=dict(text=_title_text(t_jd0, earth_pos0, moon_off0, cfg),
                    x=0.5, font=dict(color="#00FF9C", size=13)),
         legend=dict(bgcolor="rgba(0,0,0,0.5)", bordercolor="#333",
                     borderwidth=1, font=dict(size=10)),
         margin=dict(l=0, r=0, t=60, b=0),
     )
+    if cfg.get("show_stars", True):
+        add_sky(fig, cfg, Time(t_jd0, format="jd"))
     return fig
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 DEFAULT_CFG = dict(
-    start_year=None, start_month=None, start_day=None,   # None → today
-    n_frames=40,
-    frame_duration_ms=110,
-    planet_scale=3.5,               # Earth's true display radius (0.021 AU) is
-                                     # ~1.6% of the scene width — a few pixels,
-                                     # too small to show shading or texture at
-                                     # all. Exaggerated further here (on top of
-                                     # solar_bodies.py's already-exaggerated
-                                     # base sizes) purely for this close-in view.
-    moon_orbit_scale=65.0,          # Moon's real distance is stretched, but
-                                    # NOT by the same ~500x/3.5x exaggeration
-                                    # as planet sizes — just enough to clear
-                                    # Earth's own display radius. This must
-                                    # be recalibrated any time planet_scale
-                                    # changes: Earth's display radius is
-                                    # 0.021*planet_scale AU, and the Moon's
-                                    # exaggerated distance is (real distance,
-                                    # ~0.0024-0.0027 AU) * moon_orbit_scale —
-                                    # the latter must clearly exceed the
-                                    # former even at perigee, or the Moon
-                                    # renders *inside* the Earth sphere (as
-                                    # it did here: at planet_scale=3.5, the
-                                    # old moon_orbit_scale=20 put the Moon's
-                                    # orbit at 0.048-0.054 AU against an Earth
-                                    # radius of 0.0735 AU — always inside).
-    sphere_resolution=90,           # per-frame animated sphere mesh — real Earth
-                                     # texture now backs this (see solar_bodies.py).
-                                     # x/y/z resend every frame, but _shrink_floats()
-                                     # downcasts to float32 at save time (~40% smaller,
-                                     # no visible loss), which is what makes n=90
-                                     # affordable here (~23MB) instead of n=65.
-    hero_resolution=320,            # single high-res frame for the JPG
-    show_labels=True,
-    show_stars=False,               # Off by default. Extensive debugging (bisection
-                                     # against real headless-Chromium WebGL rendering,
-                                     # not just the static JPG) traced a real dark-blob
-                                     # artifact on Earth to the Stars trace, and found
-                                     # it's sensitive to marker size range — but ALSO,
-                                     # unexpectedly, to the browser's viewport size
-                                     # (clean at 1000x700, still present at 1400x900
-                                     # with identical data). That points to a Plotly.js
-                                     # WebGL depth-precision issue I can't reliably
-                                     # eliminate from this side. The size-range fix
-                                     # below is a genuine improvement and stays in,
-                                     # but rather than risk shipping a residual visual
-                                     # bug by default, this is opt-in: set True if you
-                                     # want to try it (works cleanly in many window
-                                     # sizes, just not guaranteed in all of them).
-    star_mag_limit=6.5,             # deeper = more (dimmer) stars; starfield.py
-                                     # finds its own catalog file (same search
-                                     # paths it already uses for the matplotlib
-                                     # plots) — no path to configure here.
-    show_radius_line=True,
-    show_moon_trail=True,
-    bg_color="#060810",
-    output_dir=str(output_root() / "figures"),
+    start_year=None, start_month=None, start_day=None,
+    n_frames=365, frame_duration_ms=80,
+    planet_scale=1.0, sun_scale=1.0, moon_orbit_scale=1.0,
+    sol_ephemeris="builtin",
+    sphere_resolution=28, hero_resolution=64,
+    show_labels=True, show_stars=True, star_mag_limit=6.5,
+    show_radius_line=True, show_moon_trail=True,
+    bg_color="#060810", output_dir=str(output_root() / "figures"),
 )
 
 if __name__ == "__main__":

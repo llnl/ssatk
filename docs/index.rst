@@ -32,6 +32,7 @@ body and component model.
    usage
    spacecraft_view
    gallery_hosting
+   gallery_scene_fidelity
    benchmarking_ssatk
    test_reference_audit
    design/6dof_architecture

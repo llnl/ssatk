@@ -14,6 +14,7 @@ from ssapy.propagator import default_numerical
 from astropy.time import Time
 
 from ssatk.coordinates.lunar import get_lunar_rv
+from ssatk.constants import EARTH_RADIUS
 from ssatk.plots.figpath import figpath
 from ssatk.plots.orbit_animation import _animation_writer
 
@@ -51,25 +52,22 @@ def solve_collinear_l1_x(mu, tol=1e-12, max_iter=50):
     return float(x)
 
 
-def _propagate_with_fallback(orbit, t_frames):
-    prop = default_numerical()
-    n = len(t_frames)
-    min_n = max(2, int(0.05 * n))
-    k = n
+def _propagate_complete(orbit, t_frames):
+    """Propagate the requested span or fail; never silently shorten the movie."""
+    r_sc, _ = rv(orbit=orbit, time=Time(t_frames, format="gps"),
+                 propagator=default_numerical())
+    r_sc = np.asarray(r_sc, dtype=float).reshape((-1, 3))
+    if len(r_sc) != len(t_frames) or not np.isfinite(r_sc).all():
+        raise RuntimeError("Incomplete cislunar propagation")
+    return r_sc
 
-    while k >= min_n:
-        try:
-            times = Time(t_frames[:k], format="gps")
-            r_sc_f, v_sc_f = rv(orbit=orbit, time=times, propagator=prop)
-            r_sc_f = np.array(r_sc_f, dtype=float).reshape((-1, 3))
-            return r_sc_f, t_frames[:k]
-        except Exception:
-            k = int(0.9 * k)
 
-    times = Time(t_frames[:2], format="gps")
-    r_sc_f, v_sc_f = rv(orbit=orbit, time=times, propagator=prop)
-    r_sc_f = np.array(r_sc_f, dtype=float).reshape((-1, 3))
-    return r_sc_f, t_frames[:2]
+def _movie_times(t0_gps, duration_days, playback_seconds, fps):
+    """Exactly round(playback_seconds*fps) frames spanning the physical interval."""
+    if min(duration_days, playback_seconds, fps) <= 0:
+        raise ValueError("Durations and frame rate must be positive")
+    count = max(2, int(round(playback_seconds * fps)))
+    return t0_gps + np.linspace(0.0, duration_days * 86400.0, count)
 
 
 def _draw_sphere(ax, center, radius, color, alpha=1.0, resolution=30):
@@ -84,32 +82,32 @@ def _draw_sphere(ax, center, radius, color, alpha=1.0, resolution=30):
 
 def orbit_moon_video_demo(
     t0="2024-01-01",
-    duration_days=60.0,
+    duration_days=7.0,
     fps=12,
     seconds_per_frame=6 * 3600,
+    playback_seconds=60.0,
     trail_len=120,
     out_name="figures/demo_orbit_moon_video.mp4",
     save_gif=False,
     make_figures=True,
-    fast=True,
+    fast=False,
 ):
     if make_figures is None:
         make_figures = not UNDER_PYTEST
     if fast is None:
         fast = UNDER_PYTEST
 
-    if fast:
-        duration_days = min(duration_days, 2.0)
-        fps = min(fps, 8)
-        seconds_per_frame = max(seconds_per_frame, 12 * 3600)
-        save_gif = False
+    # Fast mode reduces spatial resolution, never the movie duration.
+    t0_gps = float(Time(t0).gps)
+    t_frames = _movie_times(t0_gps, duration_days, playback_seconds, fps)
+    # Optional finer propagation cadence affects the line geometry only.
+    if not np.isfinite(seconds_per_frame) or seconds_per_frame <= 0:
+        raise ValueError("seconds_per_frame must be positive and finite")
+    n_geometry = max(len(t_frames), int(np.ceil(duration_days * 86400 / seconds_per_frame)) + 1)
+    t_geometry = np.unique(np.concatenate((t_frames, np.linspace(t0_gps, t_frames[-1], n_geometry))))
+    frame_indices = np.searchsorted(t_geometry, t_frames)
 
-    t0_gps = float(np.array(Time(t0).gps, dtype=float).ravel()[0])
-    dt_frame = float(seconds_per_frame)
-    n_frames = int(np.ceil((duration_days * 86400.0) / dt_frame)) + 1
-    t_frames = t0_gps + dt_frame * np.arange(n_frames, dtype=float)
-
-    r_moon, v_moon = get_lunar_rv(t_frames)
+    r_moon, v_moon = get_lunar_rv(t_geometry)
     r_moon = np.array(r_moon, dtype=float).reshape((-1, 3))
     v_moon = np.array(v_moon, dtype=float).reshape((-1, 3))
 
@@ -141,21 +139,20 @@ def orbit_moon_video_demo(
     omega_vec = omega * k_hat
 
     r_rel_m = r0 - rm0
-    v_rel = -np.cross(omega_vec, r_rel_m)
+    v_rel = np.cross(omega_vec, r_rel_m)
     v_rel = 0.95 * v_rel
     radial_nudge = 5.0
     v0 = vm0 + v_rel + radial_nudge * x_hat
 
     orbit = Orbit(r=r0, v=v0, t=t0_gps)
-    r_sc_f, t_frames_ok = _propagate_with_fallback(orbit, t_frames)
-
-    n_ok = len(t_frames_ok)
-    r_moon = r_moon[:n_ok, :]
-    max_norm = np.max(np.linalg.norm(np.vstack([r_moon, r_sc_f]), axis=1))
-    lim = 1.10 * max_norm
+    r_sc_f = _propagate_complete(orbit, t_geometry)
+    t_frames_ok = t_geometry
+    all_positions = np.vstack([np.zeros((1, 3)), r_moon, r_sc_f])
+    center = (all_positions.min(axis=0) + all_positions.max(axis=0)) / 2
+    lim = 0.60 * np.ptp(all_positions, axis=0).max()
 
     if not make_figures:
-        return {"r_sc_f": r_sc_f, "r_moon": r_moon, "t_frames_ok": t_frames_ok}
+        return {"r_sc_f": r_sc_f, "r_moon": r_moon, "t_frames_ok": t_frames_ok, "frame_times": t_frames}
 
     # --- Colors ---
     COLOR_MOON      = "#A0A0A8"   # moon-grey dot
@@ -164,12 +161,12 @@ def orbit_moon_video_demo(
     COLOR_SC_TRAIL  = "#FF6A00"   # deeper orange trail
     COLOR_EARTH     = "#1E6FD9"   # blue Earth sphere
 
-    # Earth radius in metres (visual scale — scaled up for visibility)
-    EARTH_RADIUS_VIS = 0.04 * lim
 
-    fig = plt.figure(figsize=(10, 10), dpi=160)
+    fig = plt.figure(figsize=(8, 8), dpi=100 if fast else 150)
     fig.patch.set_facecolor("black")
-    fig.suptitle("Initialize L1 Lunar Orbit", color="white")
+    fig.suptitle("Cislunar trajectory near Earth–Moon L1", color="white")
+    fig.text(0.5, 0.03, "Earth at physical scale · markers locate Moon and spacecraft",
+             ha="center", color="#aebacb", fontsize=9)
 
     ax = fig.add_subplot(111, projection="3d")
     ax.set_facecolor("black")
@@ -187,7 +184,7 @@ def orbit_moon_video_demo(
     ax.set_zticks([])
 
     # Earth sphere at origin
-    _draw_sphere(ax, center=(0.0, 0.0, 0.0), radius=EARTH_RADIUS_VIS, color=COLOR_EARTH, alpha=1.0)
+    _draw_sphere(ax, center=(0.0, 0.0, 0.0), radius=EARTH_RADIUS, color=COLOR_EARTH, alpha=1.0)
 
     # Animated artists
     moon_pt,   = ax.plot([], [], [], marker="o", markersize=7,  color=COLOR_MOON,       linewidth=0)
@@ -196,7 +193,12 @@ def orbit_moon_video_demo(
     sc_trail,  = ax.plot([], [], [], color=COLOR_SC_TRAIL,      linewidth=1.6, alpha=0.65)
     title      = ax.text2D(0.03, 0.92, "", transform=ax.transAxes, color="white")
 
-    _set_axes_equal_3d(ax, lim)
+    ax.set_xlim(center[0] - lim, center[0] + lim)
+    ax.set_ylim(center[1] - lim, center[1] + lim)
+    ax.set_zlim(center[2] - lim, center[2] + lim)
+    ax.set_box_aspect((1, 1, 1))
+    ax.text2D(0.03, 0.06, "● Moon", transform=ax.transAxes, color=COLOR_MOON)
+    ax.text2D(0.03, 0.03, "● Spacecraft", transform=ax.transAxes, color=COLOR_SC)
 
     def init():
         moon_pt.set_data([], [])
@@ -210,7 +212,10 @@ def orbit_moon_video_demo(
         title.set_text("")
         return moon_pt, sc_pt, moon_trail, sc_trail, title
 
-    def update(i):
+    def update(frame):
+        i = frame_indices[frame]
+        ax.view_init(elev=55 + 8*np.sin(2*np.pi*frame/len(t_frames)),
+                     azim=-65 + 120*frame/(len(t_frames)-1))
         rm = r_moon[i]
         rs = r_sc_f[i]
         moon_pt.set_data([rm[0]], [rm[1]])
@@ -218,7 +223,7 @@ def orbit_moon_video_demo(
         sc_pt.set_data([rs[0]], [rs[1]])
         sc_pt.set_3d_properties([rs[2]])
 
-        j0 = max(0, i - trail_len)
+        j0 = frame_indices[max(0, frame - trail_len)]
         rm_tr = r_moon[j0:i + 1]
         rs_tr = r_sc_f[j0:i + 1]
         moon_trail.set_data(rm_tr[:, 0], rm_tr[:, 1])
@@ -233,7 +238,7 @@ def orbit_moon_video_demo(
     ani = FuncAnimation(
         fig,
         update,
-        frames=len(t_frames_ok),
+        frames=len(t_frames),
         init_func=init,
         blit=False,
         interval=1000.0 / fps,
@@ -261,10 +266,11 @@ def main(make_figures=None, fast=None, save_gif=False):
 
     return orbit_moon_video_demo(
         t0="2024-01-01",
-        duration_days=2.0 if fast else 7.0,
-        fps=6 if fast else 8,
-        seconds_per_frame=12 * 3600 if fast else 6 * 3600,
-        trail_len=24 if fast else 48,
+        duration_days=7.0,
+        fps=12,
+        playback_seconds=60.0,
+        seconds_per_frame=600,
+        trail_len=240,
         out_name="figures/demo_orbit_moon_video.mp4",
         save_gif=save_gif,
         make_figures=make_figures,
