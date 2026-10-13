@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -513,6 +514,9 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
         # Search demo metadata, not captured logs, file paths or tracebacks.
         search_text = " ".join((r.title, r.name, r.description, group.title, r.category))
         description = "" if r.description == f"Demo from {r.name}.py" else f"<p>{html.escape(r.description)}</p>"
+        # Every bundled demo is runnable as a module. This is a standalone
+        # invocation, not a claim to reproduce the gallery's injected options.
+        command = shlex.join(["python", "-m", "demos." + r.name.replace("/", ".")])
         cards[group.key].append(
             f"""
             <section class="card" data-category="{group.key}" data-demo="{html.escape(r.name, quote=True)}"
@@ -523,6 +527,7 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
               </div>
               <p class="meta"><strong>Demo:</strong> {html.escape(r.name)}</p>
               {description}
+              <div class="demo-call"><span>Run this demo</span><code>{html.escape(command)}</code></div>
               <p class="meta"><strong>Runtime:</strong> {r.runtime_seconds:.2f}s</p>
               <div class="gallery">
                 {previews}
@@ -662,6 +667,14 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     .meta {{
       color: #b8c3da;
     }}
+    .demo-call {{
+      display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px;
+      align-items: baseline; padding: 12px 14px; margin: 14px 0;
+      background: #0f1730; border: 1px solid #33466f; border-radius: 8px;
+      font-size: 0.9rem;
+    }}
+    .demo-call span {{ color: #b8c3da; }}
+    .demo-call code {{ color: #dbe7ff; overflow-wrap: anywhere; user-select: all; }}
     .gallery {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -728,6 +741,7 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       .card {{ padding: 12px; }}
       .card-header {{ align-items: flex-start; flex-direction: column; }}
       .meta {{ overflow-wrap: anywhere; }}
+      .demo-call {{ grid-template-columns: minmax(0, 1fr); gap: 6px; }}
       .gallery, .topic-nav {{ grid-template-columns: minmax(0, 1fr); }}
       .group-heading {{ flex-wrap: wrap; gap: 8px; }}
     }}
@@ -749,6 +763,9 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     <p class="browse-intro">Start with the introductory workflows or jump to a topic below.
       Within each topic, examples progress from basic views to specialized workflows.
       Each demo shows animations and interactive views first, then images, downloads and logs.</p>
+    <p class="browse-intro">The <strong>Run this demo</strong> commands work from an SSATK checkout
+      or an installation that includes the demos. They use each script’s standalone defaults;
+      the gallery may use faster settings.</p>
     <div class="filters">
       <label>Search <input id="search" type="search" placeholder="Orbit, Moon, attitude…"></label>
       <label>Topic <select id="category"><option value="">All topics</option>{category_options}</select></label>

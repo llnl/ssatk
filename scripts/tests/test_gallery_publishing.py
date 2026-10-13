@@ -4,16 +4,21 @@ These are deployment regressions, not astrodynamics or image-fidelity tests.
 """
 
 from functools import partial
+import html
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
 import threading
 from urllib.request import urlopen
 import zipfile
 
 import pytest
 
-from ssatk.demo_gallery import discover_demo_files, run_all_demos, run_demo_script
+from ssatk.demo_gallery import build_html_report, discover_demo_files, run_all_demos, run_demo_script
 from ssatk.gallery_validation import validate_gallery
 
 
@@ -102,6 +107,39 @@ def main(make_figures=True, fast=True, verbose=True):
     assert (root / "calls.txt").read_text() == "one call\n"
     assert "SSATK_OUTPUT_DIR" not in __import__("os").environ
     assert "SSAPY_DEMO_OUTPUT_DIR" not in __import__("os").environ
+
+
+@pytest.mark.parametrize("entry", ["main", "run", "script"])
+def test_displayed_demo_command_runs_the_standalone_entrypoint(tmp_path, entry):
+    """C: execute the rendered command; standalone defaults may differ from fast mode."""
+    demos = tmp_path / "demos"
+    category = demos / "sky"
+    category.mkdir(parents=True)
+    (demos / "__init__.py").write_text("")
+    (category / "__init__.py").write_text("")
+    if entry == "script":
+        source = 'print("standalone script")\n'
+        expected = "standalone script"
+    else:
+        source = (f'def {entry}(fast=False):\n    print(f"fast={{fast}}")\n'
+                  f'if __name__ == "__main__":\n    {entry}()\n')
+        expected = "fast=False"
+    demo = _demo(category, source)
+    site = tmp_path / "site"
+    result = run_demo_script(demo, site, demos_dir=demos, fast=True)
+    assert result.status == "success", result.error
+    build_html_report([result], site)
+    page = (site / "index.html").read_text()
+    calls = re.findall(r'class="demo-call".*?<code>(.*?)</code>', page, re.S)
+    assert len(calls) == 1
+    command = shlex.split(html.unescape(calls[0]))
+    assert command == ["python", "-m", "demos.sky.demo_portable"]
+    process = subprocess.run([sys.executable, *command[1:]], cwd=tmp_path,
+                             text=True, capture_output=True, timeout=20, check=True)
+    assert process.stdout.strip() == expected
+    if entry != "script":
+        assert result.stdout == "fast=True"
+    assert "standalone defaults" in page
 
 
 def test_skipped_demo_is_not_claimed_successful(tmp_path):

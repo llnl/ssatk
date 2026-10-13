@@ -376,37 +376,56 @@ def _build_overview(results, cases, trade):
             ("STAGED ROUTE, SAME ARRIVAL TIME", f"{extra:+.1f}% Δv", f"{staged['delta_v_total']:,.0f} m/s across four planned burns"),
             ("SEPARATE FLIGHT-TIME STUDY", "35–120 min", "Same departure; total rendezvous Δv at each sample"),
         ]
-        for x, (label, value, detail) in zip((.05, .36, .67), cards):
-            fig.add_artist(FancyBboxPatch((x, .85), .28, .069, boxstyle="round,pad=0.008",
+        left, right, column_gap = .05, .95, .06
+        panel_width = (right - left - column_gap) / 2
+        columns = (left, left + panel_width + column_gap)
+        card_gap = .02
+        card_width = (right - left - 2 * card_gap) / 3
+        for i, (label, value, detail) in enumerate(cards):
+            x = left + i * (card_width + card_gap)
+            fig.add_artist(FancyBboxPatch((x, .844), card_width, .08,
+                                         boxstyle="round,pad=0,rounding_size=0.008",
                                          transform=fig.transFigure, facecolor="white", edgecolor="#dde4ee"))
             fig.text(x + .01, .9, label, fontsize=10, color=MUTED)
             fig.text(x + .01, .873, value, fontsize=23, weight="bold", color=BURN_COLORS[0])
             fig.text(x + .01, .852, detail, fontsize=10, color=MUTED)
-        for x, y, title, subtitle in (
-            (.05, .817, "A   Two routes, one arrival", "Geocentric celestial reference frame (GCRF), x–y projection"),
-            (.53, .817, "B   Where the Δv is spent", "All ten API cases on the same total-burn-cost basis"),
-            (.05, .375, "C   When the burns happen", "Equivalent schedules grouped; burn labels give Δv in m/s"),
-            (.56, .375, "D   Does more flight time help?", "Fixed departure · rendezvous · perigee altitude ≥100 km"),
-        ):
+        row_bottoms = (.51, .11)
+        plot_height, label_gutter, plot_width = .245, .115, .30
+        headings = (
+            ("A   Two routes, one arrival", "Geocentric celestial reference frame (GCRF), x–y projection"),
+            ("B   Where the Δv is spent", "All ten API cases on the same total-burn-cost basis"),
+            ("C   When the burns happen", "Equivalent schedules grouped; burn labels give Δv in m/s"),
+            ("D   Does more flight time help?", "Fixed departure · rendezvous · perigee altitude ≥100 km"),
+        )
+        axes = []
+        for i, (title, subtitle) in enumerate(headings):
+            x, bottom = columns[i % 2], row_bottoms[i // 2]
+            y = bottom + plot_height + .062
             fig.text(x, y, title, fontsize=18, weight="bold")
-            fig.text(x, y - .02, subtitle, fontsize=11, color=MUTED)
-        axes = [fig.add_axes(bounds) for bounds in (
-            (.05, .483, .40, .292), (.645, .483, .30, .292),
-            (.16, .126, .32, .20), (.61, .126, .335, .20))]
+            fig.text(x, y - .022, subtitle, fontsize=11, color=MUTED)
+            axes.append(fig.add_axes((x + label_gutter, bottom, plot_width, plot_height)))
         for ax in axes:
             _style_axis(ax)
         _draw_routes(axes[0], results)
+        # Equal physical x/y scaling without shrinking or centering this panel
+        # away from the common grid: widen its x range to match the panel shape.
+        y0, y1 = axes[0].get_ylim()
+        physical_aspect = (plot_width * fig.get_figwidth()
+                           / (plot_height * fig.get_figheight()))
+        half_width = (y1 - y0) * physical_aspect / 2
+        axes[0].set_xlim(-half_width, half_width)
         _draw_budgets(axes[1], results, cases)
         _draw_timeline(axes[2], results, cases)
         _draw_flight_time_trade(axes[3], trade, direct)
-        fig.text(.05, .424, "Representative cases 01 and 06; coincident API routes are not overplotted.\nDotted curves show the initial and target orbits. Earth uses its physical radius.", fontsize=10, color=MUTED, linespacing=1.6)
-        fig.text(.53, .424, "02 / 02b omit arrival matching; 03 optimizes only the arrival burn.\n04 holds time fixed, so its API example does not demonstrate a faster arrival.", fontsize=10, color=MUTED, linespacing=1.6)
-        fig.text(.05, .072, "Dots: nominal 1 s burns. Thick segments: engine-sized windows.\nStage arrival and departure burns are labelled on opposite sides.", fontsize=10, color=MUTED, linespacing=1.6)
+        note_style = dict(fontsize=10, color=MUTED, linespacing=1.4, va="top")
+        fig.text(columns[0], row_bottoms[0] - .046, "Representative cases 01 and 06; coincident API routes are not overplotted.\nDotted curves show the initial and target orbits. Earth uses its physical radius.", **note_style)
+        fig.text(columns[1], row_bottoms[0] - .046, "02 / 02b omit arrival matching; 03 optimizes only the arrival burn.\n04 holds time fixed, so its API example does not demonstrate a faster arrival.", **note_style)
+        fig.text(columns[0], row_bottoms[1] - .046, "Dots: nominal 1 s burns. Thick segments: engine-sized windows.\nStage arrival and departure burns are labelled on opposite sides.", **note_style)
         p = trade["diagnostics"]["flight_time_study"]
         best = int(np.nanargmin(p["dv"]))
         step = np.diff(p["tof"])[0] / 60
-        fig.text(.56, .072, f"Lowest sampled cost: {p['dv'][best]:,.0f} m/s at {p['tof'][best] / 60:.2f} min.\nGrid spacing: {step:g} min; this is a sampled result, not a global optimum.", fontsize=10, color=MUTED, linespacing=1.6)
-        fig.text(.05, .027, "MODEL: two-body Lambert / Kepler planning. Coast arcs are not finite-thrust propagation; engine durations are sizing estimates.\nCase numbers map to the explicit transfer_optimal calls in demo_structured_transfer_api.py. Synthetic scenario; no flight data.", fontsize=10, color=MUTED, linespacing=1.6)
+        fig.text(columns[1], row_bottoms[1] - .046, f"Lowest sampled cost: {p['dv'][best]:,.0f} m/s at {p['tof'][best] / 60:.2f} min.\nGrid spacing: {step:g} min; this is a sampled result, not a global optimum.", **note_style)
+        fig.text(left, .012, "MODEL: two-body Lambert / Kepler planning. Coast arcs are not finite-thrust propagation; engine durations are sizing estimates.\nCase numbers map to the explicit transfer_optimal calls in demo_structured_transfer_api.py. Synthetic scenario; no flight data.", fontsize=9, color=MUTED, linespacing=1.4)
     return fig
 
 

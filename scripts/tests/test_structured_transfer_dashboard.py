@@ -78,8 +78,8 @@ def test_budget_plot_uses_total_burns_even_for_an_arrival_only_objective(scenari
         plt.close(fig)
 
 
-def test_dashboard_text_has_no_overlapping_labels_at_export_resolutions(scenario):
-    """C: rendered text rectangles are disjoint and stay inside the canvas.
+def test_dashboard_grid_and_text_at_export_resolutions(scenario):
+    """C: aligned panels, equal route scaling and disjoint, contained text.
 
     Check the PNG preview and JPEG export DPI. No pixel snapshot encodes a
     preferred style, and annotation arrows are excluded from text rectangles.
@@ -91,6 +91,20 @@ def test_dashboard_text_has_no_overlapping_labels_at_export_resolutions(scenario
         for dpi in (140, 200):
             fig.set_dpi(dpi)
             fig.canvas.draw()
+            panels = [ax.get_window_extent() for ax in fig.axes]
+            for a, b in ((0, 2), (1, 3)):
+                np.testing.assert_allclose(
+                    [panels[a].x0, panels[a].x1], [panels[b].x0, panels[b].x1],
+                    atol=1, rtol=0)  # one pixel at each export resolution
+            for a, b in ((0, 1), (2, 3)):
+                np.testing.assert_allclose(
+                    [panels[a].y0, panels[a].y1], [panels[b].y0, panels[b].y1],
+                    atol=1, rtol=0)
+            np.testing.assert_allclose(
+                [[p.width, p.height] for p in panels],
+                np.tile([panels[0].width, panels[0].height], (4, 1)), atol=1, rtol=0)
+            origin, dx, dy = fig.axes[0].transData.transform([(0, 0), (1000, 0), (0, 1000)])
+            assert np.linalg.norm(dx - origin) == pytest.approx(np.linalg.norm(dy - origin), abs=1e-8)
             texts = list(fig.texts)
             for ax in fig.axes:
                 texts += list(ax.texts) + [ax.xaxis.label, ax.yaxis.label]

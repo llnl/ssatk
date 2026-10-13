@@ -506,3 +506,14 @@ to show every planned impulse even for an arrival-only objective, and rendered
 text rectangles to stay inside the canvas without overlapping at 140 and
 200 dots per inch. The existing Hohmann minimum-cost reference remains a
 separate check on the solver itself.
+
+The dashboard alignment follow-up extends the existing rendering contract:
+all four plot rectangles must share row/column edges and dimensions to within
+one pixel at both export resolutions, while equal x/y distances in the orbit
+panel retain equal screen lengths. It adds no numerical test cases.
+
+Three publishing contracts execute the command displayed in a gallery card
+for a ``main`` entry point, a ``run`` entry point, and a standalone script.
+They verify the command runs the selected module and uses the documented
+standalone defaults, rather than implying the gallery's fast settings were
+reproduced. These are software contracts, not physical validation.

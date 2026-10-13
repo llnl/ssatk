@@ -34,6 +34,26 @@ memory helper.
 Node.js 20+ is only needed for validating the JavaScript satellite-viewer source;
 GitHub Actions installs it with ``actions/setup-node``.
 
+Running a gallery demo
+----------------------
+
+Every gallery entry includes a selectable **Run this demo** command. Run it
+from the repository root or an installation that includes the ``demos`` package:
+
+.. code-block:: bash
+
+   python -m demos.orbital_mechanics.demo_structured_transfer_api
+
+The command uses the script's standalone defaults. The gallery runner can use
+faster settings, so frame counts or sample spacing can differ. For the transfer
+dashboard's fast settings, the corresponding Python entry point is:
+
+.. code-block:: python
+
+   from demos.orbital_mechanics import demo_structured_transfer_api
+
+   demo_structured_transfer_api.main(make_figures=True, fast=True)
+
 Basic Example
 -------------
 
