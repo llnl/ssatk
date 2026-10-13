@@ -75,14 +75,14 @@ def example_mesh():
     return SpacecraftMesh.from_body(body.with_updates(facets=tuple(facets)))
 
 
-def example_view(environment="earth", count=None, mesh=None):
+def example_view(environment="earth", count=None, mesh=None, camera="limb"):
     """24-hour GEO chase view or one-minute lunar arc, with any viewing mesh.
 
     For alternatives use mesh="cubesat", mesh="boxwing", or mesh=example_mesh().
     """
     if environment == "earth":
         times, r, _, q = geo_states(540 if count is None else count)
-        return SpacecraftView(r, times, q, mesh=mesh, environment="earth",
+        return SpacecraftView(r, times, q, mesh=mesh, camera=camera, environment="earth",
                               title="GEO chase camera / 24 hours / nadir pointing")
     if environment != "moon":
         raise ValueError("environment must be 'earth' or 'moon'")
@@ -102,7 +102,7 @@ def example_view(environment="earth", count=None, mesh=None):
     spin_axis = np.array([0.3, 0.5, 0.8])
     spin_axis /= np.linalg.norm(spin_axis)
     q = np.column_stack((np.cos(theta / 2), np.sin(theta / 2)[:, None] * spin_axis))
-    return SpacecraftView(r, times, q, mesh=mesh, environment=environment,
+    return SpacecraftView(r, times, q, mesh=mesh, camera=camera, environment=environment,
                           title=f"{environment.title()} orbit / spacecraft attitude")
 
 

@@ -228,9 +228,11 @@ def build_figure(cfg: dict) -> go.Figure:
 
     day_steps = np.linspace(0, _YEAR_DAYS, n_frames, endpoint=False)
     frames = []
+    camera_positions = []
     for i, dstep in enumerate(day_steps):
         t_jd = t_jd0 + dstep
         dyn_traces, epos, moff = _dynamic_traces(cfg, t_jd, sphere_res)
+        camera_positions.append(epos)
         frames.append(go.Frame(
             data=dyn_traces, traces=dyn_idx, name=str(i),
             layout=go.Layout(title=dict(text=_title_text(t_jd, epos, moff, cfg))),
@@ -277,6 +279,8 @@ def build_figure(cfg: dict) -> go.Figure:
             pad=dict(t=0), steps=slider_steps,
         )],
     )
+    from .camera import _plotly_camera
+    _plotly_camera(fig, cfg.get("camera", "overview"), camera_positions, times=t_jd0+day_steps)
     if cfg.get("show_stars", True):
         add_sky(fig, cfg, Time(t_jd0, format="jd"))
     return fig

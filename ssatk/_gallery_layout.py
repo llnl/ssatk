@@ -29,6 +29,7 @@ GALLERY_GROUPS = (
                  "Each demo describes its own scale and rendering conventions.", (
         "orbit_visualization/demo_orbit_plot",
         "orbit_visualization/demo_globe_plot",
+        "orbit_visualization/demo_camera_modes",
         "orbit_visualization/demo_globe_orbit_daynight",
         "sensor_coverage/demo_satellite_viewer",
         "orbit_visualization/demo_groundtrack_plot",

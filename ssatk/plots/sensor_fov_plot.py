@@ -665,6 +665,11 @@ def build_figure(cfg: dict, r_km: np.ndarray, v_kms: np.ndarray, t=None) -> go.F
         legend=dict(bgcolor="rgba(0,0,0,0.4)", bordercolor="#333", borderwidth=1),
         margin=dict(l=0, r=0, t=50, b=0),
     )
+    if fig.frames:
+        from .camera import _plotly_camera
+        selected = np.array([int(frame.name) for frame in fig.frames])
+        epochs = np.array([_time_at_index(cfg, t=t, index=int(i)).gps for i in selected])
+        _plotly_camera(fig, cfg.get("camera", "overview"), r_km[selected], times=epochs)
     return fig
 
 

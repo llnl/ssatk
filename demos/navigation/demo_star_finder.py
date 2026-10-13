@@ -203,7 +203,7 @@ def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
         seed=seed)
 
 
-def build_star_finder_figure(result):
+def build_star_finder_figure(result, camera="overview"):
     """Interactive camera, residual, orbit and error-history panels."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -279,10 +279,14 @@ def build_star_finder_figure(result):
     fig.update_xaxes(title_text='Elapsed time (minutes)', row=2, col=2)
     fig.update_yaxes(title_text='Attitude / withheld residual (arcsec)', row=2, col=2, secondary_y=False)
     fig.update_yaxes(title_text='Position error (m)', row=2, col=2, secondary_y=True)
+    from ssatk.plots.camera import _plotly_camera
+    limit = 1.1*max(rad, np.max(np.abs(np.vstack((truth, estimates, filtered_r)))))
+    fig.update_scenes(xaxis_range=[-limit,limit],yaxis_range=[-limit,limit],zaxis_range=[-limit,limit])
+    _plotly_camera(fig, camera, truth, times=result['times_s'])
     return fig
 
 
-def main(make_figures=None, fast=None, **simulation_kwargs):
+def main(make_figures=None, fast=None, camera="overview", **simulation_kwargs):
     under_pytest = 'pytest' in sys.modules or os.environ.get('PYTEST_CURRENT_TEST') is not None
     if make_figures is None: make_figures = not under_pytest
     if fast is None: fast = under_pytest
@@ -303,7 +307,7 @@ def main(make_figures=None, fast=None, **simulation_kwargs):
     outputs = dict(result=result, summary=summary)
     if make_figures:
         import pandas as pd
-        fig = build_star_finder_figure(result)
+        fig = build_star_finder_figure(result, camera=camera)
         html = Path(figpath('demo_star_finder.html'))
         plot_html = fig.to_html(full_html=False, auto_play=False, include_plotlyjs=True)
         html.write_text("""<!doctype html><html lang="en"><head><meta charset="utf-8">

@@ -51,6 +51,7 @@ def orbit_animation(
     bitrate=1800,
     interval=None,
     earth_resolution=180,
+    camera="overview",
     el=25.0,
     az=35.0,
     **animation_kwargs,
@@ -154,9 +155,30 @@ def orbit_animation(
     colors = _cm.rainbow(_np.linspace(0, 1, max(1, len(prepared["tracks"]))))
     artists = _init_animation_artists(axes, views, prepared["tracks"], colors)
     frame_count = len(frame_indices[0])
+    from .camera import _camera_spec, _mpl_camera
+    from dataclasses import replace
+    spec = _camera_spec(camera)
+    if spec.target >= len(prepared["tracks"]):
+        raise ValueError("camera target is outside the supplied trajectory list")
+    selected = prepared["tracks"][spec.target]
+    # Camera lengths at this API follow the input convention: metres.
+    scale = prepared["unit_conversion"]
+    spec = replace(spec, distance=None if spec.distance is None else spec.distance/scale,
+                   offset=None if spec.offset is None else tuple(_np.asarray(spec.offset)/scale))
+    if camera == "overview":
+        spec = replace(spec, elevation=el, azimuth=az)
+    camera_times = selected["times"].gps
+    if t is None or _np.all(camera_times == camera_times[0]):
+        camera_times = None  # Legacy undated/single-epoch views use sample fraction.
+    cameras = {view: _mpl_camera(spec, axes[view], selected["xyz"], times=camera_times)
+               for view in views if view in {"3d", "globe"}}
+    if not cameras and spec.mode != "overview":
+        raise ValueError("moving cameras require a 3-D/globe panel; 2-D diagnostic axes stay fixed")
 
     def update(frame_index):
         frame_artists = []
+        for view, shot in cameras.items():
+            shot.mpl(axes[view], frame_indices[spec.target][frame_index])
         body_index = frame_indices[0][frame_index]
         for (view, body), surface in body_artists.items():
             center = first["r_"+body][body_index]
@@ -191,7 +213,7 @@ def orbit_animation(
                 if view in {"3d", "globe"}:
                     visible = None
                     if view == "globe":
-                        visible = visible_points(tail_xyz, _EARTH_RADIUS / prepared["unit_conversion"], el, az)
+                        visible = visible_points(tail_xyz, _EARTH_RADIUS / prepared["unit_conversion"], axes[view].elev, axes[view].azim)
                         artist_group["head"].set_visible(bool(visible[-1]))
                     tail_artist = _add_3d_tail(axes[view], tail_xyz, color, visible=visible)
                     artist_group["head"].set_data_3d([xyz[idx, 0]], [xyz[idx, 1]], [xyz[idx, 2]])

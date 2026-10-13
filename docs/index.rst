@@ -34,6 +34,7 @@ body and component model.
    gallery_hosting
    gallery_scene_fidelity
    rendering_modes
+   camera_modes
    star_finder
    coverage_validation
    gamma_heading_validation

@@ -60,7 +60,8 @@ available even when the animation renders fewer frames.
 The fancy lunar demo exports 720 frames at 12 frames per second: 60 seconds
 of playback spanning 27.3217 days of physical time: one mean revolution of
 the Moon around Earth. Fast mode lowers image
-resolution, not duration. The camera moves during playback. This is a
+resolution, not duration. The default camera is a static overview; select
+``camera="orbit"`` for a moving sweep (see :doc:`camera_modes`). This is a
 perturbed cislunar trajectory initialized near Earth–Moon L1, not a designed
 or station-kept halo orbit. Propagation failures fail the demo instead of
 silently shortening its time span. Earth is drawn at its physical radius;

@@ -91,6 +91,7 @@ def orbit_moon_video_demo(
     save_gif=False,
     make_figures=True,
     fast=False,
+    camera="overview",
 ):
     """Animate a mean lunar month by default; trail_len=None retains all history.
 
@@ -210,6 +211,11 @@ def orbit_moon_video_demo(
     ax.text2D(0.03, 0.06, "+ Moon centre", transform=ax.transAxes, color=COLOR_MOON)
     ax.text2D(0.03, 0.03, "● Spacecraft", transform=ax.transAxes, color=COLOR_SC)
 
+    from ssatk.plots.camera import _mpl_camera, _camera_spec
+    if _camera_spec(camera).target != 0:
+        raise ValueError("the cislunar video has one spacecraft camera target (index 0)")
+    shot = _mpl_camera(camera, ax, r_sc_f, times=t_frames_ok)
+
     def init():
         moon_pt.set_data([], [])
         moon_pt.set_3d_properties([])
@@ -224,8 +230,7 @@ def orbit_moon_video_demo(
 
     def update(frame):
         i = frame_indices[frame]
-        ax.view_init(elev=55 + 8*np.sin(2*np.pi*frame/len(t_frames)),
-                     azim=-65 + 120*frame/(len(t_frames)-1))
+        shot.mpl(ax, i)
         rm = r_moon[i]
         rs = r_sc_f[i]
         earth_surface.update(rotation=body_rotation("earth", t_geometry[i]))

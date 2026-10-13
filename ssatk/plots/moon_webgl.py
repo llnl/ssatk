@@ -398,6 +398,8 @@ const R      = {radius};
 const VERT   = {vert};
 const FRAG   = {frag};
 const ANIMATION_SECONDS = {animation_seconds};
+const CAMERA_CONFIG = {camera_config};
+{camera_script}
 
 const scene  = new THREE.Scene();
 let orbitRadius = R;
@@ -431,6 +433,8 @@ renderer.setSize(innerWidth, innerHeight);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+const shotController = new SSATKAnimationCamera(camera, CAMERA_CONFIG, [0,0,1], orbitRadius);
+shotController.onModeChange = mode => { if (mode === 'overview') controls.target.set(0,0,0); };
 controls.minDistance = R*1.05;
 controls.maxDistance = Math.max(R*40, orbitRadius*8);
 
@@ -481,6 +485,7 @@ const moon = new THREE.Mesh(geom, new THREE.ShaderMaterial({
 scene.add(moon);
 
 // Use the Toolkit's catalogue-backed Moon-fixed starfield.
+let cameraStars = null;
 if (STARS) {
   const starGeometry = new THREE.BufferGeometry();
   starGeometry.setAttribute('position',
@@ -498,6 +503,7 @@ if (STARS) {
     vertexColors: true, transparent: false, depthWrite: true, depthTest: true
   }));
   stars.renderOrder = -1;
+  cameraStars = stars;
   scene.add(stars);
 }
 
@@ -1106,6 +1112,9 @@ function setVisualPosition(visual, rawPhase, elapsedMode) {
     positions[index + 1] + (positions[index + 4] - positions[index + 1]) * fraction,
     positions[index + 2] + (positions[index + 5] - positions[index + 2]) * fraction
   );
+  visual.cameraTangent = new THREE.Vector3(positions[index+3]-positions[index], positions[index+4]-positions[index+1], positions[index+5]-positions[index+2]);
+  if (!visual.closed && !elapsedMode && cycle >= .5) visual.cameraTangent.negate();
+  visual.cameraPhase = phase;
   const markerSize = Math.max(
     R * 0.018, visual.marker.position.distanceTo(camera.position) * 0.014
   );
@@ -1150,7 +1159,15 @@ addEventListener('resize', () => {
 (function loop(now){
   requestAnimationFrame(loop);
   updateOrbitAnimation(now);
-  controls.update();
+  const subject = shotController.selectTarget(orbitVisuals.filter(v=>v.visible && v.marker), v=>v.name);
+  controls.enabled = shotController.mode === 'overview';
+  if (controls.enabled) controls.update();
+  shotController.update(subject ? subject.marker.position : null,
+    subject ? subject.cameraTangent : null, subject ? subject.cameraPhase : timelineValue,
+    orbitRadius, subject ? subject.name : 'target');
+  // Distant catalogue directions have no translation parallax.
+  if (cameraStars) cameraStars.position.copy(camera.position);
+
   renderer.render(scene, camera);
 })(performance.now());
 </script></body></html>
@@ -1436,7 +1453,7 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
                exposure=1.4, cache=None, save_path=None,
                orbit=None, propagator=None, n_steps=360, n_orbits=1.0,
                orbit_json=None, animation_seconds=24.0,
-               embed_assets=False):
+               embed_assets=False, camera="overview"):
     """
     Write an interactive Moon viewer page.
 
@@ -1533,6 +1550,10 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
         void main() { float mu = max(0., dot(normalize(vPos), normalize(uSunDir)));
             gl_FragColor = vec4(vec3(min(1., (.18+.82*mu)*uExposure)), 1.); }
         """ if is_low_spec() else _FRAG
+    from dataclasses import asdict
+    from ssatk.plots.camera import _camera_spec
+    from pathlib import Path
+    camera_script = Path(__file__).with_name("animation_camera.js").read_text()
     doc = _HTML
     for key, val in (("{title}", title),
                      ("{three_script}", three_script),
@@ -1549,6 +1570,8 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
                      ("{sun_az}", repr(float(sun_azimuth_deg))),
                      ("{sun_el}", repr(float(sun_elevation_deg))),
                      ("{exposure}", repr(float(exposure))),
+                     ("{camera_config}", json.dumps(asdict(_camera_spec(camera)))),
+                     ("{camera_script}", camera_script),
                      ("{animation_seconds}", repr(animation_seconds))):
         doc = doc.replace(key, val)
 

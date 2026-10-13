@@ -255,6 +255,8 @@ let scene, camera, renderer, earthMesh, cloudMesh, atmosphereMesh, starfield, su
 let sunMesh, sunGlowMesh, moonMesh;
 let sunDirection = new THREE.Vector3(1, 0.35, 0.25).normalize();
 let camTheta = 0.9, camPhi = 1.1, camDist = 26000;
+let shotController = null;
+const shotEpochMs = Date.now();
 const camTarget = new THREE.Vector3(0, 0, 0);
 let isDragging = false, lastX = 0, lastY = 0;
 let cloudsGroup;
@@ -3034,6 +3036,7 @@ function updateOneSatellitePosition(key) {
     inst.model.visible = true;
     const pos = eciToScene(pv.position);
     const vel = eciToScene(pv.velocity);
+    inst.cameraTangent = vel.clone();
     // Live readouts. Altitude/lat/lon come from satellite.js's WGS84 geodetic
     // conversion (eciToGeodetic), NOT geocentric radius minus a spherical mean
     // radius -- the ellipsoid's ~21 km equator-to-pole difference makes the
@@ -3362,6 +3365,23 @@ function animate() {
     lastClockDisplayUpdateMs = performance.now();
   }
   updateAllActiveSatellitePositions();
+  if (!shotController) {
+    shotController = new SSATKAnimationCamera(camera, CAMERA_CONFIG, [0,1,0], camDist/2.1);
+    if (shotController.initialEye) {
+      camDist = shotController.initialEye.length();
+      camPhi = Math.acos(shotController.initialEye.y/camDist);
+      camTheta = Math.atan2(shotController.initialEye.z,shotController.initialEye.x);
+    }
+  }
+  const subjects = Array.from(activeSatellites.values()).filter(i => i.model && i.model.visible);
+  const subject = shotController.selectTarget(subjects, i=>i.entry.name);
+  const track = subject && subject.stateTrack;
+  const start = track ? track.t[0] : shotEpochMs;
+  const span = track ? track.t[track.t.length-1]-start : 86400000;
+  shotController.update(subject ? subject.model.position : null,
+    subject ? subject.cameraTangent : null, (simDate.getTime()-start)/Math.max(1,span),
+    Math.max(R_EARTH_KM, ...subjects.map(i=>i.framingR)), subject ? subject.entry.name : 'target');
+  if (starfield) starfield.position.copy(camera.position);
   updateSubPointMarkers();       // frame-exact nadir dots (cheap)
   updateEclipseShading();        // darken satellites inside Earth's shadow (throttled)
   refreshAllOrbitLinesIfNeeded();

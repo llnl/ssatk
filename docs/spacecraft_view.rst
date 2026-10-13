@@ -2,8 +2,9 @@ Spacecraft mesh and attitude exports
 ====================================
 
 ``ssatk.plots.spacecraft_view`` displays a spacecraft mesh, body-frame axes,
-the spacecraft-to-Sun direction, catalog stars, and Earth or Moon. The camera
-follows the spacecraft; planet size and position follow perspective geometry
+the spacecraft-to-Sun direction, catalog stars, and Earth or Moon. The default camera
+shows a static overview; select ``camera="follow"`` or ``camera="limb"`` for
+a spacecraft close-up. Planet size and position follow perspective geometry
 at the supplied position and epoch. A nearby planet can fill much of the
 background. Rendering is offline and does not require a browser or GPU.
 
@@ -40,7 +41,7 @@ Usage with a supplied time series
    from ssatk.plots.spacecraft_view import SpacecraftMesh, spacecraft_view
 
    view = spacecraft_view(
-       r, t, q, environment="auto", units="m",  # Built-in Starlink-like mesh.
+       r, t, q, camera="limb", environment="auto", units="m",  # Built-in Starlink-like mesh.
        title="Spacecraft attitude history",
    )
    view.save("spacecraft.png", index=0, width=1600, height=1000)
@@ -114,6 +115,8 @@ not uniquely specify their shape. Supplying both ``mesh`` and ``body`` is an
 error; a custom body alone always overrides the automatic preset.
 OBJ materials and texture files are not imported.
 
+See :doc:`camera_modes` for overview, follow, chase and orbit sweep options.
+
 ``view.figure(index)`` returns a Matplotlib figure for further annotation.
 ``view.render(index)`` returns an RGB image array. Stills use the exact selected
 sample. ``view.geometry(index)`` exposes transformed vertices, body axes,
@@ -135,7 +138,7 @@ distinction in `NASA's orbit catalogue
 
 The initial plane is Earth's equator at the initial epoch, transformed into
 GCRF with ``eci_to_ecf_matrix``. Body +X points along track, +Y opposite the
-orbit normal and +Z toward Earth. The default camera moves with the spacecraft
+orbit normal and +Z toward Earth. The demo explicitly selects ``camera="limb"``, which moves with the spacecraft
 and keeps Earth's limb behind it. Earth's geography should remain nearly fixed
 in that view while the catalog sky, Sun direction and illumination change.
 The scene starts at Greenwich on 2026-10-11 at 12:00 UTC. It is an unperturbed
@@ -171,7 +174,7 @@ choose an explicit body and camera offset for an uninterrupted camera path.
 Environment changes only the displayed bodies, not coordinates or dynamics.
 Earth and Moon both participate in Sun-center occultation checks.
 
-The default camera is five mesh radii from the body origin, oriented so the
+The ``limb`` camera is five mesh radii from the body origin, oriented so the
 selected body's limb lies in the background. Optional ``camera_offset`` is a
 constant or ``(N, 3)`` GCRF vector **in metres from spacecraft to camera**.
 The camera looks toward the spacecraft. ``camera_up`` is a GCRF up direction

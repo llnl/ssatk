@@ -1774,6 +1774,7 @@ def plot_2024_solar_eclipse_animated(
     target_lat=30.3630,
     target_lon=-97.9790,
     target_label="NW Travis County, TX",
+    camera="overview",
     show_stars=True,
     verbose=True,
 ):
@@ -1960,6 +1961,8 @@ def plot_2024_solar_eclipse_animated(
         )],
     )
 
+    from .camera import _plotly_camera
+    _plotly_camera(fig, camera, moon_pos, times=times.gps)
     stats = dict(
         event="2024-04-08 total solar eclipse",
         start_utc=times[0].utc.iso,
@@ -1990,7 +1993,7 @@ def plot_2024_solar_eclipse_animated(
 @_with_low_spec
 def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
                              save_path=None, n_lat=60, n_lon=120, verbose=True,
-                             show_eclipse_path=True, event=None):
+                             show_eclipse_path=True, event=None, camera="overview"):
     """
     Animated version of plot_space_view_plotly: steps through the real
     eclipse time window (the same fine-resolution window eclipse_demo.py
@@ -2334,6 +2337,9 @@ def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
                   for k, idx in enumerate(frame_idxs)],
         )],
     )
+
+    from .camera import _plotly_camera
+    _plotly_camera(fig, camera, r_fine[frame_idxs], times=t_fine[frame_idxs])
 
     if save_path:
         fig.write_html(save_path)

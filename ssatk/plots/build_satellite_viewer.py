@@ -810,6 +810,7 @@ __SATELLITE_JS__
 </script>
 <script>
 const LOW_SPEC = __LOW_SPEC__;
+const CAMERA_CONFIG = __CAMERA_CONFIG__;
 const DAY_TEXTURE_DATAURI = "data:image/jpeg;base64,__DAY_B64__";
 const NIGHT_TEXTURE_DATAURI = "data:image/jpeg;base64,__NIGHT_B64__";
 const SPECULAR_TEXTURE_DATAURI = "data:image/jpeg;base64,__SPEC_B64__";
@@ -830,7 +831,7 @@ __SCENE_JS__
 
 @_with_low_spec
 def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
-          propagator="sgp4"):
+          propagator="sgp4", camera="overview"):
     """Assemble the self-contained Three.js viewer and write it to disk.
 
     Everything expensive lives here rather than at module level so that
@@ -893,10 +894,17 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
 
     satellite_js = text("satellite.min.js")
     three_js = text("three.min.js")
-    scene_js = text("satellite_viewer_scene.js")
+    from dataclasses import asdict, replace
+    from .camera import _camera_spec
+    camera_spec = _camera_spec(camera)
+    if isinstance(camera, str):
+        camera_spec = replace(camera_spec, up=(0., 1., 0.))
+    scene_js = text("animation_camera.js") + "\n" + text("satellite_viewer_scene.js")
+
 
     replacements = {
         "LOW_SPEC": json.dumps(is_low_spec()),
+        "CAMERA_CONFIG": json.dumps(asdict(camera_spec)),
         "SATELLITE_JS": satellite_js,
         "DAY_B64": day_b64,
         "EARTH_CREDIT": earth_credit,
@@ -930,7 +938,7 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
 
 @_with_low_spec
 def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
-                     verbose=True, database_path=None, propagator="sgp4"):
+                     verbose=True, database_path=None, propagator="sgp4", camera="overview"):
     """Write the satellite WebGL viewer from propagated SSAPy state arrays.
 
     ``r`` and ``v`` are the position and velocity arrays returned by
@@ -952,6 +960,7 @@ def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
         database_path=database_path,
         state_vectors=state_vectors,
         propagator=propagator,
+        camera=camera,
     )
 
 

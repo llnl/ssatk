@@ -40,11 +40,14 @@
         Plotly.relayout(gd, {'images[0].source': canvas.toDataURL('image/png')});
     }
     function schedule(event) {
-        if (event?.['scene.camera']) camera = event['scene.camera'];
+        camera = event?.['scene.camera'] || event?.frame?.layout?.scene?.camera || gd._fullLayout?.scene?.camera || gd.layout.scene.camera;
         if (!scheduled) { scheduled = true; requestAnimationFrame(draw); }
     }
     gd.on('plotly_relayout', schedule);
     gd.on('plotly_relayouting', schedule);
+    gd.on('plotly_animatingframe', schedule);
+    gd.on('plotly_animated', schedule);
+    gd.on('plotly_afterplot', schedule);
     const observer = new ResizeObserver(() => schedule());
     observer.observe(gd);
     schedule();

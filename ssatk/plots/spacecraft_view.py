@@ -293,7 +293,7 @@ def _texture(name):
 
 
 class SpacecraftView:
-    """A supplied trajectory and attitude history with a spacecraft-following camera.
+    """A supplied trajectory and attitude history with a selectable camera.
 
     ``t`` is Astropy Time or absolute GPS seconds, strictly increasing. ``r`` is
     (N, 3); ``q`` is (N, 4) or one constant body-to-GCRF [w, x, y, z] quaternion.
@@ -305,14 +305,15 @@ class SpacecraftView:
     ``environment`` selects earth, moon, both, or auto (nearest surface at each
     frame). Stars are catalog GCRF directions at the first epoch. ``camera_offset``
     is a GCRF metre vector from the spacecraft to the camera, constant or (N, 3).
-    The default camera puts the nearest body's limb behind the spacecraft.
+    The default is a static overview; camera="limb" puts the nearest body's
+    limb behind the spacecraft. See camera_modes.rst for all shots.
     ``mesh`` accepts a preset name or SpacecraftMesh. With neither mesh nor
     body supplied, a schematic Starlink-like mesh is used automatically.
     """
 
     def __init__(self, r, t, q, *, mesh=None, body=None, units="m", frame="gcrf",
                  environment="auto", sun_position=None, moon_position=None,
-                 camera_offset=None, camera_up=(0, 0, 1), fov_deg=50.0,
+                 camera=None, camera_offset=None, camera_up=(0, 0, 1), fov_deg=50.0,
                  stars=True, textures=True, title="Spacecraft attitude", low_spec=None):
         self.time = t if isinstance(t, Time) else Time(t, format="gps")
         self.gps = np.atleast_1d(self.time.gps).astype(float)
@@ -365,6 +366,33 @@ class SpacecraftView:
         self.fov_deg = float(fov_deg)
         if not np.isfinite(self.fov_deg) or not 5 <= self.fov_deg <= 120:
             raise ValueError("fov_deg must be between 5 and 120 degrees")
+        from .camera import _camera_spec, _CameraPath
+        from dataclasses import replace
+        if camera_offset is not None:
+            if camera is not None and _camera_spec(camera).mode != "follow":
+                raise ValueError("camera_offset is a follow-camera option")
+            camera = "follow"
+        self.camera = "limb" if camera == "limb" else _camera_spec(camera)
+        if self.camera != "limb":
+            if self.camera.target != 0:
+                raise ValueError("SpacecraftView has one camera target (index 0)")
+            if isinstance(camera, (str, type(None))):
+                self.camera = replace(self.camera, up=tuple(self.camera_up))
+            points = [self.r-self.mesh_radius, self.r+self.mesh_radius]
+            for i in range(len(self.r)):
+                for _, center, radius in self._bodies(i):
+                    points.extend([center[None, :]-radius, center[None, :]+radius])
+            points = np.concatenate(points)
+            self._camera_bounds = np.array([points.min(axis=0), points.max(axis=0)])
+            # Fit a bounding sphere in the vertical field of view. Portrait
+            # exports increase the distance using their narrower horizontal FOV.
+            spec = self.camera
+            if spec.mode in {"overview", "orbit"} and spec.distance is None and spec.offset is None:
+                radius = np.linalg.norm(self._camera_bounds[1]-self._camera_bounds[0])/2
+                spec = replace(spec, distance=1.15*radius/np.sin(np.deg2rad(self.fov_deg/2)))
+            self._camera_phase = (self.gps[0], self.gps[-1])
+            self._shot = _CameraPath(spec, self.r, self._camera_bounds, times=self.gps,
+                                     default_distance=5*self.mesh_radius)
         self.low_spec = is_low_spec(low_spec)
         self.stars, self.textures, self.title = bool(stars), bool(textures) and not self.low_spec, str(title)
         self._star_data = None
@@ -405,8 +433,15 @@ class SpacecraftView:
             return [nearest]
         return [item for item in bodies if self.environment == "both" or item[0] == self.environment]
 
-    def _camera(self, index):
-        if self.camera_offset is None:
+    def _camera(self, index, aspect=1.0):
+        if self.camera_offset is None and self.camera != "limb":
+            eye, target = self._shot.eyes[index].copy(), self._shot.targets[index]
+            if (self.camera.mode in {"overview", "orbit"} and self.camera.distance is None
+                    and self.camera.offset is None and aspect < 1):
+                eye = target + (eye-target)/aspect
+            offset = eye-self.r[index]
+            basis = _camera_basis(target-eye, self._shot.up)
+        elif self.camera_offset is None:
             _, center, radius = min(self._bodies(index),
                                     key=lambda item: np.linalg.norm(item[1] - self.r[index]) - item[2])
             toward = _unit(center - self.r[index])
@@ -417,13 +452,16 @@ class SpacecraftView:
             limb = np.arcsin(radius / np.linalg.norm(center - self.r[index]))
             forward = np.cos(limb + 0.20) * toward + np.sin(limb + 0.20) * tangent
             offset = -forward * (5.0 * self.mesh_radius)
+            eye = self.r[index] + offset
+            basis = _camera_basis(-offset, self.camera_up)
         else:
             offset = self.camera_offset[index]
-        eye = self.r[index] + offset
+            eye = self.r[index] + offset
+            basis = _camera_basis(-offset, self.camera_up)
         if (np.linalg.norm(eye) <= EARTH_RADIUS
                 or np.linalg.norm(eye - self.moon[index]) <= MOON_RADIUS):
             raise ValueError("camera lies inside Earth or Moon; change camera_offset")
-        return eye, offset, _camera_basis(-offset, self.camera_up)
+        return eye, offset, basis
 
     def _background(self, index, eye, basis, tan_x, tan_y, width, height):
         """Ray-sampled sphere image, at true apparent angular size and position."""
@@ -481,7 +519,7 @@ class SpacecraftView:
         ax.set_axis_off()
         tan_y = np.tan(np.deg2rad(self.fov_deg / 2))
         tan_x = tan_y * width / height
-        eye, offset, basis = self._camera(i)
+        eye, offset, basis = self._camera(i, width/height)
         if self._star_data is not None:
             directions, magnitudes, colors = self._star_data
             uv, depth = _project(directions, basis, tan_x, tan_y)
@@ -492,6 +530,18 @@ class SpacecraftView:
                        linewidths=0, zorder=0)
         ax.imshow(self._background(i, eye, basis, tan_x, tan_y, width, height),
                   extent=(-1, 1, -1, 1), aspect="auto", interpolation="bilinear", zorder=1)
+        wide = self.camera != "limb" and self.camera.mode in {"overview", "orbit"}
+        if wide:
+            relative = self.r-eye
+            path_uv, path_depth = _project(relative, basis, tan_x, tan_y)
+            distance = np.linalg.norm(relative, axis=1)
+            hidden = path_depth <= 0
+            for _, center, radius in self._bodies(i):
+                hidden |= _ray_sphere(relative/distance[:, None], center-eye, radius) < distance
+            path_uv[hidden] = np.nan
+            ax.plot(path_uv[:, 0], path_uv[:, 1], color="#edaa55", lw=1, alpha=.7, zorder=2)
+            if not hidden[i]:
+                ax.plot(*path_uv[i], marker="+", color="#ffe2b0", markersize=7, zorder=4)
         geom = self.geometry(i)
         # Work relative to the spacecraft to retain metre-scale mesh precision.
         local = self.mesh.vertices @ geom["body_axes_gcrf"].T
@@ -523,7 +573,7 @@ class SpacecraftView:
                   for j, (label, color) in enumerate(zip(("+X body", "+Y body", "+Z body"),
                                                        ("#ff737a", "#62e6ad", "#78b8ff")))]
         arrows.append((geom["sun_direction_gcrf"], "To Sun", "#ffdb70"))
-        for direction, label, color in arrows:
+        for direction, label, color in ([] if wide else arrows):
             end = direction * self.mesh_radius * 1.75
             tip, z = _project(end - offset, basis, tan_x, tan_y)
             if z <= 0:
@@ -537,11 +587,11 @@ class SpacecraftView:
         names = " + ".join(body[0].title() for body in self._bodies(i))
         ax.text(0.035, 0.952, self.title, transform=ax.transAxes, color="#f2f6fc",
                 fontsize=18, weight="bold", va="top", zorder=8)
-        ax.text(0.035, 0.900, f"{names} environment  /  spacecraft-following camera",
+        ax.text(0.035, 0.900, f"{names} / {self.camera if self.camera == 'limb' else self.camera.mode} camera",
                 transform=ax.transAxes, color="#acbed1", fontsize=10, va="top", zorder=8)
         elapsed = self.gps[i] - self.gps[0]
         caption = (f"{self.time[i].utc.isot} UTC   |   t + {elapsed:,.2f} s\n"
-                   f"Body → GCRF   |   mesh in metres   |   Sun center "
+                   f"{'+ marks spacecraft centre | ' if wide else ''}Body → GCRF   |   mesh in metres   |   Sun center "
                    f"{'visible' if geom['sun_center_visible'] else 'occulted'}")
         ax.text(0.035, 0.04, caption, transform=ax.transAxes, color="#d0dce9",
                 fontsize=9, linespacing=1.8, zorder=8,
@@ -575,13 +625,36 @@ class SpacecraftView:
             return np.column_stack([np.interp(new, old, values[:, j]) for j in range(3)])
         rotations = Rotation.from_quat(self.q[:, [1, 2, 3, 0]])
         q = Slerp(old, rotations)(new).as_quat()[:, [3, 0, 1, 2]]
-        return type(self)(interpolate(self.r), gps, q, mesh=self.mesh,
+        from dataclasses import replace
+        from copy import copy
+        chase = self.camera != "limb" and self.camera.mode == "chase"
+        constructor_camera = replace(self.camera, mode="follow") if chase else self.camera
+        result = type(self)(interpolate(self.r), gps, q, mesh=self.mesh,
                           environment=self.environment,
                           sun_position=interpolate(self.sun) if self._supplied_sun else None,
                           moon_position=interpolate(self.moon) if self._supplied_moon else None,
+                          camera=constructor_camera,
                           camera_offset=interpolate(self.camera_offset) if self.camera_offset is not None else None,
                           camera_up=self.camera_up, fov_deg=self.fov_deg,
                           stars=self.stars, textures=self.textures, title=self.title, low_spec=self.low_spec)
+        if self.camera != "limb":
+            from .camera import _CameraPath
+            result._camera_bounds = self._camera_bounds.copy()
+            result._camera_phase = self._camera_phase
+            if chase:
+                result.camera = self.camera
+                result._shot = copy(self._shot)
+                result._shot.targets = result.r.copy()
+                offset = interpolate(self._shot.eyes-self._shot.targets)
+                degenerate = np.linalg.norm(offset, axis=1) <= 1e-12*self._shot.distance
+                previous = np.clip(np.searchsorted(old, new, side="right")-1, 0, len(old)-1)
+                offset[degenerate] = (self._shot.eyes-self._shot.targets)[previous[degenerate]]
+                result._shot.eyes = result.r + _unit(offset)*self._shot.distance
+            else:
+                result._shot = _CameraPath(self._shot.spec, result.r, result._camera_bounds,
+                    times=result.gps, default_distance=5*self.mesh_radius, phase_range=self._camera_phase)
+        return result
+
 
     def save(self, path, *, index=0, fps=15, duration_s=8.0, **render_kwargs):
         """Export PNG/JPG or a GIF/MP4 spanning the entire supplied time interval.

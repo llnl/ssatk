@@ -48,7 +48,7 @@ def test_geo_attitude_points_nadir_and_camera_travels_with_spacecraft():
     avoid loading catalogue data; this checks supplied scene geometry only.
     """
     times, r, v, q = demo.geo_states(49)
-    view = SpacecraftView(r, times, q, stars=False, textures=False, environment="earth",
+    view = SpacecraftView(r, times, q, camera="limb", stars=False, textures=False, environment="earth",
                           sun_position=[AU, 0, 0], moon_position=[0, 384400000., 0])
     for i in [0, 12, 24, 36, 48]:
         axes = view.geometry(i)["body_axes_gcrf"]

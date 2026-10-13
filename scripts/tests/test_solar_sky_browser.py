@@ -41,8 +41,9 @@ def test_sky_rotates_resizes_and_stays_behind_opaque_geometry(tmp_path):
                       meta=dict(solar_sky=sky))
     fig.add_layout_image(source=sky_source(sky,camera,800,600),xref='paper',yref='paper',
                          x=0,y=1,sizex=1,sizey=1,sizing='stretch',layer='below')
+    fig.frames = [dict(name='front', layout=dict(scene=dict(camera=camera)))]
     path=tmp_path/'sky.html'
-    fig.write_html(path)
+    fig.write_html(path, auto_play=False)
     script="return document.querySelector('.plotly-graph-div').layout.images[0].source"
     def pixel(source):
         image=Image.open(BytesIO(base64.b64decode(source.split(',')[1]))).convert('RGB')
@@ -68,6 +69,10 @@ def test_sky_rotates_resizes_and_stays_behind_opaque_geometry(tmp_path):
         driver.set_window_size(1300,700)
         wait.until(lambda d:d.execute_script(script)!=opposite)
         assert pixel(driver.execute_script(script))==(255,0,0)
+        # A scripted animation must refresh the sky too, without a mouse event.
+        driver.execute_script("Plotly.animate(document.querySelector('.plotly-graph-div'), ['front'], {mode:'immediate',frame:{duration:0,redraw:true},transition:{duration:0}})")
+        wait.until(lambda d:pixel(d.execute_script(script))==(0,0,255))
+        wait.until(center_is_green)
         errors=[e['message'] for e in driver.get_log('browser') if e['level']=='SEVERE']
         assert errors==[]
     finally:
