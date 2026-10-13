@@ -420,6 +420,17 @@ route, and solver controls in one call:
 The result diagnostics include ``problem_schema="ssatk.transfer_problem.v1"``
 when the structured interface is used.
 
+The gallery's ``demo_structured_transfer_api`` dashboard separates route
+geometry, total burn budgets, and burn schedules. Its ten API examples use
+the same 60-minute flight time; intercept/inject omit arrival matching, while
+the insertion example optimizes only its final burn. The budget panel always
+shows the sum of all planned burns, so these different objectives are explicit.
+A separate fixed-departure rendezvous study samples 35--120 minutes and
+finalizes every feasible grid point before plotting its total burn cost.
+The lowest sampled cost is labelled with the grid spacing, rather than claimed
+as a global optimum. Keplerian coast arcs and engine burn-sizing windows are
+planning products; this example does not propagate finite thrust.
+
 
 6-DoF dynamics
 --------------

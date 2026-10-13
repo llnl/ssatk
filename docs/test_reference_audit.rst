@@ -486,3 +486,23 @@ to survive camera attachment unchanged. These are C contracts, not physical
 accuracy references. The previously added camera geometry cases separately
 check fixed translations, nonuniform-time sweeps, constant-velocity tangents,
 independent projection, full-scene containment and rendered pixel centring.
+
+Transfer planning dashboard follow-up
+-------------------------------------
+
+``scripts/tests/test_structured_transfer_dashboard.py`` adds four cases.
+An independent DOP853 integration of each selected Keplerian transfer must
+reach a closed-form inclined circular target within 5 cm. Tightening integration
+tolerances by ten must change the reference by less than 1 mm and 1 micrometre/s.
+Reconstructing the departure and arrival impulses from those independent
+states must match the reported cost within 5e-5 m/s. These are R1/R2 synthetic
+two-body references; no measured accuracy or finite-thrust accuracy is claimed.
+
+The flight-time curve finalizes each accepted search point because the coarse
+Lambert grid and final plan use different solver tolerances. Its 60-minute
+point must match the comparison plan within 1e-6 m/s. C contracts require
+single-departure-burn plans to retain their full coast interval, stacked bars
+to show every planned impulse even for an arrival-only objective, and rendered
+text rectangles to stay inside the canvas without overlapping at 140 and
+200 dots per inch. The existing Hohmann minimum-cost reference remains a
+separate check on the solver itself.
