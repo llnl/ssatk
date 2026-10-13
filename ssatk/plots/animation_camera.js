@@ -50,13 +50,19 @@ class SSATKAnimationCamera {
     };
   }
   selectTarget(subjects, label) {
-    const signature = subjects.map(label).join('|');
-    if (signature !== this.subjectSignature) {
+    const labels = subjects.map(label);
+    // Names need not be unique. A replaced/reordered object must refresh the
+    // selection even when its label is identical to the previous object's.
+    const changed = !this.subjects || subjects.length !== this.subjects.length ||
+      subjects.some((subject, i) => subject !== this.subjects[i] || labels[i] !== this.subjectLabels[i]);
+    if (changed) {
+      const previous = this.subject;
       if (!this.subject || !subjects.includes(this.subject)) this.subject = subjects[this.config.target];
-      this.subjects = subjects; this.subjectSignature = signature;
+      if (this.subject !== previous) this.lastTangent = null;
+      this.subjects = subjects.slice(); this.subjectLabels = labels;
       this.targetSelect.replaceChildren();
       subjects.forEach((subject, index) => {
-        const option = document.createElement('option'); option.value = index; option.textContent = label(subject); this.targetSelect.appendChild(option);
+        const option = document.createElement('option'); option.value = index; option.textContent = labels[index]; this.targetSelect.appendChild(option);
       });
       this.targetSelect.value = String(subjects.indexOf(this.subject));
     }

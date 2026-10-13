@@ -1,6 +1,8 @@
 """R1 camera geometry and C renderer integration; no flight dynamics claims."""
 
 import importlib
+from dataclasses import asdict
+import json
 
 import numpy as np
 import pytest
@@ -79,14 +81,31 @@ def test_plotly_camera_frames_preserve_data_and_literal_scaled_target():
     p = np.array([[0.0, 0, 0], [4, 2, 0]])
     fig = go.Figure(
         data=[go.Scatter3d(x=p[:, 0], y=p[:, 1], z=p[:, 2])],
-        frames=[go.Frame(name=str(i)) for i in range(2)],
+        frames=[
+            go.Frame(
+                name=str(i),
+                layout=dict(
+                    title_text=f"Epoch {i}",
+                    scene=dict(
+                        bgcolor="black",
+                        annotations=[dict(x=i, y=0, z=0, text=f"Object {i}")],
+                    ),
+                ),
+            )
+            for i in range(2)
+        ],
     )
     fig.update_layout(
         scene=dict(xaxis_range=[-10, 10], yaxis_range=[-10, 10], zaxis_range=[-10, 10])
     )
     before = fig.data[0].to_json()
+    frame_layouts = [f.layout.to_plotly_json() for f in fig.frames]
     _plotly_camera(fig, AnimationCamera("follow", offset=(0, 0, 5)), p)
     assert fig.data[0].to_json() == before
+    for frame, original in zip(fig.frames, frame_layouts):
+        actual = frame.layout.to_plotly_json()
+        actual["scene"].pop("camera")
+        assert actual == original
     c = fig.frames[1].layout.scene.camera
     np.testing.assert_allclose(
         [c.center.x, c.center.y, c.center.z], [0.2, 0.1, 0], rtol=0, atol=1e-14
@@ -94,6 +113,34 @@ def test_plotly_camera_frames_preserve_data_and_literal_scaled_target():
     np.testing.assert_allclose(
         [c.eye.x, c.eye.y, c.eye.z], [0.2, 0.1, 0.25], rtol=0, atol=1e-14
     )
+
+
+def test_camera_numpy_scalars_serialize_for_html_viewers():
+    """C: accepted NumPy parameters must survive the viewers' JSON boundary."""
+    spec = AnimationCamera(
+        "follow", target=np.int64(1), distance=np.float32(5),
+        elevation=np.float32(30), azimuth=np.int64(45), turns=np.float32(0.5),
+        up=np.array([0, 1, 0], dtype=np.float32),
+    )
+    assert json.loads(json.dumps(asdict(spec))) == dict(
+        mode="follow", target=1, distance=5.0, offset=None, up=[0, 1, 0],
+        elevation=30.0, azimuth=45.0, turns=0.5,
+    )
+
+
+def test_direction_rotation_rejects_undefined_geometry():
+    """C: no silently invalid direction for zero/nonfinite vectors or angles."""
+    from ssatk.vectors import rotate_vector
+
+    for vector in ([0, 0, 0], [np.nan, 1, 0], [np.inf, 0, 0], [1, 0], [[1, 0, 0]]):
+        with pytest.raises(ValueError, match="vector"):
+            rotate_vector(vector, 90, 0)
+    for name in ("theta", "phi"):
+        for value in (np.nan, np.inf, [90, 0]):
+            angles = dict(theta=90, phi=0)
+            angles[name] = value
+            with pytest.raises(ValueError, match=name):
+                rotate_vector([1, 0, 0], **angles)
 
 
 def test_spacecraft_overview_and_orbit_resampling_keep_original_scene():

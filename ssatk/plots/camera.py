@@ -39,9 +39,18 @@ class AnimationCamera:
             or self.target < 0
         ):
             raise ValueError("camera target must be a nonnegative trajectory index")
-        if self.distance is not None and (
-            not np.isfinite(self.distance) or self.distance <= 0
-        ):
+        # Browser exporters use standard JSON. Convert accepted NumPy scalars
+        # here so every renderer receives the same serializable configuration.
+        object.__setattr__(self, "target", int(self.target))
+        for name in ("distance", "elevation", "azimuth", "turns"):
+            value = getattr(self, name)
+            if value is None and name == "distance":
+                continue
+            a = np.asarray(value)
+            if a.ndim != 0 or a.dtype.kind not in "iuf" or not np.isfinite(a):
+                raise ValueError(f"camera {name} must be a finite scalar")
+            object.__setattr__(self, name, float(a))
+        if self.distance is not None and self.distance <= 0:
             raise ValueError("camera distance must be positive and finite")
         if self.up is None:
             raise ValueError("camera up must be a finite nonzero three-vector")
@@ -57,9 +66,7 @@ class AnimationCamera:
                     raise ValueError(
                         f"camera {name} must be a finite nonzero three-vector"
                     )
-                object.__setattr__(self, name, tuple(a))
-        if not np.isfinite([self.elevation, self.azimuth, self.turns]).all():
-            raise ValueError("camera angles and turns must be finite")
+                object.__setattr__(self, name, tuple(float(x) for x in a))
         if not -90 <= self.elevation <= 90:
             raise ValueError("camera elevation must lie between -90 and 90 degrees")
         if self.offset is not None and self.distance is not None:
@@ -259,5 +266,5 @@ def _plotly_camera(fig, camera, positions, *, times=None, scene="scene"):
 
     layout.camera = state(0)
     for i, frame in enumerate(fig.frames):
-        frame.layout[scene] = dict(camera=state(i))
+        frame.layout[scene].update(camera=state(i))
     return path

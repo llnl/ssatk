@@ -63,6 +63,9 @@ an invalid index raises an error. Single-target adapters require index zero.
 The Earth and Moon browser viewers add camera and target selectors to their
 exported pages. Their overview remains manually rotatable; animated shots take
 over the camera while active. Regenerate older HTML to obtain these controls.
+Selection follows object identity, so duplicate names and list reordering do
+not redirect the shot. Removing or replacing the selected object resets its
+cached chase direction. NumPy scalar settings serialize like Python numbers.
 
 ``distance`` sets eye-to-target separation. ``offset`` instead sets a constant
 three-vector for follow, or the starting vector for orbit/overview. Do not
@@ -131,6 +134,8 @@ shared shots over one SSAPy circular orbit in a 15-second, four-panel movie.
 Camera regressions use literal translations, a quarter-turn Rodrigues
 rotation, constant-velocity tangents and independently projected target pixels.
 Browser tests validate actual rendered target centring, not just JSON fields.
+Adding a camera to Plotly animation frames preserves their existing labels,
+annotations and other scene settings.
 The solar-system sky refreshes on scripted camera frames; the Moon viewer
 centres its star layer on the camera so translation creates no false stellar
 parallax. Catalogue directions remain evaluated at the viewer's reference epoch.

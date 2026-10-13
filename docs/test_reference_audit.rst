@@ -1,11 +1,12 @@
 Test reference audit
 ====================
 
-This audit covers all 103 ``tests/test_*.py`` files and their 389 test
+The initial audit covered all 103 ``tests/test_*.py`` files and their 389 test
 functions, including methods in test classes. Parametrization produces more
 executed cases than this function count. ``tests/conftest.py`` supplies the
 shared GPS epochs; it contains no test functions. The reviewed starting commit
-is ``f05e171fe4ccd2d0c693ffef9e9d6d23d85b70f5``.
+is ``f05e171fe4ccd2d0c693ffef9e9d6d23d85b70f5``. Later additions and their
+references are recorded in the inventory and follow-up sections below.
 
 The suite contains independent numerical references, conservation and
 derivative checks, and software contracts. Passing all three categories does
@@ -238,6 +239,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_transfer_optimal.py,1,R1,Analytic Hohmann cost and transfer time,Selected coplanar circular case; not proof of general global optimality
    tests/test_two_body_closed_forms.py,2,R1,Vis-viva apsidal speeds and haversine great-circle distance,Ideal two-body/spherical models
    tests/test_solar_scene_geometry.py,5,R1 R2,ERFA ecm06; SSAPy DE ephemeris; analytic pinhole projection,Approximate built-in ephemeris; not a measured-sky calibration
+   tests/test_vector_rotation_references.py,3,R1 R2,Literal right-hand turns; SciPy quaternion rotations; magnitude-independent directions,2e-14 dimensionless component budget; explicit reference-axis convention
    tests/test_viewer_star_reference.py,1,R2 R6,Astropy GCRS-to-TEME sky at 2008 and 2026 epochs,0.5 arcsec transform/serialization budget; catalog astrometry itself is not recalibrated
 
 The inventory is a review record, not a proof of completeness over all
@@ -459,3 +461,28 @@ placement to 10 nm. Export contracts require 45-second playback in both fast
 and normal modes and one propagated position per output frame, with no sparse
 chord interpolation. These are model and display checks; no measured GEO
 telemetry, attitude-control dynamics or station-keeping performance is claimed.
+
+Vector rotation and animation-camera follow-up
+----------------------------------------------
+
+``tests/test_vector_rotation_references.py`` adds three numerical reference
+tests for ``ssatk.vectors.rotate_vector``. Literal right-hand quarter-turns
+constrain the signs and order of both rotations, including the formerly
+undefined positive and negative Y directions. SciPy quaternion rotations about
+specified axes independently check an oblique direction and directions within
+1e-14 of either Y pole. The absolute component budget is 2e-14, dimensionless,
+with zero relative tolerance. Known positive multiples of +X spanning
+1e-200 to 1e200 check normalization without overflowing or underflowing squares.
+The routine uses the original +Y reference except within 1e-12 of either pole,
+where the documented +X reference defines the otherwise singular first axis.
+
+Three new software-contract cases check invalid rotation input, JSON export
+of NumPy camera scalars, and actual browser target replacement/reordering.
+The last runs the shipped Three.js controller, including repeated names and
+names containing delimiters. It requires a removed target's chase direction
+to be cleared while a still-selected target retains its direction on reorder.
+The existing Plotly frame test also requires titles, backgrounds and annotations
+to survive camera attachment unchanged. These are C contracts, not physical
+accuracy references. The previously added camera geometry cases separately
+check fixed translations, nonuniform-time sweeps, constant-velocity tangents,
+independent projection, full-scene containment and rendered pixel centring.

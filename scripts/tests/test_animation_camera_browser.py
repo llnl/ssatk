@@ -104,3 +104,53 @@ def test_plotly_follow_keeps_moving_target_at_image_center(tmp_path):
             np.testing.assert_allclose(centre, [399.5, 299.5], rtol=0, atol=1)
             centroids.append(centre)
         np.testing.assert_allclose(centroids[0], centroids[1], rtol=0, atol=1)
+
+
+def test_browser_replaced_and_reordered_targets_do_not_leave_a_stale_subject():
+    """C: object identity, not its display name, controls tracking and tangent reuse.
+
+    Runs the shipped controller and Three.js in Chrome without a network or
+    ephemeris fixture. Replacing a paused target must clear the old chase
+    direction; reordering still-visible objects must preserve the selection.
+    """
+    from selenium import webdriver
+    from ssatk.plots.build_satellite_viewer import text
+
+    options = webdriver.ChromeOptions()
+    chrome = shutil.which("google-chrome") or shutil.which("chromium")
+    if chrome:
+        options.binary_location = chrome
+    for arg in ("--headless=new", "--no-sandbox", "--disable-dev-shm-usage"):
+        options.add_argument(arg)
+    with webdriver.Chrome(options=options) as driver:
+        driver.get("about:blank")
+        driver.execute_script(text("three.min.js"))
+        result = driver.execute_script(text("animation_camera.js") + """
+            const shot = new SSATKAnimationCamera(new THREE.PerspectiveCamera(),
+                {mode:'chase',target:0,elevation:25,azimuth:35,turns:1},[0,0,1],10);
+            const a = {name:'Satellite'}, b = {name:'Satellite'};
+            const label = s => s.name;
+            shot.selectTarget([a],label);
+            shot.lastTangent = new THREE.Vector3(1,0,0);
+            const replacement = shot.selectTarget([b],label);
+            const replaced = replacement === b && shot.lastTangent === null;
+            shot.selectTarget([a,b],label);
+            shot.targetSelect.value = '1'; shot.targetSelect.onchange();
+            shot.lastTangent = new THREE.Vector3(0,1,0);
+            shot.selectTarget([b,a],label);
+            const reordered = shot.subject === b && shot.targetSelect.value === '0'
+                && shot.lastTangent.y === 1;
+            shot.selectTarget([],label);
+            const cleared = !shot.subject && shot.lastTangent === null;
+            // Names containing the old signature delimiter must remain distinct.
+            const c = {name:'A|B'}, d = {name:'C'};
+            shot.selectTarget([c,d],label);
+            c.name = 'A'; d.name = 'B|C';
+            shot.selectTarget([c,d],label);
+            const labels = Array.from(shot.targetSelect.options,o=>o.textContent);
+            shot.panel.remove();
+            return {replaced,reordered,cleared,labels};
+        """)
+    assert result == dict(
+        replaced=True, reordered=True, cleared=True, labels=["A", "B|C"]
+    )
