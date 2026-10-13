@@ -664,6 +664,25 @@ match; a missing file raises an error that names the extra to install:
        # Pass catalog_path to libraries that require a filesystem path.
        print(catalog_path)
 
+Moon viewer textures
+~~~~~~~~~~~~~~~~~~~~
+
+Build the Moon viewer's normal, albedo and terrain-shadow textures once with
+``ssatk-bake-moon``. Its default source is ``moon_dem.npz`` and ``moon.png``
+from the installed ``ssa-data-lunar`` package, so baking needs no network
+access after installation. Version 0.0.1 supplies a 2880 x 1440 elevation grid
+and a 4096 x 2048 colour image. Outputs go to ``SSATK_CACHE`` when set, or
+``~/.ssatk/moon``; installed data files are read without modification.
+
+For the higher-resolution NASA sources, explicitly select
+``ssatk-bake-moon --source nasa``. This downloads and caches the 5760 x 2880
+LOLA elevation grid and 8192 x 4096 LROC colour image. Supply ``--dem PATH``
+or ``--albedo PATH`` to override either input independently. Missing packaged
+inputs raise a data-package error instead of silently starting a download.
+Generated textures remain in the local cache; no additional hosted dataset
+is needed. The gallery preparation script explicitly supplies its checksummed
+NASA source paths to retain the published gallery's larger normal map.
+
 Optional demo data
 ------------------
 
