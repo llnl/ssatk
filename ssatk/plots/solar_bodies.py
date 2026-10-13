@@ -1,7 +1,7 @@
 """
 ssatk/plots/solar_bodies.py
 =====================================
-Proper 3D planet sphere rendering for the Solar View tab.
+3D planet sphere rendering for Solar System views.
 
 Each planet is a Plotly go.Surface with:
   - Physical spherical radii by default (explicit scale factors are optional)

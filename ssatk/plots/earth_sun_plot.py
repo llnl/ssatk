@@ -1,7 +1,7 @@
 """
 ssatk/plots/earth_sun_plot.py
 ======================================
-Focused Earth–Sun(–Moon) visualization — a zoomed-in companion to
+Solar System — Sun, Earth and Moon: a zoomed-in companion to
 solar_view_plot.py's full 8-planet scene.
 
 Unlike solar_view_plot.py (a single frozen snapshot of the whole solar
@@ -18,8 +18,8 @@ Reads GUI_CONFIG from environment or falls back to defaults.
 
 Output
 ------
-  <output_dir>/earth_sun_plot.html   — interactive, animated Plotly HTML
-  <output_dir>/earth_sun_plot.jpg    — static snapshot (requires the ``static`` extra)
+  <output_dir>/solar_system_earth_sun_moon.html   — interactive, animated Plotly HTML
+  <output_dir>/solar_system_earth_sun_moon.jpg    — static snapshot (requires the ``static`` extra)
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def _title_text(t_jd: float, earth_pos_au: np.ndarray, moon_offset_km: np.ndarra
     r_em_km = float(np.linalg.norm(moon_offset_km))
     phase = _moon_phase_fraction(earth_pos_au, moon_offset_km)
     return (
-        f"Earth–Sun System — {_jd_to_date(t_jd).isoformat()}"
+        f"Solar System — Sun, Earth and Moon — {_jd_to_date(t_jd).isoformat()}"
         f"  |  Sun–Earth {r_se_km/1e6:.2f} M km"
         f"  |  Earth–Moon {r_em_km:,.0f} km"
         f"  |  Moon illum. {phase*100:.0f}%"
@@ -329,16 +329,16 @@ if __name__ == "__main__":
     output_dir = Path(cfg["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("[earth_sun_plot] Building animated Earth–Sun scene...")
+    print("[earth_sun_plot] Building animated Solar System — Sun, Earth and Moon scene...")
     fig = build_figure(cfg)
     fig = _shrink_floats(fig)
-    html_path = output_dir / "earth_sun_plot.html"
+    html_path = output_dir / "solar_system_earth_sun_moon.html"
     fig.write_html(str(html_path))
     print(f"[earth_sun_plot] Saved → {html_path}")
 
     print("[earth_sun_plot] Building high-res static snapshot...")
     hero_fig = build_static_figure(cfg)
-    jpg_path = output_dir / "earth_sun_plot.jpg"
+    jpg_path = output_dir / "solar_system_earth_sun_moon.jpg"
     try:
         hero_fig.write_image(str(jpg_path), width=1920, height=1080, scale=2)
         print(f"[earth_sun_plot] Saved → {jpg_path}")

@@ -8,6 +8,12 @@ an interactive HTML file under the standard SSATK figure directory.
 """
 
 GALLERY_CATEGORY = "space_environment"
+TITLE = "Solar System — Sun, Earth and Moon"
+DESCRIPTION = (
+    "One year of Sun–Earth–Moon geometry at physical radii and distances, "
+    "with a catalogue star background. Crosses locate bodies and do not "
+    "represent their diameters."
+)
 
 import os
 import sys
@@ -52,7 +58,7 @@ def main(make_figures=None, fast=None):
     }
 
     if make_figures:
-        html_path = Path(figpath("demo_earth_sun_plot.html"))
+        html_path = Path(figpath("demo_solar_system_earth_sun_moon.html"))
         _shrink_floats(animated_fig).write_html(str(html_path))
         outputs["html"] = str(html_path)
         print(f"Saved: {html_path}")

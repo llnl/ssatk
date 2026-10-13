@@ -255,7 +255,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     outputs["files"].append(figpath(f"{FIGDIR}/plotting_quickstart_moon.jpg"))
 
     # ------------------------------------------------------------------
-    # 6) Space-environment Plotly figures: Earth-Sun and solar-system views
+    # 6) Solar System Plotly figures: Sun/Earth/Moon and all eight planets
     # ------------------------------------------------------------------
     earth_sun_cfg = EARTH_SUN_CFG.copy()
     earth_sun_cfg["n_frames"] = 3
@@ -263,7 +263,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     earth_sun_cfg["hero_resolution"] = 24 if fast else 48
     earth_sun_cfg["show_stars"] = False
     earth_sun_fig = build_earth_sun_static(earth_sun_cfg)
-    earth_sun_path = figpath(f"{FIGDIR}/plotting_quickstart_earth_sun.html")
+    earth_sun_path = figpath(f"{FIGDIR}/plotting_quickstart_solar_system_earth_sun_moon.html")
     earth_sun_fig.write_html(str(earth_sun_path))
     outputs["files"].append(earth_sun_path)
 
@@ -273,7 +273,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     solar_cfg["sol_show_stars"] = False
     solar_cfg["sphere_resolution"] = 10 if fast else 18
     solar_fig = build_solar_view(solar_cfg)
-    solar_path = figpath(f"{FIGDIR}/plotting_quickstart_solar_view.html")
+    solar_path = figpath(f"{FIGDIR}/plotting_quickstart_solar_system.html")
     solar_fig.write_html(str(solar_path))
     outputs["files"].append(solar_path)
 

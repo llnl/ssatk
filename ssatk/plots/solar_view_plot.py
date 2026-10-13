@@ -12,8 +12,8 @@ Reads GUI_CONFIG from environment or falls back to defaults.
 
 Output
 ------
-  <output_dir>/solar_view_plot.html   — interactive Plotly HTML
-  <output_dir>/solar_view_plot.jpg    — static snapshot (requires the ``static`` extra)
+  <output_dir>/solar_system_plot.html   — interactive Plotly HTML
+  <output_dir>/solar_system_plot.jpg    — static snapshot (requires the ``static`` extra)
 """
 
 from __future__ import annotations
@@ -361,11 +361,11 @@ if __name__ == "__main__":
           f"{cfg['sol_year']}-{cfg['sol_month']:02d} ...")
     fig = build_figure(cfg)
 
-    html_path = output_dir / "solar_view_plot.html"
+    html_path = output_dir / "solar_system_plot.html"
     fig.write_html(str(html_path))
     print(f"[solar_view_plot] Saved → {html_path}")
 
-    jpg_path = output_dir / "solar_view_plot.jpg"
+    jpg_path = output_dir / "solar_system_plot.jpg"
     try:
         fig.write_image(str(jpg_path), width=1920, height=1080, scale=2)
         print(f"[solar_view_plot] Saved → {jpg_path}")

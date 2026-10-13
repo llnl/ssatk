@@ -1,7 +1,15 @@
-Solar scenes and gallery sampling
-=================================
+Solar System scenes and gallery sampling
+========================================
 
-Solar-system and Earth–Sun plots use physical spherical body radii and
+The gallery names these views **Solar System — Planets and Orbits** and
+**Solar System — Sun, Earth and Moon**. Their HTML exports are
+``demo_solar_system_plot.html`` and ``demo_solar_system_earth_sun_moon.html``.
+The existing Python module names ``ssatk.plots.solar_view_plot`` and
+``ssatk.plots.earth_sun_plot`` remain available. Running these modules directly
+exports ``solar_system_plot.html/.jpg`` and
+``solar_system_earth_sun_moon.html/.jpg``, respectively.
+
+Both views use physical spherical body radii and
 geometric, simultaneous ephemeris positions by default. All scene coordinates,
 stars, and trajectories use the mean J2000 ecliptic axes, in astronomical units
 (AU). The default Astropy ``builtin`` ephemeris is an approximate model;
@@ -50,7 +58,8 @@ sampled at no more than 10-second intervals; full intervening samples remain
 available even when the animation renders fewer frames.
 
 The fancy lunar demo exports 720 frames at 12 frames per second: 60 seconds
-of playback spanning seven days of physical time. Fast mode lowers image
+of playback spanning 27.3217 days of physical time: one mean revolution of
+the Moon around Earth. Fast mode lowers image
 resolution, not duration. The camera moves during playback. This is a
 perturbed cislunar trajectory initialized near Earth–Moon L1, not a designed
 or station-kept halo orbit. Propagation failures fail the demo instead of
