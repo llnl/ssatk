@@ -20,6 +20,15 @@ from ssatk.plots.orbit_animation import _animation_writer
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "video_animation"
+# NASA Moon Fact Sheet: mean sidereal revolution period, not the phase cycle.
+# https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
+LUNAR_ORBIT_DAYS = 27.3217
+TITLE = "Fancy video — one lunar orbit"
+DESCRIPTION = (
+    "A cislunar spacecraft trajectory and the Moon's motion around Earth over "
+    "one mean lunar revolution (27.3217 days), compressed into a 60-second "
+    "movie. Frames advance about 54.7 simulated minutes; full trails remain visible."
+)
 
 
 def _set_axes_equal_3d(ax, lim):
@@ -82,16 +91,22 @@ def _draw_sphere(ax, center, radius, color, alpha=1.0, resolution=30):
 
 def orbit_moon_video_demo(
     t0="2024-01-01",
-    duration_days=7.0,
+    duration_days=LUNAR_ORBIT_DAYS,
     fps=12,
-    seconds_per_frame=6 * 3600,
+    seconds_per_frame=3600,
     playback_seconds=60.0,
-    trail_len=120,
+    trail_len=None,
     out_name="figures/demo_orbit_moon_video.mp4",
     save_gif=False,
     make_figures=True,
     fast=False,
 ):
+    """Animate a mean lunar month by default; trail_len=None retains all history.
+
+    duration_days is physical time, playback_seconds is encoded video length,
+    and seconds_per_frame bounds the path sampling interval independently.
+    The ephemeris orbit is perturbed, so a mean month need not close exactly.
+    """
     if make_figures is None:
         make_figures = not UNDER_PYTEST
     if fast is None:
@@ -104,7 +119,11 @@ def orbit_moon_video_demo(
     if not np.isfinite(seconds_per_frame) or seconds_per_frame <= 0:
         raise ValueError("seconds_per_frame must be positive and finite")
     n_geometry = max(len(t_frames), int(np.ceil(duration_days * 86400 / seconds_per_frame)) + 1)
-    t_geometry = np.unique(np.concatenate((t_frames, np.linspace(t0_gps, t_frames[-1], n_geometry))))
+    # Form both grids as elapsed seconds before adding the GPS epoch. When
+    # their counts match, this also avoids duplicate epochs one float ULP apart.
+    t_geometry = np.unique(np.concatenate((
+        t_frames, t0_gps + np.linspace(0.0, duration_days * 86400.0, n_geometry)
+    )))
     frame_indices = np.searchsorted(t_geometry, t_frames)
 
     r_moon, v_moon = get_lunar_rv(t_geometry)
@@ -164,7 +183,7 @@ def orbit_moon_video_demo(
 
     fig = plt.figure(figsize=(8, 8), dpi=100 if fast else 150)
     fig.patch.set_facecolor("black")
-    fig.suptitle("Cislunar trajectory near Earth–Moon L1", color="white")
+    fig.suptitle(f"Cislunar trajectory · {duration_days:.3f} days", color="white")
     fig.text(0.5, 0.03, "Earth at physical scale · markers locate Moon and spacecraft",
              ha="center", color="#aebacb", fontsize=9)
 
@@ -223,7 +242,7 @@ def orbit_moon_video_demo(
         sc_pt.set_data([rs[0]], [rs[1]])
         sc_pt.set_3d_properties([rs[2]])
 
-        j0 = frame_indices[max(0, frame - trail_len)]
+        j0 = 0 if trail_len is None else frame_indices[max(0, frame - trail_len)]
         rm_tr = r_moon[j0:i + 1]
         rs_tr = r_sc_f[j0:i + 1]
         moon_trail.set_data(rm_tr[:, 0], rm_tr[:, 1])
@@ -255,7 +274,8 @@ def orbit_moon_video_demo(
         print(f"Saved GIF: {out_gif}")
 
     plt.close(fig)
-    return {"r_sc_f": r_sc_f, "r_moon": r_moon, "t_frames_ok": t_frames_ok, "out_mp4": out_mp4}
+    return {"r_sc_f": r_sc_f, "r_moon": r_moon, "t_frames_ok": t_frames_ok,
+            "frame_times": t_frames, "out_mp4": out_mp4}
 
 
 def main(make_figures=None, fast=None, save_gif=False):
@@ -266,11 +286,11 @@ def main(make_figures=None, fast=None, save_gif=False):
 
     return orbit_moon_video_demo(
         t0="2024-01-01",
-        duration_days=7.0,
+        duration_days=LUNAR_ORBIT_DAYS,
         fps=12,
         playback_seconds=60.0,
-        seconds_per_frame=600,
-        trail_len=240,
+        seconds_per_frame=3600,
+        trail_len=None,
         out_name="figures/demo_orbit_moon_video.mp4",
         save_gif=save_gif,
         make_figures=make_figures,

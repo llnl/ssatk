@@ -81,23 +81,31 @@ def test_animation_frame_limit_preserves_circular_path_chords(monkeypatch,tmp_pa
     np.testing.assert_allclose(np.linalg.norm(mid,axis=1),7e6*np.cos(np.pi/360),rtol=0,atol=1e-6)
 
 
-def test_fancy_movie_encoded_duration_is_independent_of_physical_span(tmp_path, monkeypatch):
-    """C: decode a real 1-second MP4 spanning seven days; 12 frames at 12 fps.
+@pytest.mark.parametrize("duration_days", [7.0, None], ids=["custom-span", "lunar-month"])
+def test_fancy_movie_encoded_duration_is_independent_of_physical_span(tmp_path, monkeypatch, duration_days):
+    """C/R3: decode 1-second MP4s with custom and mean-lunar-month spans.
 
     This checks the encoder output, not just len(time)/fps arithmetic. The
     full 60-second default is also generated and inspected in the handoff.
+    Default span: NASA Moon Fact Sheet's 27.3217-day revolution period,
+    https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html . Allow 1 us
+    for float64 GPS endpoint rounding; this is not a trajectory accuracy test.
     """
     monkeypatch.setenv("SSATK_OUTPUT_DIR", str(tmp_path))
     ffmpeg = pytest.importorskip("imageio_ffmpeg")
     from demos.video_animation.demo_fancy_video import orbit_moon_video_demo
+    kwargs = {} if duration_days is None else {"duration_days": duration_days}
     result = orbit_moon_video_demo(
-        duration_days=7, playback_seconds=1, fps=12, fast=True,
+        **kwargs, playback_seconds=1, fps=12, fast=True,
         out_name=str(tmp_path / "fancy.mp4"), make_figures=True)
     frames, seconds = ffmpeg.count_frames_and_secs(result["out_mp4"])
     assert frames == 12
     assert seconds == pytest.approx(1.0, abs=0.001)
     epochs = result["t_frames_ok"]
-    assert epochs[-1] - epochs[0] == 604800.0
+    expected_days = 27.3217 if duration_days is None else duration_days
+    assert epochs[-1] - epochs[0] == pytest.approx(expected_days * 86400.0, abs=1e-6)
+    assert np.all(np.diff(epochs) > 0)
+    assert np.max(np.diff(epochs)) <= 3600.0 + 1e-6
 
 
 def test_solar_export_retains_double_precision_body_coordinates():

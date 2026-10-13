@@ -250,8 +250,8 @@ The original testing policy excludes rendering and demo execution from
 ``tests/``. Publishing/export checks therefore run separately in the gallery
 workflow with ``python -m pytest scripts/tests -q``. The default pytest command
 selects ``tests/`` explicitly in ``pyproject.toml``. The current gallery follow-ups have
-658 core cases (103 files, 389 functions) and 160 workflow cases (6 files,
-33 functions): 818 total. The browser contract runs in gallery CI and skips
+658 core cases (103 files, 389 functions) and 161 workflow cases (6 files,
+33 functions): 819 total. The browser contract runs in gallery CI and skips
 locally unless ``SSATK_BROWSER_TESTS=1`` is set. Relative to the preceding
 792-case handoff, this adds eight numerical and ten rendering/export cases.
 The subsequent gallery dependency fix adds three publishing cases: both CLI
@@ -310,3 +310,9 @@ between samples. These validate synthetic point-mass dynamics, not flight data.
 a real packaged-data bake with downloads blocked and source hashes unchanged,
 and custom-elevation precedence with either packaged or opted-in NASA colour
 sources. They check file selection and decodable textures, not terrain accuracy.
+
+The existing movie-duration contract now checks both an explicit seven-day
+span and the default 27.3217-day mean lunar revolution from NASA's Moon Fact
+Sheet. Both decode to the requested playback length; the physical endpoint
+allows 1 microsecond for GPS rounding and path sampling is at most one hour.
+This adds one parametrized case, not another test function or propagation oracle.
