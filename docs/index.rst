@@ -34,6 +34,7 @@ body and component model.
    gallery_hosting
    gallery_scene_fidelity
    star_finder
+   coverage_validation
    benchmarking_ssatk
    test_reference_audit
    design/6dof_architecture

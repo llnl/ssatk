@@ -1,31 +1,21 @@
 """
 ssatk.plots.coverage_analysis
 =====================================
-Ground-site coverage and pass structure for one or more satellites.
+Ground-site geometric access and finite-window contact statistics.
 
-Answers the question a ground station actually has: not "is this satellite
-overhead" but "how often, for how long, and with what gaps". Two figures per
-satellite:
+The site figure shows topocentric look angles, full solar illumination and
+optical candidate windows. Candidates require elevation above the mask,
+a fully illuminated satellite and a dark site; this does not establish
+optical detectability. The four coverage maps show observed contact duration,
+longest gap, contacts intersecting the window per day and contact minutes/day.
 
-  site_analysis_<sat>.png
-      Four views of one propagation window from a specific site: elevation and
-      azimuth against time, the satellite's own illumination state, and which
-      windows are genuinely observable -- the logical AND of above-mask, sunlit,
-      and site-dark, rather than a single collapsed percentage.
-
-  coverage_metrics_<sat>.png
-      The pass structure behind a coverage percentage, computed at every point
-      on Earth: mean pass duration, longest gap between contacts, contacts per
-      day, and total contact minutes per day. "% of time visible" cannot
-      distinguish one clean usable pass from a dozen useless slivers at the same
-      duty cycle; these four can. All are masked to zero outside the orbit's
-      real inclination band rather than filled with a misleading low value.
-
-The coverage grid uses a fixed 3-day, 30-second baseline regardless of the
-satellite's own period. A shorter window undersamples longitude -- Earth has
-not rotated enough to give each meridian a fair sample -- which produced patchy
-contouring that looked like coverage dropping over oceans and was purely a
-sampling artefact.
+TLE-derived orbits use SSAPy's SGP4Propagator. Explicit Keplerian input uses
+two-body propagation unless another propagator is supplied. Maps use WGS84
+sea-level sites, unsmoothed cell-center values, interpolated rise/set times,
+and an area-weighted global mean. The default baseline is three days with
+15-second samples. This is finite-window access, not a long-run average;
+GEO and resonant orbits need not become longitude-uniform. Any contact entirely
+between samples can be missed. Window-boundary contacts and gaps are clipped.
 
 Satellite list resolution, in order: the local JSON store written by
 tle_updater (~/ssatk_data), the copy shipped in split data packages, then the
@@ -59,6 +49,7 @@ from astropy.time import Time
 from ssapy import compute
 from ssapy.body import SunPosition
 
+from ..compute.coverage import access_statistics, coverage_grid
 from ..environment import solar_disk_visible_fraction
 from ..io.tle_updater import load_satellites, update_satellites_auto
 
@@ -1379,10 +1370,23 @@ def build_orbit(sat_dict):
         return make_orbit_from_keplerian(**sat_dict)
 
 
-def propagate(orbit, n_orbits=15, n_points=3000):
+def coverage_propagator(orbit, propagator=None):
+    """Use SGP4 for a native TLE orbit; two-body for explicitly Keplerian input.
+
+    SSAPy compute.rv defaults to two-body propagation even after fromTLE.
+    An explicit propagator overrides this selection for custom dynamics.
+    """
+    from ssapy.propagator import KeplerianPropagator, SGP4Propagator
+
+    if propagator is not None:
+        return propagator
+    return SGP4Propagator() if getattr(orbit, "_tle", None) is not None else KeplerianPropagator()
+
+
+def propagate(orbit, n_orbits=15, n_points=3000, propagator=None):
     period = 2 * np.pi * np.sqrt(orbit.a**3 / ssapy.constants.WGS84_EARTH_MU)
     t = np.linspace(orbit.t, orbit.t + n_orbits * period, n_points)
-    r, v = compute.rv(orbit, t)
+    r, v = compute.rv(orbit, t, propagator=coverage_propagator(orbit, propagator))
     return r, v, t
 
 
@@ -1435,7 +1439,7 @@ def elevation_from_site(r_ecef_sat, se):
     rho     = np.atleast_2d(r_ecef_sat) - se
     rho_enu = (ENU @ rho.T).T
     dist    = np.linalg.norm(rho_enu, axis=1)
-    el      = np.degrees(np.arcsin(rho_enu[:, 2] / dist))
+    el      = np.degrees(np.arctan2(rho_enu[:, 2], np.hypot(rho_enu[:, 0], rho_enu[:, 1])))
     az      = np.degrees(np.arctan2(rho_enu[:, 0], rho_enu[:, 1])) % 360
     return el, az, dist
 
@@ -1456,118 +1460,20 @@ def compute_sun_positions(t):
 # PER-SATELLITE ANALYSIS
 # ═════════════════════════════════════════════════════════════════════════════
 
-def _pass_statistics(vis_mask, dt_s, total_s):
-    """
-    Extract the actual pass structure from a boolean above-mask time
-    series — this is the fix for the core problem with a bare "% of
-    time visible" number: identical coverage fractions can come from one
-    clean long pass or a dozen useless slivers, and the percentage alone
-    can't tell them apart. Returns the set of metrics that actually
-    answer a planner's question:
-
-      mean_pass_min   — mean contact-window length (literal "how long is
-                        line of sight" per contact)
-      max_pass_min    — longest single contact window
-      max_gap_min     — longest gap between contacts (drives onboard
-                        storage sizing, command latency, autonomy
-                        requirements — often the number planners care
-                        about most)
-      n_passes        — contact opportunities in this window
-      passes_per_day  — same, normalized to a daily rate
-      cum_contact_min_per_day — total contact minutes/day (budgetable
-                        against a downlink data rate, unlike a bare %)
-      time_to_first_min — responsiveness for tasking: minutes from the
-                        start of this window until the first contact
-    """
-    n = len(vis_mask)
-    total_days = total_s / 86400.0
-    if not vis_mask.any():
-        return {
-            "mean_pass_min": 0.0,
-            "max_pass_min": 0.0,
-            "max_gap_min": total_s / 60.0,
-            "n_passes": 0,
-            "passes_per_day": 0.0,
-            "cum_contact_min_per_day": 0.0,
-            "time_to_first_min": np.inf,
-        }
-
-    # Rising/falling edges of the boolean mask -> pass start/end indices
-    padded = np.concatenate([[False], vis_mask, [False]])
-    edges = np.diff(padded.astype(int))
-    starts = np.where(edges == 1)[0]
-    ends = np.where(edges == -1)[0]  # exclusive
-    pass_lengths_s = (ends - starts) * dt_s
-    gap_lengths_s = np.concatenate((
-        [starts[0] * dt_s],
-        starts[1:] * dt_s - ends[:-1] * dt_s,
-        [(n - ends[-1]) * dt_s],
-    ))
-
-    mean_pass_min = pass_lengths_s.mean() / 60.0
-    max_pass_min = pass_lengths_s.max() / 60.0
-    max_gap_min = (gap_lengths_s.max() / 60.0) if len(gap_lengths_s) else 0.0
-    n_passes = len(starts)
-    time_to_first_min = starts[0] * dt_s / 60.0
-
-    return {
-        "mean_pass_min": mean_pass_min,
-        "max_pass_min": max_pass_min,
-        "max_gap_min": max_gap_min,
-        "n_passes": n_passes,
-        "passes_per_day": n_passes / total_days,
-        "cum_contact_min_per_day": (pass_lengths_s.sum() / 60.0) / total_days,
-        "time_to_first_min": time_to_first_min,
-    }
-
-
-def _smooth_masked(grid, valid_mask, sigma=1.1):
-    """
-    Smooth a grid for DISPLAY only, without blurring across the real
-    physical boundary (an orbit's inclination limit) into regions that
-    are genuinely, exactly zero — a naive Gaussian blur would leak
-    fractional coverage across that edge, which isn't smoothing out
-    noise, it's fabricating coverage that can't exist. Standard
-    masked-smoothing trick: smooth the valid data and the validity mask
-    separately, then divide, so cells near the boundary are only
-    averaged with their valid neighbours, not the zeroed-out invalid
-    ones on the other side.
-
-    This is a display-only transform — global_mean, site_cov, and every
-    other printed statistic are computed from the raw, unsmoothed grids,
-    never this.
-    """
-    try:
-        from scipy.ndimage import gaussian_filter
-    except ImportError:
-        return grid  # smoothing unavailable -> just show the raw grid
-    grid = np.asarray(grid, dtype=float)
-    valid = valid_mask.astype(float)
-    # Per-axis boundary mode: longitude (axis 1) genuinely wraps at +/-180,
-    # but latitude (axis 0) does NOT — the North and South poles are not
-    # adjacent to each other. A single 'wrap' mode for both axes (an
-    # earlier version of this used exactly that) silently wrapped latitude
-    # too, letting a valid band near one pole bleed values across the
-    # wraparound to near the OTHER pole — verified this directly: it
-    # produced nonzero "coverage" beyond the real cutoff, which is the
-    # exact bug this function exists to prevent, just introduced a
-    # different way.
-    axis_modes = ("nearest", "wrap")
-    num = gaussian_filter(grid * valid, sigma=sigma, mode=axis_modes)
-    den = gaussian_filter(valid, sigma=sigma, mode=axis_modes)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        smoothed = np.where(den > 1e-6, num / den, 0.0)
-    return smoothed
-
-
 def analyse_satellite(sat_name, orbit, site_name, lat, lon, alt_m,
                        min_el_sat=10.0, sun_el_dark=-6.0, min_el_cov=5.0,
-                       n_lat=36, n_lon=72, out_dir="."):
+                       n_lat=90, n_lon=180, out_dir=".", *, coverage_days=3.0,
+                       coverage_step_s=15.0, propagator=None, make_figures=True):
+    if not np.isfinite(coverage_days) or coverage_days <= 0:
+        raise ValueError("coverage_days must be positive")
+    if not np.isfinite(coverage_step_s) or coverage_step_s <= 0:
+        raise ValueError("coverage_step_s must be positive")
+    propagator = coverage_propagator(orbit, propagator)
     tag = sat_name.lower().replace(" ", "_").replace("/", "_")
     print(f"\n  Satellite: {sat_name}")
     print(f"  Orbit: {orbit.a/1e3:.0f} km  i={np.degrees(orbit.i):.1f} deg")
 
-    r, _v, t = propagate(orbit, n_orbits=5, n_points=3000)
+    r, _v, t = propagate(orbit, n_orbits=5, n_points=3000, propagator=propagator)
     print(f"  Propagated {len(t)} steps over {(t[-1]-t[0])/3600:.1f} hours")
 
     r_ecef = gcrf_to_itrf(r, t)
@@ -1578,230 +1484,159 @@ def analyse_satellite(sat_name, orbit, site_name, lat, lon, alt_m,
     sunlit     = ~eclipse
     r_sun_ecef = gcrf_to_itrf(r_sun, t)
 
-    r_norm = r     / np.linalg.norm(r,     axis=1, keepdims=True)
-    s_norm = r_sun / np.linalg.norm(r_sun, axis=1, keepdims=True)
-    phase  = np.degrees(np.arccos(
-                 np.clip(np.einsum('ij,ij->i', r_norm, s_norm), -1, 1)))
-
-    frac_sunlit = sunlit.sum() / len(t)
-    print(f"  Sunlit fraction: {frac_sunlit:.1%}")
-
-    se             = site_ecef(lat, lon, alt_m)
-    el, az, dist   = elevation_from_site(r_ecef, se)
-
-    rho_sun  = r_sun_ecef - se
-    dist_sun = np.linalg.norm(rho_sun, axis=1)
-    up       = se / np.linalg.norm(se)
-    el_sun   = np.degrees(np.arcsin(
-                   np.einsum('ij,j->i', rho_sun, up) / dist_sun))
+    frac_sunlit = access_statistics(sunlit.astype(float), t, 0.5)["fraction"]
+    print(f"  Fully sunlit fraction: {frac_sunlit:.1%}")
+    se = site_ecef(lat, lon, alt_m)
+    el, az, dist = elevation_from_site(r_ecef, se)
+    el_sun = elevation_from_site(r_sun_ecef, se)[0]
+    # Phase is Sun-satellite-observer, with its vertex at the spacecraft.
+    to_sun, to_site = r_sun_ecef - r_ecef, se - r_ecef
+    phase = np.degrees(np.arccos(np.clip(
+        np.einsum('ij,ij->i', to_sun, to_site) /
+        (np.linalg.norm(to_sun, axis=1) * np.linalg.norm(to_site, axis=1)), -1, 1)))
 
     sat_up     = el     > min_el_sat
     site_dark  = el_sun < sun_el_dark
     observable = sat_up & sunlit & site_dark
 
-    dt      = np.mean(np.diff(t))
-    vis_min = sat_up.sum()    * dt / 60.0
-    obs_min = observable.sum() * dt / 60.0
+    vis_min = access_statistics(el, t, min_el_sat)["contact_seconds"] / 60
+    obs_min = access_statistics(observable.astype(float), t, 0.5)["contact_seconds"] / 60
     print(f"  Visible from site: {vis_min:.1f} min")
-    print(f"  Observable windows: {obs_min:.1f} min")
+    print(f"  Optical candidate windows: {obs_min:.1f} min")
 
-    # Site analysis plot
-    fig, axes = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
-    fig.suptitle(
-        f"{sat_name} | Site: {site_name} ({lat}N, {lon}E)",
-        fontsize=14, fontweight="bold"
-    )
+    if make_figures:
+        # Site analysis plot
+        fig, axes = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
+        fig.suptitle(
+            f"{sat_name} | Site: {site_name} ({lat:+g}° latitude, {lon:+g}° longitude)\n"
+            f"From {Time(t[0], format='gps').utc.isot} UTC | {type(propagator).__name__}",
+            fontsize=14, fontweight="bold"
+        )
 
-    ax = axes[0]
-    ax.plot(t_hr, el, color="steelblue", linewidth=0.8)
-    ax.fill_between(t_hr, el, 0, where=sat_up,
-                    color="steelblue", alpha=0.3, label=f"Above {min_el_sat} deg")
-    ax.axhline(min_el_sat, color="gray", linestyle="--", linewidth=0.8)
-    ax.axhline(0, color="black", linewidth=0.5)
-    ax.set_ylabel("Elevation [deg]")
-    ax.set_ylim(bottom=-10)
-    ax.set_title(f"Elevation — visible {vis_min:.1f} min")
-    ax.legend(loc="upper right", fontsize=9)
+        ax = axes[0]
+        ax.plot(t_hr, el, color="steelblue", linewidth=0.8)
+        ax.fill_between(t_hr, el, 0, where=sat_up,
+                        color="steelblue", alpha=0.3, label=f"Above {min_el_sat} deg")
+        ax.axhline(min_el_sat, color="gray", linestyle="--", linewidth=0.8)
+        ax.axhline(0, color="black", linewidth=0.5)
+        ax.set_ylabel("Elevation [deg]")
+        ax.set_ylim(bottom=-10)
+        ax.set_title(f"Elevation — visible {vis_min:.1f} min")
+        ax.legend(loc="upper right", fontsize=9)
 
-    ax = axes[1]
-    ax.scatter(t_hr[sat_up], az[sat_up], s=1.5, color="darkorange")
-    ax.set_ylabel("Azimuth [deg]")
-    ax.set_ylim(0, 360)
-    ax.set_yticks([0, 90, 180, 270, 360])
-    ax.set_yticklabels(["N", "E", "S", "W", "N"])
-    ax.set_title("Azimuth (compass bearing from site)")
+        ax = axes[1]
+        ax.scatter(t_hr[sat_up], az[sat_up], s=1.5, color="darkorange")
+        ax.set_ylabel("Azimuth [deg]")
+        ax.set_ylim(0, 360)
+        ax.set_yticks([0, 90, 180, 270, 360])
+        ax.set_yticklabels(["N", "E", "S", "W", "N"])
+        ax.set_title("Azimuth (compass bearing from site)")
 
-    ax = axes[2]
-    ax.fill_between(t_hr, 0, 1, where=sunlit,
-                    transform=ax.get_xaxis_transform(),
-                    color="gold", alpha=0.35, label="Sunlit")
-    ax.fill_between(t_hr, 0, 1, where=eclipse,
-                    transform=ax.get_xaxis_transform(),
-                    color="midnightblue", alpha=0.35, label="Eclipse")
-    ax2 = ax.twinx()
-    ax2.plot(t_hr, phase, color="darkorange", linewidth=0.8, alpha=0.8)
-    ax2.set_ylabel("Phase angle [deg]", color="darkorange")
-    ax2.tick_params(axis='y', labelcolor="darkorange")
-    ax.set_ylabel("Illumination")
-    ax.set_yticks([])
-    ax.set_title(f"Illumination — sunlit {frac_sunlit:.1%}")
-    ax.legend(loc="upper right", fontsize=9)
+        ax = axes[2]
+        ax.fill_between(t_hr, 0, 1, where=sunlit,
+                        transform=ax.get_xaxis_transform(),
+                        color="gold", alpha=0.35, label="Fully sunlit")
+        ax.fill_between(t_hr, 0, 1, where=eclipse,
+                        transform=ax.get_xaxis_transform(),
+                        color="midnightblue", alpha=0.35, label="Eclipse")
+        ax2 = ax.twinx()
+        ax2.plot(t_hr, phase, color="darkorange", linewidth=0.8, alpha=0.8)
+        ax2.set_ylabel("Phase angle [deg]", color="darkorange")
+        ax2.tick_params(axis='y', labelcolor="darkorange")
+        ax.set_ylabel("Illumination")
+        ax.set_yticks([])
+        ax.set_title(f"Illumination — fully sunlit {frac_sunlit:.1%}")
+        ax.legend(loc="upper right", fontsize=9)
 
-    ax = axes[3]
-    ax.fill_between(t_hr, el, 0, where=sat_up,
-                    color="steelblue", alpha=0.15, label="Above horizon")
-    ax.fill_between(t_hr, el, 0, where=observable,
-                    color="limegreen", alpha=0.7,
-                    label=f"Observable ({obs_min:.1f} min)")
-    ax.axhline(min_el_sat, color="gray", linestyle="--", linewidth=0.8)
-    ax.set_ylabel("Elevation [deg]")
-    ax.set_xlabel("Time from epoch [hours]")
-    ax.set_ylim(bottom=0)
-    ax.set_title("Observable windows (sat up + sunlit + site dark)")
-    ax.legend(loc="upper right", fontsize=9)
+        ax = axes[3]
+        ax.fill_between(t_hr, el, 0, where=sat_up,
+                        color="steelblue", alpha=0.15, label=f"Above {min_el_sat:g}° mask")
+        ax.fill_between(t_hr, el, 0, where=observable,
+                        color="limegreen", alpha=0.7,
+                        label=f"Candidate ({obs_min:.1f} min)")
+        ax.axhline(min_el_sat, color="gray", linestyle="--", linewidth=0.8)
+        ax.set_ylabel("Elevation [deg]")
+        ax.set_xlabel("Time from epoch [hours]")
+        ax.set_ylim(bottom=0)
+        ax.set_title("Optical candidate windows (above mask + fully sunlit + site dark)")
+        ax.legend(loc="upper right", fontsize=9)
 
-    fig.text(0.5, -0.01,
-             "What this is: four views of one specific propagation window from this site — elevation and azimuth vs time, "
-             "the satellite's own illumination state, and which windows are actually observable (above the horizon mask, "
-             "sunlit, and the site itself dark). How it's made: elevation/azimuth from a real topocentric ENU transform at "
-             "the site; eclipse/illumination from a two-circle Sun-Earth angular-overlap check; \"observable\" is the logical "
-             "AND of all three real-time conditions, not a single collapsed percentage.",
-             ha="center", va="top", fontsize=8.5, wrap=True, transform=fig.transFigure)
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"site_analysis_{tag}.png"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  Saved -> site_analysis_{tag}.png")
+        fig.text(0.5, 0.01,
+                 f"Geometric WGS84 look angles. Optical candidates require elevation >{min_el_sat:g}°, "
+                 f"full solar illumination and Sun elevation <{sun_el_dark:g}°.\n"
+                 "No terrain, atmospheric refraction, weather or brightness model; candidates are not confirmed detections.",
+                 ha="center", va="bottom", fontsize=9)
+        fig.tight_layout(rect=(0, 0.045, 1, 0.96))
+        fig.savefig(os.path.join(out_dir, f"site_analysis_{tag}.png"), dpi=150)
+        plt.close(fig)
+        print(f"  Saved -> site_analysis_{tag}.png")
 
-    # Coverage grid needs a MUCH longer baseline than the per-site plots
-    # above. Those use 5 orbits (~8 hours for a LEO like HST) which is
-    # fine for showing one specific pass window, but far too short to
-    # estimate "% of time visible" at every longitude on the globe: in
-    # 8 hours, Earth hasn't rotated nearly enough to give each longitude
-    # a fair, representative sample of the ground track passing near it.
-    # Verified directly: at a fixed latitude, the TRUE long-run coverage
-    # is essentially flat across every longitude (Earth's rotation should
-    # expose all of them equally over time) — but the old short window
-    # produced wildly different values (0% to 10%+) purely from sparse
-    # sampling, not real geography. That's the actual cause of the patchy,
-    # wavy contouring that looked like coverage mysteriously dropping over
-    # oceans — it doesn't know or care what's underneath it, it was purely
-    # an artifact of not sampling long enough.
-    #
-    # Fixed time span (not tied to this satellite's own orbital period) so
-    # it works consistently from LEO up through GEO: 3 days at 30s
-    # resolution is short enough to stay fast, long enough that Earth's
-    # rotation has fully swept every longitude under the orbit's
-    # inclination band multiple times over, and fine enough not to miss
-    # any real pass (typical LEO passes last several minutes).
-    t_cov = np.arange(orbit.t, orbit.t + 3*86400.0, 30.0)
-    r_cov, _ = compute.rv(orbit, t_cov)
+    # A finite requested window, not an assumption of longitude uniformity:
+    # geostationary and repeat-ground-track orbits can depend strongly on longitude.
+    duration_s = coverage_days * 86400.0
+    count = int(np.ceil(duration_s / coverage_step_s))
+    t_cov = orbit.t + np.linspace(0.0, duration_s, count + 1)
+    r_cov, _ = compute.rv(orbit, t_cov, propagator=propagator)
     r_ecef_cov = gcrf_to_itrf(r_cov, t_cov)
-    print(f"  Coverage grid baseline: {len(t_cov)} samples over "
-         f"{(t_cov[-1]-t_cov[0])/86400:.1f} days")
-
-    # Coverage grid
-    lat_grid = np.linspace(-90,  90,  n_lat)
-    lon_grid = np.linspace(-180, 180, n_lon)
-    frac              = np.zeros((n_lat, n_lon))
-    mean_pass_grid    = np.zeros((n_lat, n_lon))
-    max_pass_grid     = np.zeros((n_lat, n_lon))
-    max_gap_grid      = np.zeros((n_lat, n_lon))
-    passes_day_grid   = np.zeros((n_lat, n_lon))
-    cum_contact_grid  = np.zeros((n_lat, n_lon))
-    dt_s = 30.0
-    total_s = t_cov[-1] - t_cov[0]
-
-    for i, la in enumerate(lat_grid):
-        phi = np.radians(la)
-        sp, cp = np.sin(phi), np.cos(phi)
-        for j, lo in enumerate(lon_grid):
-            lam  = np.radians(lo)
-            gp   = R_EARTH * np.array([cp*np.cos(lam), cp*np.sin(lam), sp])
-            rho  = r_ecef_cov - gp
-            dist = np.linalg.norm(rho, axis=1)
-            up_  = gp / R_EARTH
-            el_  = np.degrees(np.arcsin(np.einsum('ij,j->i', rho, up_) / dist))
-            vis_ = el_ > min_el_cov
-            frac[i, j] = np.mean(vis_)
-            stats = _pass_statistics(vis_, dt_s, total_s)
-            mean_pass_grid[i, j]   = stats["mean_pass_min"]
-            max_pass_grid[i, j]    = stats["max_pass_min"]
-            max_gap_grid[i, j]     = stats["max_gap_min"]
-            passes_day_grid[i, j]  = stats["passes_per_day"]
-            cum_contact_grid[i, j] = stats["cum_contact_min_per_day"]
-
-    global_mean = frac.mean()
-    # Smoothed DISPLAY-ONLY copies — global_mean/site_cov below and every
-    # other printed statistic still use the raw, unsmoothed grids.
-    _valid = frac > 0.0
-    frac_smooth        = _smooth_masked(frac, _valid)
-    mean_pass_smooth   = _smooth_masked(mean_pass_grid, _valid)
-    max_gap_smooth     = _smooth_masked(max_gap_grid, _valid)
-    passes_day_smooth  = _smooth_masked(passes_day_grid, _valid)
-    cum_contact_smooth = _smooth_masked(cum_contact_grid, _valid)
-    # Recomputed from the SAME long-baseline r_ecef_cov used for the grid
-    # above, not the original short 5-orbit `el` — those were two
-    # different time windows, so the site marker's printed percentage
-    # and the heatmap colour directly underneath it could disagree
-    # (e.g. a site sitting right at an orbit's inclination limit, where
-    # short-window sampling noise is largest, showing a misleadingly
-    # high number that the surrounding map colours don't support).
+    maps = coverage_grid(r_ecef_cov, t_cov, min_elevation_deg=min_el_cov,
+                         n_lat=n_lat, n_lon=n_lon)
+    lat_grid, lon_grid = maps["lat_grid"], maps["lon_grid"]
+    frac = maps["fraction"]
+    mean_pass_grid = maps["mean_pass_min"]
+    max_pass_grid = maps["max_pass_min"]
+    max_gap_grid = maps["max_gap_min"]
+    passes_day_grid = maps["passes_per_day"]
+    cum_contact_grid = maps["cum_contact_min_per_day"]
+    global_mean = maps["global_mean"]
     el_cov_site = elevation_from_site(r_ecef_cov, se)[0]
-    site_cov    = np.mean(el_cov_site > min_el_cov)
-    print(f"  Global mean coverage: {global_mean:.1%}")
-    print(f"  Site coverage: {site_cov:.1%}")
+    site_stats = access_statistics(el_cov_site, t_cov, min_el_cov)
+    site_cov = site_stats["fraction"]
+    print(f"  Coverage: {coverage_days:g} days, {duration_s/count:g} s steps, "
+          f"{n_lat} x {n_lon} WGS84 cells, {type(propagator).__name__}")
+    print(f"  Area-weighted global mean coverage: {global_mean:.3%}")
+    print(f"  Site coverage: {site_cov:.3%}")
 
-    # ── Pass-structure metrics (mean/max pass duration, max gap, passes/day,
-    # cumulative contact/day) ────────────────────────────────────────────────
-    # "% of time visible" is a duty cycle — it tells you how much of the
-    # window a site is in contact, but it collapses all the temporal
-    # structure that actually drives mission design. The same percentage
-    # can be one clean usable pass or a dozen useless slivers, and the
-    # number alone can't tell you which. These four panels are the metrics
-    # that actually answer a planner's question, using the exact same
-    # per-cell visibility time series the percentage above was collapsed
-    # from — no extra propagation needed, just not throwing the structure
-    # away this time.
-    metric_panels = [
-        (mean_pass_smooth, "Mean pass duration [min]", "viridis"),
-        (max_gap_smooth,   "Max coverage gap [min] (lower=better)", "magma_r"),
-        (passes_day_smooth, "Passes per day", "cividis"),
-        (cum_contact_smooth, "Cumulative contact [min/day]", "plasma"),
-    ]
-    fig, axes = plt.subplots(2, 2, figsize=(18, 12))
-    fig.suptitle(f"Pass-structure metrics — {sat_name}", fontsize=14, fontweight="bold")
-    for ax, (grid_vals, title, cmap) in zip(axes.ravel(), metric_panels):
-        _draw_continents(ax)
-        # Same zero-masking fix as the percentage heatmap — cells with no
-        # coverage at all (guaranteed outside the inclination band) should
-        # show bare basemap, not a "0" colour that reads as data.
-        masked = np.ma.masked_where(frac <= 0.0, grid_vals)
-        im = ax.contourf(lon_grid, lat_grid, masked, levels=21, cmap=cmap,
-                         alpha=0.75, zorder=1, extend="neither")
-        fig.colorbar(im, ax=ax, label=title)
-        ax.plot(lon, lat, marker="*", markersize=14, color="cyan",
-                markeredgecolor="black", markeredgewidth=0.8, zorder=5)
-        ax.set_title(title, fontsize=11)
-        ax.set_xlim(-180, 180); ax.set_ylim(-90, 90)
-        ax.set_xlabel("Longitude [deg]"); ax.set_ylabel("Latitude [deg]")
-        ax.grid(True, linewidth=0.3, color="gray", alpha=0.4)
-    fig.text(0.5, -0.02,
-             "What this is: the pass-structure behind the coverage percentage above, since \"% of time visible\" alone can't "
-             "tell one clean usable pass from a dozen useless slivers at the same duty cycle. How it's made: each grid cell's "
-             "real elevation time series is split into individual contacts by rising/falling edges of the above-mask crossing, "
-             "then reduced to mean/max pass length, longest gap between contacts, contact count per day, and total contact "
-             "minutes per day — smoothed for display only, all four masked to zero outside the orbit's real inclination band.",
-             ha="center", va="top", fontsize=8.5, wrap=True, transform=fig.transFigure)
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"coverage_metrics_{tag}.png"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  Saved -> coverage_metrics_{tag}.png")
+    if make_figures:
+        # Show computed cell values without smoothing or contour interpolation.
+        # Undefined mean duration is gray at no-contact cells; a full-window
+        # outage remains visible in the gap panel instead of being hidden.
+        mean_display = np.ma.masked_where(maps["n_passes"] == 0, mean_pass_grid)
+        metric_panels = [
+            (mean_display, "Mean observed contact [min]", "viridis"),
+            (max_gap_grid, "Longest gap within window [min]", "magma_r"),
+            (passes_day_grid, "Contacts intersecting window / day", "cividis"),
+            (cum_contact_grid, "Contact time [min/day]", "plasma"),
+        ]
+        fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+        epoch = Time(t_cov[0], format="gps").utc.isot
+        fig.suptitle(f"Geometric access — {sat_name} | {coverage_days:g} days from {epoch} UTC\n"
+                     f"{type(propagator).__name__} | WGS84 sea level | elevation > {min_el_cov:g}° | "
+                     f"{180/n_lat:g}° × {360/n_lon:g}° cells | {duration_s/count:g} s samples",
+                     fontsize=13, fontweight="bold")
+        for ax, (values, title, cmap) in zip(axes.ravel(), metric_panels):
+            _draw_continents(ax)
+            colors = plt.get_cmap(cmap).copy()
+            colors.set_bad("#dddddd")
+            im = ax.pcolormesh(maps["lon_edges"], maps["lat_edges"], values,
+                               cmap=colors, shading="flat", alpha=0.88, zorder=1,
+                               vmin=0 if "Mean" not in title else None)
+            fig.colorbar(im, ax=ax, label=title)
+            ax.plot(lon, lat, marker="*", markersize=14, color="cyan",
+                    markeredgecolor="black", markeredgewidth=0.8, zorder=5)
+            ax.set(title=title, xlim=(-180,180), ylim=(-90,90),
+                   xlabel="Geodetic longitude [deg]", ylabel="Geodetic latitude [deg]")
+            ax.grid(True, linewidth=0.3, color="gray", alpha=0.4)
+        fig.text(0.5, 0.01,
+                 "Unsmoothed cell-center values. Gray duration cells: no contact. "
+                 "Rise/set times interpolate elevation crossings; sub-step contacts may be missed.\n"
+                 "Contacts and gaps are clipped to the stated window, including its edge gaps. "
+                 "Geometric access only: no terrain, refraction, weather or detectability model.",
+                 ha="center", va="bottom", fontsize=9)
+        fig.tight_layout(rect=(0, 0.055, 1, 0.95))
+        fig.savefig(os.path.join(out_dir, f"coverage_metrics_{tag}.png"), dpi=150)
+        plt.close(fig)
+        print(f"  Saved -> coverage_metrics_{tag}.png")
 
-    # Site-specific pass statistics (time to first access included here,
-    # since it's only meaningful as a single number from a specific
-    # epoch/site, not something that makes sense as a global heatmap).
-    site_vis_mask = el_cov_site > min_el_cov
-    site_stats = _pass_statistics(site_vis_mask, dt_s, total_s)
     print(f"  {site_name} pass structure: mean {site_stats['mean_pass_min']:.1f} min, "
          f"max {site_stats['max_pass_min']:.1f} min, "
          f"max gap {site_stats['max_gap_min']:.1f} min, "
@@ -1810,10 +1645,16 @@ def analyse_satellite(sat_name, orbit, site_name, lat, lon, alt_m,
          f"first access in {site_stats['time_to_first_min']:.1f} min")
 
     return {
+        "coverage_epochs_gps": t_cov,
+        "coverage_step_s": duration_s/count,
+        "coverage_days": coverage_days,
+        "propagator": type(propagator).__name__,
+        "lat_edges": maps["lat_edges"], "lon_edges": maps["lon_edges"],
+        "elevation_sun": el_sun, "phase_angle": phase,
         "name":        sat_name,
         "tag":         tag,
         "frac":        frac,
-        "frac_smooth": frac_smooth,
+        "frac_smooth": frac.copy(),
         "lat_grid":    lat_grid,
         "lon_grid":    lon_grid,
         "site_cov":    site_cov,

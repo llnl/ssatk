@@ -349,3 +349,16 @@ and rejection of a checksum-mismatched source without replacing the previous
 cached asset. Neither test claims to validate geography or orbit dynamics.
 The prepared gallery uses a SHA-256-pinned NASA Blue Marble product, with
 browser inspection of the embedded dimensions and landmark UV alignment.
+
+
+Coverage-map validation
+------------------------
+
+``tests/test_coverage_references.py`` adds five functions/seven cases:
+analytic crossing times, the spherical horizon-angle formula, stationary
+WGS84 access against ellipsoid normals, latitude-band surface integrals,
+and archived HST states against direct SGP4 with Astropy TEME-to-ITRS.
+The latter checks model selection and coordinate handling, not flight truth.
+``scripts/tests/test_coverage_analysis_contracts.py`` separately checks
+no-output mode and Sun/satellite/site geometry wiring. The reproducible
+full-grid and event-convergence audit is described in :doc:`coverage_validation`.
