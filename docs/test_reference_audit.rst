@@ -197,6 +197,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_navigation_batch.py,2,R1 R5 C,Known linear free-flight state and Fisher covariance; finite differences,Synthetic measurement functions; not realistic observed orbit determination
    tests/test_navigation_measurements.py,4,R1 R2 R5,Known range/range-rate/angles; finite differences; SSAPy station up,Geometry/derivatives; no atmospheric or instrument calibration
    tests/test_navigation_sensors.py,2,R1 R4,Known Gaussian/chi-square/binomial distributions and synthetic elevation mask,Seeded statistical tests; not measured sensor noise
+   tests/test_optical_navigation.py,5,R1 C,Literal camera rotations and intersecting rays; batch Gaussian information solution; prescribed impulse,14 cases including invalid geometry/covariance/epochs; synthetic measurements not telemetry
    tests/test_numeric_mechanics_helpers.py,2,R1,Newtonian orbital equations; Kepler residuals; cardinal coordinates,Specified ideal geometry
    tests/test_orbit_absolute_epoch.py,2,C R6,Force callback epochs anchored to known GPS values,Time-interface contract; trajectory truth tested separately
    tests/test_orbit_acceleration_helpers.py,4,R1 R2,SSAPy third-body acceleration; uniform sphere; vector steering geometry,Shared body ephemerides; force-equation validation

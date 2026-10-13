@@ -31,6 +31,12 @@ import ssapy.compute as compute
 from ssatk.constants import EARTH_MU, EARTH_RADIUS, RGEO
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
+TITLE = "Perturbed orbit versus Kepler reference"
+DESCRIPTION = (
+    "Compare a Kepler orbit with Earth/Moon harmonics, third bodies, radiation "
+    "pressure and drag. This illustrates uncontrolled drift; it does not apply "
+    "station-keeping corrections."
+)
 
 
 def ntw_frame(r, v):

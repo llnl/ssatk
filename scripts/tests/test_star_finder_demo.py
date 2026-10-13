@@ -20,6 +20,14 @@ def test_star_finder_recovers_the_simulated_orbit_without_star_identity_inputs()
     assert all(sum(not used for used in f['fit']) == 6 for f in frames)
     assert len(result['observations']) == 24*9
     np.testing.assert_allclose(result['truth_r'][-1], result['truth_r'][0], atol=.002, rtol=0)
+    # R1: filtered velocity is checked against the prescribed analytic circle,
+    # after the coarse 50-m/s prior has been constrained by repeated fixes.
+    # Nine widely spaced updates and a prescribed 100-m observation sigma do
+    # not imply the same precision as the raw noise-free geometric fixes.
+    final = result['filtered_states'][-1]
+    np.testing.assert_allclose(final.x[:3], result['analytic_r'][-1], atol=20., rtol=0)
+    np.testing.assert_allclose(final.x[3:], result['truth_v'][0], atol=.02, rtol=0)
+    assert final.time == result['fixes'][-1].time
     # C: the public plot includes every supplied epoch, including both endpoints.
     figure = build_star_finder_figure(result)
     assert len(figure.frames) == 9

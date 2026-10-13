@@ -42,9 +42,13 @@ Detection order is shuffled before matching. A coarse attitude prior and a
 one-to-one angular assignment identify the stars. An equal-weight
 Wahba/Kabsch rotation determines attitude from three quarters of the matches;
 the remaining quarter tests the fitted solution. This is tracking-mode
-acquisition, not a blind lost-in-space pattern recognizer. Position comes
-from a least-squares intersection of the landmark bearing lines, not an
-optimal dynamic orbit filter.
+acquisition, not a blind lost-in-space pattern recognizer. Each position fix
+comes from a least-squares intersection of the landmark bearing lines. The demo
+then passes those fixes into SSATK's Cartesian orbit extended Kalman filter
+(EKF), which combines repeated observations and two-body dynamics to estimate
+position and velocity. Raw fixes remain visible alongside the filtered orbit.
+The CSV includes filtered position, velocity and their errors against simulation
+truth; the JSON records the final errors.
 
 The default assumes 3 arcsec of tangent-plane noise, a 2048-pixel square
 sensor with a 30-degree field, and 181 epochs in fast gallery mode or 361 in
@@ -57,13 +61,83 @@ Reusable functions
 -------------------
 
 ``ssatk.navigation.star_tracker`` provides ``load_star_catalogue``,
-``catalogue_directions``, ``match_star_directions``, ``fit_star_attitude`` and
-``position_from_landmark_bearings``. Camera axes have +z along the boresight;
+``catalogue_directions``, ``match_star_directions`` and ``fit_star_attitude``.
+Finite-distance geometry lives in ``ssatk.navigation.landmarks`` through
+``position_from_landmark_bearings``; its previous ``star_tracker`` import is
+retained for compatibility. The combined solve and orbit-filter adapter live
+in ``ssatk.navigation.optical_navigation``. All are exported from
+``ssatk.navigation`` and work without importing a demo or plotting module.
+
+Camera axes have +z along the boresight;
 attitude matrices rotate camera vectors into GCRF-aligned axes. Position
 inputs are metres, velocity inputs m/s, and matching gates radians. Epochs
 accept scalar Astropy ``Time`` or GPS seconds. Catalogue files use RA hours,
 Dec degrees and proper motions in mas/year, with RA proper motion already
 multiplied by cos(Dec). Explicit missing or invalid catalogues raise errors.
+
+Optical fixes for station keeping
+--------------------------------------
+
+``solve_optical_navigation`` performs star matching, attitude fitting and
+landmark triangulation. Its inputs are calibrated star-camera bearings,
+predicted star directions, identified landmark positions in GCRF metres,
+landmark-camera bearings, the observation epoch and a coarse attitude prior.
+An optional rigid calibration rotates landmark-camera coordinates into
+star-camera coordinates. Landmarks in Earth-fixed coordinates must first be
+transformed at the observation epoch. ``fit_star_mask`` refers to input
+detections, allowing withheld-star validation without a demo-specific solver.
+
+The returned ``OpticalNavigationFix`` contains the epoch, camera-to-GCRF
+rotation, GCRF position, matched indices, fit mask and angular residuals in
+radians. Degenerate stars/landmarks and invalid calibrations fail explicitly.
+One image provides no measured velocity. ``update_orbit_from_optical_fix``
+connects fixes to ``CartesianOrbitEKF``, preserving the existing propagator,
+force-model and process-noise interfaces. It returns ``EKFState`` with
+``x = [x, y, z, vx, vy, vz]`` in metres and metres per second, a 6x6 covariance,
+and a GPS epoch. Invalid/stale fixes or failed updates leave the filter intact.
+
+For a prepared observation and a filter initialized from a coarse orbit:
+
+.. code-block:: python
+
+   import ssapy
+   from ssatk.navigation import (
+       solve_optical_navigation, update_orbit_from_optical_fix,
+   )
+
+   fix = solve_optical_navigation(
+       measured_star_bearings, predicted_star_directions,
+       landmark_positions_gcrf_m, measured_landmark_bearings,
+       time=observation_time,
+       prior_camera_to_gcrf=coarse_attitude,
+       match_gate_rad=match_gate_rad,
+       landmark_camera_to_star_camera=camera_calibration,
+   )
+   state = update_orbit_from_optical_fix(
+       orbit_filter, fix, position_covariance_m2,
+       propagation_kwargs={"acceleration": force_models},
+   )
+   estimated_orbit = ssapy.Orbit(
+       r=state.x[:3], v=state.x[3:], t=state.time,
+   )
+
+``estimated_orbit`` can be supplied as ``initial`` to
+``ssatk.orbital_mechanics.transfer_optimal`` or its state can initialize
+``ssatk.propagators_6dof.Spacecraft``. Station-keeping code remains responsible
+for selecting a reference orbit, checking estimate quality and planning burns.
+After a burn, update the filter's state and covariance to reflect the maneuver
+before processing further observations. This adapter supplies navigation; it
+does not implement a station-keeping control law.
+
+The filter requires an explicit positive-definite 3x3 position covariance in
+GCRF metres squared. It must include attitude, calibration and landmark errors;
+small residuals alone do not establish that uncertainty. Correlations shared
+across observations require a suitable augmented error model. The demo uses
+an explicitly prescribed isotropic 100-m standard deviation, configurable as
+``filter_position_sigma_m``, and a coarse 100-km/50-m/s initial uncertainty.
+These are simulation assumptions, not calibrated flight error statistics.
+The demo retains its independent position fixes and does not feed recovered
+states back into apparent-star corrections.
 
 Limits and validation
 ----------------------

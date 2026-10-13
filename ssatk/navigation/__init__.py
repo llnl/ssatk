@@ -2,7 +2,11 @@
 
 from .star_tracker import (
     StarCatalogue, catalogue_directions, fit_star_attitude, load_star_catalogue,
-    match_star_directions, position_from_landmark_bearings,
+    match_star_directions,
+)
+from .landmarks import position_from_landmark_bearings
+from .optical_navigation import (
+    OpticalNavigationFix, solve_optical_navigation, update_orbit_from_optical_fix,
 )
 from .batch import BatchOrbitFitResult, solve_batch_orbit
 from .ekf import (
@@ -21,6 +25,7 @@ from .sensors import (
 )
 
 __all__ = [
+    "OpticalNavigationFix", "solve_optical_navigation", "update_orbit_from_optical_fix",
     "StarCatalogue", "catalogue_directions", "fit_star_attitude", "load_star_catalogue",
     "match_star_directions", "position_from_landmark_bearings",
     "BatchOrbitFitResult",

@@ -16,6 +16,9 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+# Backward-compatible import; finite-distance geometry belongs with landmarks.
+from .landmarks import position_from_landmark_bearings
+
 
 @dataclass(frozen=True)
 class StarCatalogue:
@@ -154,25 +157,3 @@ def match_star_directions(camera_directions, reference_directions, prior_rotatio
     measured, cat = linear_sum_assignment(augmented)
     keep = cat < len(reference)
     return measured[keep], cat[keep]
-
-
-def position_from_landmark_bearings(landmarks_m, inertial_bearings):
-    """Triangulate position from identified finite-distance landmark bearings.
-
-    Solve perpendicular distances to bearing lines in metres. Bearings point
-    from observer to landmarks; this is an unweighted geometric fix, not an
-    optimal orbit filter. Stars at infinity must not be passed as landmarks.
-    """
-    landmarks = np.asarray(landmarks_m, float)
-    directions = _unit_rows(inertial_bearings, "inertial_bearings")
-    if landmarks.shape != directions.shape or len(landmarks) < 2 or not np.isfinite(landmarks).all():
-        raise ValueError("at least two finite landmark positions and bearings are required")
-    projectors = np.eye(3) - directions[:, :, None]*directions[:, None, :]
-    matrix = projectors.sum(axis=0)
-    if np.linalg.cond(matrix) > 1e8:
-        raise ValueError("landmark bearings do not constrain position")
-    rhs = np.einsum("nij,nj->i", projectors, landmarks)
-    position = np.linalg.solve(matrix, rhs)
-    if np.any(np.einsum("ni,ni->n", landmarks-position, directions) <= 0):
-        raise ValueError("landmark solution lies behind a measured bearing")
-    return position

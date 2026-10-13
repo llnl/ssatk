@@ -48,13 +48,13 @@ GALLERY_GROUPS = (
         "orbital_mechanics/demo_gamma_and_heading",
         "orbital_mechanics/demo_leapfrog",
         "orbital_mechanics/demo_compare_models",
+        "orbital_mechanics/demo_station_keeping",
     )),
     GalleryGroup("maneuvers", "Maneuvers and transfers",
                  "Fit transfer paths, choose maneuver controls, and explore station keeping.", (
         "orbital_mechanics/demo_orbital_maneuvers",
         "orbital_mechanics/demo_ellipse_fit",
         "orbital_mechanics/demo_structured_transfer_api",
-        "orbital_mechanics/demo_station_keeping",
     )),
     GalleryGroup("attitude", "Spacecraft attitude and dynamics",
                  "View spacecraft meshes and attitude vectors, then explore coupled translation "
@@ -162,6 +162,7 @@ def gallery_title(name: str, title: str) -> str:
         "demo_ssapy_orbits": "Orbit creation and sampling with SSAPy",
         "demo_build_dashboard": "Build a dashboard from synthetic data",
         "demo_ellipse_fit": "Transfer ellipse fitting and checks",
+        "demo_station_keeping": "Perturbed orbit versus Kepler reference",
     }
     if stem in overrides:
         return overrides[stem]

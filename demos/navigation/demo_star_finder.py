@@ -22,9 +22,9 @@ from scipy.spatial.transform import Rotation
 
 from ssatk.constants import EARTH_MU, EARTH_RADIUS
 from ssatk.coordinates.frames import eci_to_ecf_matrix
-from ssatk.navigation.star_tracker import (
-    catalogue_directions, fit_star_attitude, load_star_catalogue,
-    match_star_directions, position_from_landmark_bearings,
+from ssatk.navigation import (
+    CartesianOrbitEKF, EKFState, catalogue_directions, load_star_catalogue,
+    solve_optical_navigation, update_orbit_from_optical_fix,
 )
 from ssatk.plots.figpath import figpath
 from ssatk.propagators_orbit import propagate_orbit_state
@@ -34,7 +34,8 @@ TITLE = "Star Finder — Angles-Only Attitude and Position"
 DESCRIPTION = (
     "One LEO orbit of simulated camera measurements against a real star catalogue. "
     "Stars determine attitude; bearings to ideal mapped Earth landmarks determine "
-    "position. Includes withheld-star checks, pixel/angle residuals, and CSV data."
+    "position. A core orbit filter estimates position and velocity for guidance. "
+    "Includes withheld-star checks, pixel/angle residuals, and CSV data."
 )
 ARCSEC = np.pi / (180*3600)
 
@@ -50,7 +51,8 @@ def _radec(v):
 
 
 def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
-                         samples=181, noise_arcsec=3., seed=20261012):
+                         samples=181, noise_arcsec=3., seed=20261012,
+                         filter_position_sigma_m=100.):
     """Simulate calibrated centroid/bearing measurements over a chosen span.
 
     Default span is one 700-km circular orbit, propagated by SSATK DOP853.
@@ -64,6 +66,8 @@ def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
         raise ValueError("samples must be an integer >= 3")
     if not np.isfinite(noise_arcsec) or noise_arcsec < 0:
         raise ValueError("noise_arcsec must be finite and nonnegative")
+    if not np.isfinite(filter_position_sigma_m) or filter_position_sigma_m <= 0:
+        raise ValueError("filter_position_sigma_m must be finite and positive")
     start = start if isinstance(start, Time) else Time(start, scale="utc")
     radius = EARTH_RADIUS+700e3
     period = 2*np.pi*np.sqrt(radius**3/EARTH_MU)
@@ -95,9 +99,15 @@ def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
     normals = _unit(ecef / np.array([6378137.**2, 6378137.**2, 6356752.314245**2]))
     focal = 1024/np.tan(np.radians(15))  # 2048 x 2048, 30-degree square FOV
     rng = np.random.default_rng(seed)
-    frames, observations, nav = [], [], []
+    frames, observations, nav, fixes, filtered = [], [], [], [], []
     prior_offset = np.array([100e3, 0., 0.])
     velocity_offset = np.array([0., 50., 0.])
+    orbit_filter = CartesianOrbitEKF(EKFState(
+        np.r_[r0+prior_offset, v0+velocity_offset],
+        np.diag([100e3**2]*3 + [50.**2]*3), float(start.gps)))
+    # Prescribed GCRF measurement covariance, not inferred from true errors or
+    # residuals. Real use needs calibrated attitude/landmark error statistics.
+    fix_covariance = np.eye(3)*filter_position_sigma_m**2
     for i, t in enumerate(epochs):
         angles = [1.5*np.sin(phase[i]), 1.0*np.cos(phase[i]), 18*np.sin(phase[i]/2)]
         attitude = base @ Rotation.from_euler("xyz", angles, degrees=True).as_matrix()
@@ -118,18 +128,6 @@ def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
         order = rng.permutation(len(ids))
         measured_xy, truth_ids = measured_xy[order], ids[order]
         body_measured = _unit(np.column_stack([measured_xy, np.ones(len(ids))]))
-        detected, found = match_star_directions(body_measured, predicted, prior, gate_rad=np.radians(.25))
-        fit = np.arange(len(detected)) % 4 != 0  # one quarter withheld from fitting
-        if fit.sum() < 5:
-            raise RuntimeError("insufficient unambiguous matches for attitude fitting")
-        estimate = fit_star_attitude(body_measured[detected[fit]], predicted[found[fit]])
-        fitted_xy3 = predicted[found] @ estimate
-        fitted_xy = fitted_xy3[:, :2]/fitted_xy3[:, 2, None]
-        residual = (measured_xy[detected]-fitted_xy)/ARCSEC
-        recovered = body_measured[detected] @ estimate.T
-        angle_error = np.arctan2(np.linalg.norm(np.cross(recovered, predicted[found]), axis=1),
-                                 np.sum(recovered*predicted[found], axis=1))/ARCSEC
-        attitude_error = np.linalg.norm(Rotation.from_matrix(estimate @ attitude.T).as_rotvec())/ARCSEC
         # Finite landmarks provide translation information; the sky does not.
         # Nadir camera has an ideal known rigid calibration to the star camera.
         rotation = eci_to_ecf_matrix(float(t.gps))
@@ -145,8 +143,24 @@ def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
         tangent = rng.normal(size=bearings_body.shape)
         tangent -= (tangent*bearings_body).sum(axis=1)[:, None]*bearings_body
         bearings_body = _unit(bearings_body + noise_arcsec*ARCSEC*tangent)
-        position = position_from_landmark_bearings(local, bearings_body @ estimate.T)
+        fix = solve_optical_navigation(
+            body_measured, predicted, local, bearings_body, time=t,
+            prior_camera_to_gcrf=prior, match_gate_rad=np.radians(.25),
+            fit_star_mask=np.arange(len(body_measured)) % 4 != 0)
+        fixes.append(fix)
+        detected, found, fit = fix.star_indices, fix.catalogue_indices, fix.fit_mask
+        estimate, position = fix.camera_to_gcrf, fix.position_gcrf_m
+        fitted_xy3 = predicted[found] @ estimate
+        fitted_xy = fitted_xy3[:, :2]/fitted_xy3[:, 2, None]
+        residual = (measured_xy[detected]-fitted_xy)/ARCSEC
+        recovered = body_measured[detected] @ estimate.T
+        angle_error = fix.star_residual_rad/ARCSEC
+        attitude_error = np.linalg.norm(Rotation.from_matrix(estimate @ attitude.T).as_rotvec())/ARCSEC
         position_error = float(np.linalg.norm(position-orbit.r[i]))
+        state = update_orbit_from_optical_fix(orbit_filter, fix, fix_covariance)
+        filtered.append(state)
+        filtered_position_error = float(np.linalg.norm(state.x[:3]-orbit.r[i]))
+        filtered_velocity_error = float(np.linalg.norm(state.x[3:]-orbit.v[i]))
         astrometric = _radec(catalogue_directions(catalogue, t)[found])
         apparent, measured_ra_dec = _radec(predicted[found]), _radec(recovered)
         names = catalogue.names[found].tolist()
@@ -168,14 +182,21 @@ def simulate_star_finder(*, start="2025-06-01T00:00:00", duration_s=None,
             observed=(1024+focal*measured_xy[detected]).tolist(), predicted=(1024+focal*fitted_xy).tolist(),
             residual=residual.tolist(), recovered_radec=measured_ra_dec.tolist(), catalogue_radec=apparent.tolist(),
             position=position.tolist(), attitude_error_arcsec=float(attitude_error),
-            position_error_m=position_error, heldout_rms_arcsec=float(np.sqrt(np.mean(angle_error[~fit]**2))),
+            position_error_m=position_error, filtered_position=state.x[:3].tolist(),
+            filtered_position_error_m=filtered_position_error, filtered_velocity_error_m_s=filtered_velocity_error,
+            heldout_rms_arcsec=float(np.sqrt(np.mean(angle_error[~fit]**2))),
             matched=len(found), correct=int(correct.sum()), landmarks=len(local)))
         nav.append(dict(utc=t.utc.isot, elapsed_s=elapsed[i], attitude_error_arcsec=attitude_error,
             position_error_m=position_error, heldout_rms_arcsec=frames[-1]['heldout_rms_arcsec'],
             **{f'true_{axis}_m': orbit.r[i, k] for k, axis in enumerate('xyz')},
-            **{f'estimated_{axis}_m': position[k] for k, axis in enumerate('xyz')}))
+            **{f'estimated_{axis}_m': position[k] for k, axis in enumerate('xyz')},
+            **{f'filtered_{axis}_m': state.x[k] for k, axis in enumerate('xyz')},
+            **{f'filtered_v{axis}_m_s': state.x[k+3] for k, axis in enumerate('xyz')},
+            **{f'true_v{axis}_m_s': orbit.v[i, k] for k, axis in enumerate('xyz')},
+            filtered_position_error_m=filtered_position_error, filtered_velocity_error_m_s=filtered_velocity_error))
     return dict(frames=frames, observations=observations, navigation=nav, times_s=elapsed,
-        truth_r=orbit.r, analytic_r=analytic, source=catalogue.source, source_sha256=catalogue.sha256,
+        fixes=fixes, filtered_states=filtered, truth_r=orbit.r, truth_v=orbit.v,
+        filter_position_sigma_m=float(filter_position_sigma_m), analytic_r=analytic, source=catalogue.source, source_sha256=catalogue.sha256,
         catalogue_selected=all_count, period_s=float(period), duration_s=duration,
         propagation_error_m=propagation_error_m, noise_arcsec=noise_arcsec,
         prior_position_error_m=float(np.linalg.norm(prior_offset)), prior_velocity_error_m_s=50.,
@@ -224,6 +245,12 @@ def build_star_finder_figure(result):
     fig.add_trace(go.Scatter(x=mins, y=[q['position_error_m'] for q in frames], mode='lines', line=dict(color='#ffb85c'), name='Position error (m)'), row=2, col=2, secondary_y=True)
     fig.add_trace(go.Scatter(x=mins, y=[q['heldout_rms_arcsec'] for q in frames], mode='lines', line=dict(color='#69e5cc', dash='dot'), name='Withheld-star RMS (arcsec)'), row=2, col=2)
     fig.add_trace(go.Scatter(x=[0, 0], y=[0, max(q['attitude_error_arcsec'] for q in frames)*1.2], mode='lines', line=dict(color='white', dash='dot'), showlegend=False, hoverinfo='skip'), row=2, col=2)
+    filtered_r = np.array([q['filtered_position'] for q in frames])/1000
+    fig.add_trace(go.Scatter3d(x=filtered_r[:, 0], y=filtered_r[:, 1], z=filtered_r[:, 2],
+        mode='lines', line=dict(color='#e0a8ff', width=2), name='Filtered orbit'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=mins, y=[q['filtered_position_error_m'] for q in frames],
+        mode='lines', line=dict(color='#e0a8ff', dash='dot'), name='Filtered position error (m)'),
+        row=2, col=2, secondary_y=True)
     def title(frame):
         return (f"Star Finder · {frame['utc']} UTC · {frame['matched']} stars / {frame['landmarks']} landmarks"
                 "<br><sup>Simulated measurements · real star catalogue · stars → attitude; mapped landmark bearings → position</sup>")
@@ -263,11 +290,14 @@ def main(make_figures=None, fast=None, **simulation_kwargs):
     result = simulate_star_finder(**simulation_kwargs)
     frames = result['frames']
     summary = {key: result[key] for key in ('source', 'source_sha256', 'catalogue_selected', 'period_s', 'duration_s',
-        'propagation_error_m', 'noise_arcsec', 'prior_position_error_m', 'prior_velocity_error_m_s', 'seed')}
+        'propagation_error_m', 'noise_arcsec', 'prior_position_error_m', 'prior_velocity_error_m_s', 'seed', 'filter_position_sigma_m')}
     summary.update(samples=len(frames), matched=sum(f['matched'] for f in frames), correctly_identified=sum(f['correct'] for f in frames),
         attitude_rms_arcsec=float(np.sqrt(np.mean([f['attitude_error_arcsec']**2 for f in frames]))),
         position_rms_m=float(np.sqrt(np.mean([f['position_error_m']**2 for f in frames]))),
         heldout_rms_arcsec=float(np.sqrt(np.mean([f['heldout_rms_arcsec']**2 for f in frames]))),
+        filtered_final_position_error_m=frames[-1]['filtered_position_error_m'],
+        filtered_final_velocity_error_m_s=frames[-1]['filtered_velocity_error_m_s'],
+        filter_model='CartesianOrbitEKF with two-body DOP853/STM; prescribed isotropic position covariance; no modeled cross-epoch bias',
         measurement_origin='SIMULATION, not observed spacecraft telemetry',
         limits='Distant stars: no parallax/RV. Coarse attitude/orbit prior. Ideal calibrated cameras and identified WGS84 grid landmarks; no raw-image detection, clouds, terrain, illumination, finite-landmark light-time/aberration, or landmark misidentification model.')
     outputs = dict(result=result, summary=summary)
@@ -280,12 +310,14 @@ def main(make_figures=None, fast=None, **simulation_kwargs):
 <meta name="viewport" content="width=device-width"><title>SSATK Star Finder</title>
 <style>body{margin:0;background:#0a1220;color:#dbe9f7;font:16px system-ui}header,footer{max-width:1400px;margin:24px auto;padding:0 24px}a{color:#69e5cc}h1{margin-bottom:8px}p{line-height:1.55}.note{color:#a9bbce}</style></head><body>
 <header><h1>Star Finder</h1><p>Real catalogue stars. Simulated camera measurements over one 98.8-minute orbit.
-Stars determine the satellite's attitude; a second calibrated camera observes known Earth landmarks to estimate position.</p>
+Stars determine the satellite's attitude; a second calibrated camera observes known Earth landmarks to estimate position.
+SSATK's core orbit filter combines successive fixes and dynamics into a position/velocity estimate available to guidance and station-keeping code.</p>
 <p><a href="demo_star_finder_star_measurements.csv">Star measurements and catalogue comparisons (CSV)</a> ·
-<a href="demo_star_finder_navigation.csv">Position and attitude errors (CSV)</a> ·
+<a href="demo_star_finder_navigation.csv">Position, velocity and attitude estimates/errors (CSV)</a> ·
 <a href="demo_star_finder_summary.json">Run settings and results</a></p></header>""".replace('one 98.8-minute orbit', f"{result['duration_s']/60:.1f} minutes") + plot_html + """
 <footer><p>Hover over measured stars for predicted and measured right ascension/declination. Scrub the time slider or play the sequence.
-Diamonds in the residual panel are stars withheld from the attitude fit. At orbit scale, the position fixes nearly overlap the true trajectory; the error plot resolves their differences.</p>
+Diamonds in the residual panel are stars withheld from the attitude fit. At orbit scale, the position fixes nearly overlap the true trajectory; the error plot resolves their differences. The purple curve is the filtered orbit; the CSV also contains its velocity estimate.</p>
+<p class="note">The filter uses a prescribed position covariance, recorded in the run settings. It does not derive that covariance from simulated truth or assume star residuals capture calibration and landmark errors. Velocity comes from the coarse prior, repeated fixes and a two-body dynamics model, not a single star image.</p>
 <p class="note">The reference is the packaged bright-star catalogue at epoch J2000, propagated to the observation time. Star rays include aberration and solar light deflection, using a coarse orbit prior.
 The catalogue extract lacks distance, radial velocity and uncertainty: parallax and perspective acceleration are omitted. Row labels refer to this CSV, not Hipparcos identifiers.</p>
 <p class="note">This is a calibrated-centroid simulation, not camera telemetry or raw-image star detection. It assumes a coarse attitude prior, two perfectly calibrated cameras, and correctly identified WGS84 grid landmarks.
