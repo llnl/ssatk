@@ -88,10 +88,13 @@ class BodySurface:
         self.quads, self.colors = surface_quads(body, n, path)
         self.radius = radius
         self.artist = Poly3DCollection([], edgecolors="none", linewidths=0, antialiased=False, zorder=zorder)
+        from .occultation import _register_body
+        self.occluder = _register_body(ax, self.artist, center, radius)
         self.update(center, rotation)
         ax.add_collection3d(self.artist)
 
     def update(self, center=(0, 0, 0), rotation=None, sun_hat=None, ambient=.22, diffuse=.78):
+        self.occluder.center = np.asarray(center, dtype=float)
         rotation = np.eye(3) if rotation is None else np.asarray(rotation)
         quads = self.quads @ rotation.T
         colors = self.colors
@@ -137,6 +140,8 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy", *, r
     center = np.asarray(center)
     circle = Circle(center[[a, b]], radius, facecolor=BODY_COLORS[body], edgecolor="none", zorder=2)
     ax.add_patch(circle)
+    from .occultation import _register_body
+    _register_body(ax, circle, center, radius, view)
     if not is_low_spec():
         size = int(resolution)
         axis = (np.arange(size)+.5)*2/size-1
@@ -159,4 +164,5 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy", *, r
                           extent=(center[a]-radius, center[a]+radius,
                                   center[b]-radius, center[b]+radius), zorder=2)
         image.set_clip_path(circle)
+        circle._ssatk_body_images = [image]
     return circle

@@ -24,27 +24,6 @@ from ..coordinates import gcrf_to_lunar, gcrf_to_lunar_fixed
 from ..coordinates.lunar import lunar_map_rotation
 
 
-def _split_orbit_segments_for_bodies(xyz, bodies, elev_deg, azim_deg):
-    """Split line segments into camera-occluded and foreground groups."""
-    segments = np.stack((xyz[:-1], xyz[1:]), axis=1)
-    midpoints = segments.mean(axis=1)
-    elev = np.radians(elev_deg)
-    azim = np.radians(azim_deg)
-    camera = np.array([
-        np.cos(elev) * np.cos(azim),
-        np.cos(elev) * np.sin(azim),
-        np.sin(elev),
-    ])
-    hidden = np.zeros(len(midpoints), dtype=bool)
-    for center, radius in bodies:
-        relative = midpoints - center
-        depth = relative @ camera
-        perpendicular = relative - depth[:, None] * camera
-        hidden |= np.einsum("ij,ij->i", relative, relative) < radius**2
-        hidden |= (depth < 0.0) & (np.einsum("ij,ij->i", perpendicular, perpendicular) < radius**2)
-    return segments[hidden], segments[~hidden]
-
-
 def _ssapy_texture(name):
     """Resolve installed textures without downloading anything."""
     return texture_path(name)
@@ -80,6 +59,8 @@ def _textured_body(ax, center, radius, path, rotation, sun_hat, *,
     artist = Poly3DCollection(center + radius * quads, facecolors=colors,
                               edgecolors="none", linewidths=0, antialiased=False, zorder=10)
     ax.add_collection3d(artist)
+    from .occultation import _register_body
+    _register_body(ax, artist, center, radius)
     return artist
 
 
@@ -231,15 +212,10 @@ def moon_plot_3d(r=None, t=None, title='', figsize=(10, 10),
     ax.set_box_aspect([1, 1, 1], zoom=view_zoom)
     if show_stars:
         _scene_stars(ax, rotation, epoch, elev, azim, mag_limit)
-    bodies = [(np.zeros(3), moon_display)]
-    if draw_earth:
-        bodies.append((earth_pos, earth_display))
     for index, xyz in enumerate(tracks):
-        behind, front = _split_orbit_segments_for_bodies(xyz, bodies, elev, azim)
         color = '#ff9234' if len(tracks) == 1 else plt.cm.rainbow(index/max(1, len(tracks)-1))
-        for segments, order in [(behind, 5), (front, 15)]:
-            if len(segments):
-                ax.add_collection3d(Line3DCollection(segments, colors=[color], linewidth=1.5, zorder=order))
+        segments = np.stack((xyz[:-1], xyz[1:]), axis=1)
+        ax.add_collection3d(Line3DCollection(segments, colors=[color], linewidth=1.5, zorder=15))
     _textured_body(ax, np.zeros(3), moon_display, _ssapy_texture('moon'), moon_rotation,
                    sun_hat, ambient=shade_ambient, diffuse=shade_diffuse, color=BODY_COLORS["moon"])
     if draw_earth:

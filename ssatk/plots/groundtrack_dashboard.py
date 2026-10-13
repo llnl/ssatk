@@ -198,7 +198,9 @@ def groundtrack_dashboard(
 
     # ITRF 3D plot
     ax_itrf = fig.add_subplot(gs[0, 2], projection='3d')
-    ax_itrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=0.5, linewidth=0)
+    body = ax_itrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=1.0, linewidth=0)
+    from .occultation import _register_body
+    _register_body(ax_itrf, body, np.zeros(3), EARTH_RADIUS/1e3)
     for i, (x_gt, y_gt, z_gt) in enumerate(zip(x_gts, y_gts, z_gts)):
         ax_itrf.plot(x_gt / 1e3, y_gt / 1e3, z_gt / 1e3, color=colors[i], linewidth=2.5)
         ax_itrf.scatter(x_gt[0] / 1e3, y_gt[0] / 1e3, z_gt[0] / 1e3, color=colors[i], marker='*', s=120)
@@ -222,7 +224,9 @@ def groundtrack_dashboard(
 
     # GCRF 3D plot
     ax_gcrf = fig.add_subplot(gs[1, 2], projection='3d')
-    ax_gcrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=0.5, linewidth=0)
+    body = ax_gcrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=1.0, linewidth=0)
+    from .occultation import _register_body
+    _register_body(ax_gcrf, body, np.zeros(3), EARTH_RADIUS/1e3)
     for i, r_i in enumerate(r):
         x, y, z = r_i[:, 0], r_i[:, 1], r_i[:, 2]
         ax_gcrf.plot(x / 1e3, y / 1e3, z / 1e3, color=colors[i], linewidth=2.5)

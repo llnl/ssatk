@@ -9,7 +9,6 @@ from ssapy import Orbit, rv
 from ssatk.constants import EARTH_MU, EARTH_RADIUS
 from ssatk.plots.camera import AnimationCamera, _CameraPath
 from ssatk.plots._body_surfaces import BodySurface, body_rotation
-from ssatk.plots._globe_scene import visible_points
 from ssatk.plots.orbit_animation import _animation_writer
 
 TITLE = "Animation Camera Shots"
@@ -53,7 +52,7 @@ def main(make_figures=True, fast=False, output_dir=None):
     fig.text(
         0.5,
         0.025,
-        "Same SSAPy trajectory, epochs and physical scale · + marks spacecraft centre",
+        "Same SSATK trajectory, epochs and physical scale · + marks spacecraft centre",
         ha="center",
         color="#bacadb",
         fontsize=10,
@@ -93,14 +92,10 @@ def main(make_figures=True, fast=False, output_dir=None):
     def update(i):
         rotation = body_rotation("earth", times[i])
         for ax, shot, body, line, dot, stamp in panels:
-            el, az = shot.mpl(ax, i)
+            shot.mpl(ax, i)
             body.update(rotation=rotation)
-            visible = visible_points(positions, earth_radius, el, az)
-            path = positions.copy()
-            path[~visible] = np.nan
-            line.set_data_3d(path.T)
+            line.set_data_3d(positions.T)
             dot.set_data_3d(positions[i : i + 1].T)
-            dot.set_visible(bool(visible[i]))
             stamp.set_text(f"t + {elapsed[i] / 60:.1f} min / {period / 60:.1f} min")
         return []
 

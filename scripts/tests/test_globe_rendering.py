@@ -161,7 +161,11 @@ def test_rendered_pixels_hide_marker_and_trail_behind_earth(texture, monkeypatch
                 if index == 1:
                     from mpl_toolkits.mplot3d.art3d import Line3DCollection
                     trails = [c for c in self.fig.axes[0].collections if isinstance(c, Line3DCollection)]
-                    assert trails and all(np.all(c.get_colors()[:, 3] == 0) for c in trails)
+                    # Source paths are retained between draws; geometric
+                    # clipping, rather than zeroing their alpha, hides them.
+                    assert trails
+                    np.testing.assert_array_equal(trails[0]._segments3d,
+                                                  [[[7000., 0, 0], [-7000., 0, 0]]])
     monkeypatch.setattr(module, 'FuncAnimation', Capture)
     module.orbit_animation(np.array([[7e6, 0, 0], [-7e6, 0, 0]]), 1.4e9+np.arange(2.),
                            views=('globe',), el=0, az=0, earth_resolution=12,

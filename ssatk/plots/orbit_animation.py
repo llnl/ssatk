@@ -18,7 +18,8 @@ from ssapy import groundTrack as _ground_track
 
 from ..compute import find_smallest_bounding_cube as _find_smallest_bounding_cube
 from ..constants import RGEO as _RGEO, EARTH_RADIUS as _EARTH_RADIUS
-from ._globe_scene import TexturedEarth, earth_to_scene, visible_points
+from ._globe_scene import TexturedEarth, earth_to_scene
+from .occultation import _projected_orbit
 from ._frames import normalize_orbit_frame as _normalize_orbit_frame
 from ._orbit_plot_core import _COORDINATE_VIEWS, _VIEW_AXES
 from ._orbit_plot_core import _create_orbit_axes, _orbit_frame_transformations
@@ -227,11 +228,7 @@ def orbit_animation(
                 artist_group = artists[(track_index, view)]
                 _remove_collection(artist_group["tail"])
                 if view in {"3d", "globe"}:
-                    visible = None
-                    if view == "globe":
-                        visible = visible_points(tail_xyz, _EARTH_RADIUS / prepared["unit_conversion"], axes[view].elev, axes[view].azim)
-                        artist_group["head"].set_visible(bool(visible[-1]))
-                    tail_artist = _add_3d_tail(axes[view], tail_xyz, color, visible=visible)
+                    tail_artist = _add_3d_tail(axes[view], tail_xyz, color)
                     artist_group["head"].set_data_3d([xyz[idx, 0]], [xyz[idx, 1]], [xyz[idx, 2]])
                 elif view == "groundtrack":
                     groundtrack_tail = track["groundtrack"][start: idx + 1]
@@ -240,6 +237,8 @@ def orbit_animation(
                 else:
                     x_idx, y_idx, _, _ = _VIEW_AXES[view]
                     tail_artist = _add_2d_tail(axes[view], tail_xyz[:, [x_idx, y_idx]], color)
+                    _projected_orbit(tail_artist, _np.stack((tail_xyz[:-1], tail_xyz[1:]), axis=1), view)
+                    _projected_orbit(artist_group["head"], xyz[idx:idx+1], view)
                     artist_group["head"].set_data([xyz[idx, x_idx]], [xyz[idx, y_idx]])
                 artist_group["tail"] = tail_artist
                 frame_artists.extend([artist_group["head"], tail_artist])
@@ -565,12 +564,10 @@ class _ConstellationArtists:
             data = self.xyz if view == "globe" else self.lonlat
             points = data[:, start:stop+1]
             if view == "globe":
-                visible = visible_points(points, self.radius, ax.elev, ax.azim)
-                heads = data[:, stop][visible[:, -1]]
-                self.heads[view]._offsets3d = tuple(heads.T)
-                self.heads[view].set_facecolors(self.colors[visible[:, -1]])
+                self.heads[view]._offsets3d = tuple(data[:, stop].T)
+                self.heads[view].set_facecolors(self.colors)
                 self.heads[view].set_edgecolors("none")
-                keep = visible[:, :-1] & visible[:, 1:]
+                keep = _np.ones(points.shape[:2], dtype=bool)[:, 1:]
             else:
                 self.heads[view].set_offsets(data[:, stop])
                 self.heads[view].set_facecolors(self.colors)

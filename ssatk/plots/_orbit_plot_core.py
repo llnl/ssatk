@@ -365,7 +365,8 @@ def _plot_orbit_view(
     x_idx, y_idx, x_name, y_name = _VIEW_AXES[view]
     secondary_y_key = f"secondary_{y_name}"
 
-    ax.scatter(xyz[:, x_idx], xyz[:, y_idx], color=scatter_dot_colors, s=1)
+    from .occultation import _projected_orbit
+    _projected_orbit(ax.scatter(xyz[:, x_idx], xyz[:, y_idx], color=scatter_dot_colors, s=1), xyz, view)
     ax.add_patch(_plt.Circle(xy=(0, 0), radius=1, color=textcolor, linestyle="dashed", fill=False))
     for body, center, radius, rotation in stn.get("bodies", []):
         _body_disc(ax, body, radius, center, rotation, view=view)

@@ -162,13 +162,29 @@ def test_batched_constellation_keeps_visible_heads_and_breaks_dateline():
     fig = plt.figure()
     globe = fig.add_subplot(121, projection='3d')
     globe.view_init(elev=0, azim=0)
+    globe.set_proj_type('ortho')
+    globe.set(xlim=(-3, 3), ylim=(-3, 3), zlim=(-3, 3))
+    from ssatk.plots._body_surfaces import BodySurface
+    from ssatk.plots.rendering import low_spec_mode
+    with low_spec_mode():
+        BodySurface(globe, 'earth', 1., n=12)
     ground = fig.add_subplot(122)
     tracks = [dict(xyz=np.array([[2., 0, 0], [2., 0, 0]]), groundtrack=np.array([[179., 0], [-179., 0]])),
               dict(xyz=np.array([[-2., 0, 0], [-2., 0, 0]]), groundtrack=np.array([[10., 0], [11., 0]]))]
     batch = _ConstellationArtists(dict(globe=globe, groundtrack=ground), tracks,
                                   np.array([[1., 0, 0, 1], [0, 1., 0, 1]]), 1.)
     batch.update(0, 1)
-    np.testing.assert_array_equal(np.array(batch.heads['globe']._offsets3d).T, [[2., 0, 0]])
+    drawn = []
+    head = batch.heads['globe']
+    original_draw = head.draw
+    def capture(renderer):
+        drawn.append(np.array(head._offsets3d).T.copy())
+        return original_draw(renderer)
+    head.draw = capture
+    fig.canvas.draw()
+    np.testing.assert_array_equal(drawn[0][0], [2., 0, 0])
+    assert np.isnan(drawn[0][1]).all()
+    np.testing.assert_array_equal(np.array(head._offsets3d).T, [[2., 0, 0], [-2., 0, 0]])
     assert len(batch.tails['groundtrack'].get_segments()) == 1
     np.testing.assert_array_equal(batch.tails['groundtrack'].get_segments()[0], [[10., 0], [11., 0]])
     plt.close(fig)

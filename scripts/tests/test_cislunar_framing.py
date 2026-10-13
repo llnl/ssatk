@@ -62,7 +62,19 @@ def test_lunar_circle_fits_literal_limits_and_physical_radius(fixed_frame, view)
         toward_camera = np.array([np.sqrt(3)/4, -.75, .5])
         depth = circle @ toward_camera
         visible = (depth >= 0) | (np.sum(circle**2, axis=1)-depth**2 >= 1738100.**2)
-    np.testing.assert_allclose(points(tracks(ax)[0]), circle[visible, :dims]/1000., rtol=0, atol=1e-8)
+    track = tracks(ax)[0]
+    # Visibility is evaluated at draw time, so rotating a returned figure can
+    # reveal previously hidden samples without losing their colours/states.
+    drawn = []
+    original_draw = track.draw
+    def capture(renderer):
+        drawn.append(points(track).copy())
+        return original_draw(renderer)
+    track.draw = capture
+    fig.canvas.draw()
+    finite = np.all(np.isfinite(drawn[0]), axis=1)
+    np.testing.assert_allclose(drawn[0][finite], circle[visible, :dims]/1000., rtol=0, atol=1e-8)
+    np.testing.assert_allclose(points(track), circle[:, :dims]/1000., rtol=0, atol=1e-8)
     if dims == 3:
         surface = next(c for c in ax.collections if hasattr(c, '_vec'))
         np.testing.assert_allclose(np.linalg.norm(surface._vec[:3].T, axis=1), 1738.1, rtol=0, atol=1e-9)

@@ -477,7 +477,9 @@ class EarthLayer(BaseLayer):
                                    zorder=1, alpha=1.0)
         else:
             surf = ax.plot_surface(X, Y, Z, color="#1a4f8a",
-                                   alpha=0.85, zorder=1)
+                                   alpha=1.0, zorder=1)
+        from .occultation import _register_body
+        _register_body(ax, surf, np.zeros(3), RE_KM*self.radius_scale)
         self._artists_mpl = [surf]
         return [surf]
 
@@ -522,7 +524,7 @@ class EarthLayer(BaseLayer):
             fig.add_trace(go.Surface(
                 x=X, y=Y, z=Z,
                 colorscale=[[0,"#1a4f8a"],[1,"#1a4f8a"]],
-                showscale=False, name="Earth", opacity=0.9,
+                showscale=False, name="Earth", opacity=1.0,
             ))
 
 

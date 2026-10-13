@@ -1023,10 +1023,14 @@ def _sun_sphere_mpl(ax, center, radius, seed=11):
     for ch in range(3):
         colors[..., ch] = np.interp(brightness, stops, rgb_stops[:, ch])
 
-    ax.plot_surface(sx, sy, sz, facecolors=colors, linewidth=0, shade=False, zorder=8)
+    surface = ax.plot_surface(sx, sy, sz, facecolors=colors, linewidth=0, shade=False, zorder=8)
+    from .occultation import _register_body
+    _register_body(ax, surface, center, radius)
+    surface._ssatk_body_backgrounds = []
     for gs, ga in [(1.4, 0.15), (1.9, 0.06)]:
         gx, gy, gz = center[0]+radius*gs*nx, center[1]+radius*gs*ny, center[2]+radius*gs*nz
-        ax.plot_surface(gx, gy, gz, color="#FFD700", alpha=ga, linewidth=0, shade=False, zorder=7)
+        halo = ax.plot_surface(gx, gy, gz, color="#FFD700", alpha=ga, linewidth=0, shade=False, zorder=7)
+        surface._ssatk_body_backgrounds.append(halo)
 
 
 def _earth_sphere_mpl(ax, center, radius, sun_hat, seed=7, time=None):

@@ -64,6 +64,8 @@ class TexturedEarth:
         self.artist = Poly3DCollection(self.fixed_quads, facecolors=colors,
                                        edgecolors="none", linewidths=0, antialiased=False, zorder=1)
         ax.add_collection3d(self.artist)
+        from .occultation import _register_body
+        _register_body(ax, self.artist, np.zeros(3), radius)
 
     def orient(self, rotation):
         vertices = self.fixed_quads @ np.asarray(rotation).T

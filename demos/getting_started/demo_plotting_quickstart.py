@@ -160,6 +160,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
         t=times,
         view=("xy", "groundtrack", "globe"),
         title="orbit_plot: animated orbit summary",
+        figsize=(12, 11),
         save=f"plotting_quickstart_orbit_animation.gif",
         max_frames=8 if fast else 14,
         fps=2,

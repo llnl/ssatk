@@ -204,13 +204,9 @@ def globe_plot(
         if ri_scaled.size:
             max_extent = max(max_extent, float(np.nanmax(np.abs(ri_scaled))))
 
-        visible = _earth_occultation_mask(
-            ri_scaled,
-            earth_radius_scaled=scale_fac,
-            el_deg=el,
-            az_deg=az,
-        )
-        ri_vis = ri_scaled[visible]
+        # Keep all states: the shared draw adapter evaluates the current
+        # camera, including rotations of the returned figure.
+        ri_vis = ri_scaled
 
         if n_tracks == 1:
             # Single orbit:
@@ -223,7 +219,6 @@ def globe_plot(
             else:
                 # original: color by point
                 point_colors = plt.cm.rainbow(np.linspace(0.0, 1.0, ri_scaled.shape[0]))
-                point_colors = point_colors[visible]
                 ax.scatter(
                     ri_vis[:, 0], ri_vis[:, 1], ri_vis[:, 2],
                     color=point_colors, s=1, zorder=2,
@@ -237,7 +232,7 @@ def globe_plot(
             )
 
         ref_idx = reference_indices[i]
-        if (highlight_reference and ref_idx is not None and visible[ref_idx]):
+        if highlight_reference and ref_idx is not None:
             ref_point = ri_scaled[ref_idx]
             marker_kwargs = dict(
                 color="#FFD700",

@@ -70,12 +70,49 @@ time retain their legacy GPS-zero reference epoch. Pass a date for meaningful
 surface orientation.
 
 The map is north-up with longitude -180 to +180 degrees. Lunar map coordinates
-approximate the DE440 principal-axis frame; the mean-Earth map-frame offset
-is below one kilometre. Albedo contrast and lighting are illustrative, not
+use the DE440 mean-Earth/polar-axis frame, including its offset from the
+principal-axis frame used for dynamics. Albedo contrast and lighting are illustrative, not
 calibrated photometry. Generic mapped spheres add no invented radial terrain.
 The dedicated WebGL viewer uses measured elevation-derived shading without
 changing its reference sphere. Eclipse appearance strips without dates use a
 fixed near-side view, without libration.
+
+Opaque bodies and orbit visibility
+----------------------------------
+
+Earth and Moon hide the portions of trajectories and markers behind their
+displayed spheres by default, in both textured and low-spec modes. Static
+plots recompute visibility when redrawn after camera rotation; animations use
+the current camera and each frame's body positions. Front-side arcs remain
+visible. Line segments are clipped at sphere and limb intersections, including
+coarse segments whose endpoints are both visible. This does not smooth,
+resample, or change propagated trajectories.
+
+The shared Matplotlib implementation covers orbit coordinate panels, globes,
+cislunar/Moon scenes, layered scenes, rendezvous views, and the spatial panels
+of ground-track dashboards. The spacecraft camera uses the same ray/sphere
+geometry; browser 3-D scenes use their native depth buffer with opaque bodies.
+Longitude/latitude maps and non-spatial diagnostic plots are unaffected.
+Coordinate-plane panels look along the positive omitted axis (for example,
+an XY panel looks from +Z). Still scenes retain their stated snapshot epoch;
+their spheres do not follow the epoch of each historical trajectory sample.
+
+For a deliberate see-through Matplotlib diagnostic view:
+
+.. code-block:: python
+
+   from ssatk.plots import orbit_plot, set_orbit_occlusion
+
+   fig, axes = orbit_plot(r, t, view="3d")
+   set_orbit_occlusion(axes[0], False)
+   fig.savefig("see_through.png")
+
+Visibility uses the displayed spherical radius, including any explicitly
+labelled visual enlargement. It is a rendering operation, not terrain-aware
+line-of-sight analysis or an ellipsoidal Earth visibility calculation. Artist
+data are restored after every draw, so camera motion does not discard states
+or change their colours. Matplotlib animations must use full draws
+(``blit=False``, as in SSATK's animation backends).
 
 Validation
 ----------

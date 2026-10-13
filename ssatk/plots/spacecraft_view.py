@@ -532,16 +532,18 @@ class SpacecraftView:
                   extent=(-1, 1, -1, 1), aspect="auto", interpolation="bilinear", zorder=1)
         wide = self.camera != "limb" and self.camera.mode in {"overview", "orbit"}
         if wide:
-            relative = self.r-eye
-            path_uv, path_depth = _project(relative, basis, tan_x, tan_y)
-            distance = np.linalg.norm(relative, axis=1)
-            hidden = path_depth <= 0
-            for _, center, radius in self._bodies(i):
-                hidden |= _ray_sphere(relative/distance[:, None], center-eye, radius) < distance
-            path_uv[hidden] = np.nan
-            ax.plot(path_uv[:, 0], path_uv[:, 1], color="#edaa55", lw=1, alpha=.7, zorder=2)
-            if not hidden[i]:
-                ax.plot(*path_uv[i], marker="+", color="#ffe2b0", markersize=7, zorder=4)
+            from .occultation import _clip_segments, _visible
+            from matplotlib.collections import LineCollection
+            bodies = [(center, radius) for _, center, radius in self._bodies(i)]
+            segments, _ = _clip_segments(np.stack((self.r[:-1], self.r[1:]), axis=1), bodies, eye=eye)
+            path_uv, path_depth = _project((segments-eye).reshape(-1, 3), basis, tan_x, tan_y)
+            path_uv = path_uv.reshape(-1, 2, 2)
+            # Camera-plane clipping is separate from body occultation.
+            path_uv = path_uv[np.all(path_depth.reshape(-1, 2) > 0, axis=1)]
+            ax.add_collection(LineCollection(path_uv, colors="#edaa55", linewidths=1, alpha=.7, zorder=2))
+            head_uv, head_depth = _project(self.r[i]-eye, basis, tan_x, tan_y)
+            if head_depth > 0 and _visible(self.r[i], bodies, eye=eye):
+                ax.plot(*head_uv, marker="+", color="#ffe2b0", markersize=7, zorder=4)
         geom = self.geometry(i)
         # Work relative to the spacecraft to retain metre-scale mesh precision.
         local = self.mesh.vertices @ geom["body_axes_gcrf"].T

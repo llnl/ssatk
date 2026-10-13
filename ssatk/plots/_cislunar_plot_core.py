@@ -16,7 +16,7 @@ from ..constants import RGEO as _RGEO
 from ..coordinates import gcrf_to_lunar_fixed as _gcrf_to_lunar_fixed
 from ._legend_handlers import GradientLineHandler as _GradientLineHandler
 from ._legend_handlers import BodyMapPatch, BodyMapHandler, body_legend_handle
-from ._globe_scene import visible_points as _visible_points
+from .occultation import _projected_orbit
 from .plotutils import figsave as _figsave
 from .plotutils import valid_orbits as _valid_orbits
 
@@ -196,10 +196,7 @@ def _plot_cislunar_gcrf_3d(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_convers
 
 
 def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    visible = _visible_points(xyz_lunar, _MOON_RADIUS/unit_conversion, ax.elev, ax.azim)
-    colors = scatter_dot_colors[visible] if _np.ndim(scatter_dot_colors) == 2 else scatter_dot_colors
-    ax.computed_zorder = False
-    ax.scatter3D(*xyz_lunar[visible].T, color=colors, s=1, label="Orbit Path", zorder=15)
+    ax.scatter3D(*xyz_lunar.T, color=scatter_dot_colors, s=1, label="Orbit Path", zorder=15)
     ax.scatter3D(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], r_earth_lunar[mask_lunar, 2], color=blue_colors, s=55)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=True)
     for point, pos in _lagrange_points_lunar_fixed_frame().items():
@@ -210,13 +207,13 @@ def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_color
 
 
 def _plot_cislunar_gcrf_xy(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    ax.scatter(xyz[:, 0], xyz[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path")
+    _projected_orbit(ax.scatter(xyz[:, 0], xyz[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path"), xyz)
     ax.scatter(r_moon[mask_gcrf, 0], r_moon[mask_gcrf, 1], color=grey_colors, s=(_MOON_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
 
 
 def _plot_cislunar_lunar_xy(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    ax.scatter(xyz_lunar[:, 0], xyz_lunar[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path")
+    _projected_orbit(ax.scatter(xyz_lunar[:, 0], xyz_lunar[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path"), xyz_lunar)
     ax.scatter(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], color=blue_colors, s=(_EARTH_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
     for point, pos in _lagrange_points_lunar_fixed_frame().items():

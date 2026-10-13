@@ -50,7 +50,9 @@ def rendezvous_plot(r1, v1,
     x = EARTH_RADIUS / 1e3 * np.outer(np.cos(u), np.sin(v))
     y = EARTH_RADIUS / 1e3 * np.outer(np.sin(u), np.sin(v))
     z = EARTH_RADIUS / 1e3 * np.outer(np.ones(np.size(u)), np.cos(v))
-    ax.plot_surface(x, y, z, color='blue', alpha=0.3)
+    body = ax.plot_surface(x, y, z, color='blue', alpha=1.0)
+    from .occultation import _register_body
+    _register_body(ax, body, np.zeros(3), EARTH_RADIUS/1e3)
 
     # Chaser initial point
     r1_km = r1 / 1e3
