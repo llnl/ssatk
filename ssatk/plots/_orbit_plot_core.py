@@ -174,6 +174,11 @@ def _orbit_plot_core(
 
 
 def _create_orbit_axes(fig, views):
+    # Reserve room for labels on mixed map/3-D dashboards as well as slices.
+    # Fixed gutters remain stable while mplot3d changes its projected labels.
+    # Constrained-layout can collapse a mixed 2-D/3-D animation mid-frame.
+    fig.subplots_adjust(left=.12, right=.91, bottom=.16, top=.90,
+                        hspace=.55, wspace=.42)
     if views == ("xy",):
         return {"xy": fig.add_subplot(1, 1, 1)}
 
@@ -389,6 +394,8 @@ def _plot_orbit_view(
 
 
 def _plot_orbit_3d(ax, xyz, stn, bounds, unit_label, unit_conversion, scatter_dot_colors, textcolor, frame_key, lunar_transform):
+    ax.scatter3D(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=scatter_dot_colors,
+                 s=1, label="Orbit Path")
     for body, center, radius, rotation in stn.get("bodies", []):
         _BodySurface(ax, body, radius, center, rotation)
     ax.scatter3D(stn["secondary_x"], stn["secondary_y"], stn["secondary_z"], color=stn["secondary_color"], s=stn["secondary_size"])

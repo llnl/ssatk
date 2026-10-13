@@ -354,6 +354,7 @@ def main():
 
     cases = build_cases(epoch, ground, platform)
     # Body views sit above their curves so the figure stays close to square.
+    # gallery-call: *.jpg
     figure = plt.figure(figsize=(12.5, 11.0))
     # Row 2 is an unused spacer. GridSpec applies one hspace to every row gap,
     # so without it the lower body captions land on the upper x-axis labels.
@@ -427,6 +428,7 @@ def main():
     )
     figure.subplots_adjust(left=0.075, right=0.985, top=0.905, bottom=0.055)
     figsave(figure, "demo_faceted_light_curves.jpg")
+    # gallery-end
     print("Saved via figsave: figures/demo_faceted_light_curves.jpg")
 
 

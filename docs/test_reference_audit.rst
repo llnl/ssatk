@@ -517,3 +517,30 @@ for a ``main`` entry point, a ``run`` entry point, and a standalone script.
 They verify the command runs the selected module and uses the documented
 standalone defaults, rather than implying the gallery's fast settings were
 reproduced. These are software contracts, not physical validation.
+
+Gallery paths, body maps, and dense animations
+-----------------------------------------------
+
+``scripts/tests/test_gallery_figure_calls.py`` adds seven C contracts: an
+executed drawing statement with HTML-sensitive arguments survives publishing
+and relocation, malformed/ambiguous annotations fail, the introductory demo
+writes a single ``figures`` directory, and every bundled visual demo supplies
+parseable output-specific source regions. These validate publishing behavior,
+not the physics depicted by the figures.
+
+``scripts/tests/test_gallery_render_repairs.py`` adds eight checks. R1 references
+include literal circular Walker states (1 mm and 1 micrometre/s), a straight
+trajectory with known 5 km/s speed at nonuniform times in both time directions,
+an explicitly unknown speed at the initial single sample, and analytic sphere
+occlusion/dateline cases for the batched renderer. The R2 lunar-map reference
+contains 50 CSPICE matrices across 2000--2040 and weekly 2025 epochs. The
+2 cm surface-displacement budget covers SSAPy's TT versus TDB evaluation and
+epoch roundoff; source URLs, kernel hashes and reproduction steps accompany
+the fixture. This tests orientation, not centimetre-resolution imagery.
+
+C checks require north-up map legend keys, no map I/O in low-spec mode, actual
+background pixels and non-overlapping panel bounds at three animation frames,
+retention of 3-D trajectory coordinates, and faithful display of specified
+residuals including exact zero in the force-model dashboard. The existing sky
+epoch contract now mocks the map-frame helper used by the renderer; its
+independent quarter-turn and expected direction remain unchanged.

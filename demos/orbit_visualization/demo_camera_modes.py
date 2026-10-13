@@ -47,6 +47,7 @@ def main(make_figures=True, fast=False, output_dir=None):
     earth_radius = EARTH_RADIUS / 1000.0
     limit = radius / 1000.0 * 1.06
     bounds = np.array([[-limit] * 3, [limit] * 3])
+    # gallery-call: camera_modes.mp4 | camera_modes.png
     fig = plt.figure(figsize=(12, 9), dpi=90 if fast else 120, facecolor="#07111e")
     fig.suptitle("One orbit · four camera shots", color="white", fontsize=19, y=0.98)
     fig.text(
@@ -111,6 +112,7 @@ def main(make_figures=True, fast=False, output_dir=None):
         fig, update, frames=len(times), interval=1000 / fps, blit=False
     )
     animation.save(video, writer=_animation_writer(".mp4", fps=fps, bitrate=3500))
+    # gallery-end
     plt.close(fig)
     return {"title": TITLE, "files": [str(video), str(still)]}
 

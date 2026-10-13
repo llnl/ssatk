@@ -96,7 +96,7 @@ def test_catalog_search_selection_and_downloads_work_offline(entries, tmp_path):
             assert image.format == format_name
             image.verify()
     options = webdriver.ChromeOptions()
-    chrome = shutil.which("google-chrome") or shutil.which("chromium")
+    chrome = os.environ.get("SSATK_CHROME_BINARY") or shutil.which("google-chrome") or shutil.which("chromium")
     if chrome:
         options.binary_location = chrome
     for arg in ("--headless=new", "--no-sandbox", "--disable-dev-shm-usage"):

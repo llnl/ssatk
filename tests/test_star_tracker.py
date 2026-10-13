@@ -77,7 +77,7 @@ def test_moon_sky_passes_its_epoch_to_proper_motion(monkeypatch):
         return np.array([[1., 0., 0.]]), np.array([1.]), np.ones((1, 3))
     rotation = np.array([[0., -1., 0.], [1., 0., 0.], [0., 0., 1.]])
     monkeypatch.setattr(starfield, 'star_directions', directions)
-    monkeypatch.setattr(lunar, 'lunar_body_rotation', lambda t: (rotation, np.zeros((3, 3))))
+    monkeypatch.setattr(lunar, 'lunar_map_rotation', lambda t: (rotation, np.zeros((3, 3))))
     epoch = Time('2025-06-01', scale='utc')
     result = starfield.moon_fixed_webgl_stars(epoch=epoch, radius_km=4e6)
     assert calls[0] is not None and calls[0].gps == pytest.approx(epoch.gps, abs=1e-6)

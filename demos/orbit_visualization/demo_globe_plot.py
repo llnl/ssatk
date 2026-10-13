@@ -11,10 +11,10 @@ from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "orbit_visualization"
-TITLE = "Textured Earth rotating at the supplied date"
-DESCRIPTION = ("The Earth surface rotates at each displayed UTC epoch in GCRF, alongside "
-               "synthetic satellite positions. Includes a close-up LEO animation and still, "
-               "plus a LEO/MEO overview. Earth radius and orbital positions are to scale.")
+TITLE = "Rotating Earth and a 1,584-satellite Starlink-style constellation"
+DESCRIPTION = ("A synthetic Walker-delta shell: 72 planes × 22 satellites, 550 km altitude, "
+               "53° inclination. Two 30-second animations show the globe and global ground tracks "
+               "over two orbital periods. These are design orbits, not operational Starlink positions.")
 
 
 def main(make_figures=None, make_video=None, fast=None, start_time="2025-01-01T00:00:00"):
@@ -57,14 +57,10 @@ def main(make_figures=None, make_video=None, fast=None, start_time="2025-01-01T0
     if fast:
         duration_hr = 4.0
         dt_s = 10.0
-        video_frames = 120
-        fps = 8
         earth_resolution = 240
     else:
         duration_hr = 12.0
         dt_s = 10.0
-        video_frames = 240
-        fps = 8
         earth_resolution = 240
 
     times_gps = t0.gps + np.arange(0.0, duration_hr * 3600.0 + dt_s, dt_s)
@@ -84,11 +80,14 @@ def main(make_figures=None, make_video=None, fast=None, start_time="2025-01-01T0
 
     if make_figures:
         snapshot_path = "demo_globe_plot_textured_earth.png"
+        # gallery-call: demo_globe_plot_textured_earth.png
         orbit_plot(r1, t=times_gps, title="Rotating Earth and a synthetic LEO orbit",
                    reference_index=0, save=snapshot_path,
                    **dict(close_view, earth_resolution=720))
+        # gallery-end
         outputs["snapshot"] = snapshot_path
         static_path = "demo_globe_plot_two_orbits.png"
+        # gallery-call: demo_globe_plot_two_orbits.png
         orbit_plot(
             [r1, r2],
             t=[times_gps, times_gps],
@@ -101,21 +100,30 @@ def main(make_figures=None, make_video=None, fast=None, start_time="2025-01-01T0
             earth_resolution=earth_resolution,
             save=static_path,
         )
+        # gallery-end
         outputs["static_plot"] = static_path
 
     if make_video:
-        video_path = "demo_globe_plot_animation.mp4"
-        orbit_plot(
-            r1,
-            t=times_gps,
-            title="Rotating Earth and a synthetic LEO orbit",
-            save=video_path,
-            fps=fps,
-            max_frames=video_frames,
-            tail=max(6, video_frames // 4),
-            **close_view,
-        )
-        outputs["video"] = video_path
+        from ssatk.orbital_mechanics.constellations import walker_delta
+        orbits = walker_delta(epoch=t0)
+        constellation_times = t0.gps + np.linspace(0., 2*orbits[0].period, 721)
+        constellation_r, _ = rv(orbits, Time(constellation_times, format="gps"))
+        tracks = list(np.asarray(constellation_r))
+        caption = "1,584 synthetic Starlink-style satellites · 550 km · 53°"
+        # gallery-call: demo_globe_plot_animation.mp4
+        orbit_plot(tracks, t=constellation_times, title=caption,
+                   view="globe", c="black", figsize=(10, 9),
+                   earth_resolution=240, el=25., az=-20., fps=10,
+                   max_frames=300, tail=8, save="demo_globe_plot_animation.mp4")
+        # gallery-end
+        # gallery-call: demo_constellation_groundtracks.mp4
+        orbit_plot(tracks, t=constellation_times, title=caption,
+                   view="groundtrack", c="black", figsize=(14, 7), fps=10,
+                   max_frames=300, tail=8, save="demo_constellation_groundtracks.mp4")
+        # gallery-end
+        outputs.update(video="demo_globe_plot_animation.mp4",
+                       groundtrack_video="demo_constellation_groundtracks.mp4",
+                       constellation_count=len(orbits), constellation_times=constellation_times)
 
     return outputs
 

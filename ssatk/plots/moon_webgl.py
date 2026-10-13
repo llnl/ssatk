@@ -1282,9 +1282,9 @@ def _orbit_xyz(r, t, r_frame, *, units="auto"):
             xyz, _, _ = normalize_orbit_trajectory(r=r_arr, t=t, r_units=units)
     else:
         try:
-            from ..coordinates import gcrf_to_lunar_body
+            from ..coordinates import gcrf_to_lunar_map
         except ImportError:
-            from ssatk.coordinates import gcrf_to_lunar_body
+            from ssatk.coordinates import gcrf_to_lunar_map
         if t is None:
             raise ValueError("t is required to place GCRF positions on the Moon")
         # Resolve units in GCRF, where Earth-centred cislunar magnitudes
@@ -1303,7 +1303,7 @@ def _orbit_xyz(r, t, r_frame, *, units="auto"):
             r_m = np.asarray(r_km, dtype=float).reshape(-1, 3) * 1e3
         # The texture's +X is 0 deg selenographic longitude, so tracks must be
         # in the lunar body frame, not the Earth-Moon rotating frame.
-        xyz = gcrf_to_lunar_body(r_m, _time_as_gps(t).reshape(-1)) / 1e3
+        xyz = gcrf_to_lunar_map(r_m, _time_as_gps(t).reshape(-1)) / 1e3
     xyz = np.asarray(xyz, dtype=float).reshape(-1, 3)
     return [round(float(v), 3) for v in xyz.ravel()]
 
@@ -1465,7 +1465,7 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
         Trajectory times.
     r_frame : {"gcrf", "moon_centered"}
         Frame of ``r``. ``"gcrf"`` positions are moved into the lunar
-        body-fixed frame with :func:`ssatk.coordinates.gcrf_to_lunar_body`
+        body-fixed frame with :func:`ssatk.coordinates.gcrf_to_lunar_map`
         and require ``t``. ``"moon_centered"`` positions are drawn as given,
         so they must already be in body-fixed axes.
     title, subtitle : str, optional

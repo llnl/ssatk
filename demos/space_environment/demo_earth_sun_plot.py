@@ -46,7 +46,9 @@ def main(make_figures=None, fast=None):
     cfg["show_labels"] = True
     cfg["show_moon_trail"] = True
 
+    # gallery-call: *.html
     animated_fig = build_figure(cfg)
+    # gallery-end
     static_fig = build_static_figure(cfg)
 
     outputs = {

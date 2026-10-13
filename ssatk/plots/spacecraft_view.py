@@ -488,8 +488,8 @@ class SpacecraftView:
                     from ssatk.coordinates.frames import eci_to_ecf_matrix
                     rotation = eci_to_ecf_matrix(float(self.gps[index]))
                 else:
-                    from ssatk.coordinates.lunar import lunar_body_rotation
-                    rotation = lunar_body_rotation(float(self.gps[index]))[0]
+                    from ssatk.coordinates.lunar import lunar_map_rotation
+                    rotation = lunar_map_rotation(float(self.gps[index]))[0]
                 fixed = normal @ rotation.T
                 longitude = np.arctan2(fixed[:, 1], fixed[:, 0])
                 latitude = np.arcsin(np.clip(fixed[:, 2], -1, 1))

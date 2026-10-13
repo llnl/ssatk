@@ -212,7 +212,9 @@ def main(make_figures=None, fast=None):
     )
     print(f"GCRF speed: {speed.min() / 1000:.6f}–{speed.max() / 1000:.6f} km/s.")
     if make_figures:
+        # gallery-call: dashboard_gamma_heading.png
         fig = groundtrack_dashboard_gamma_heading(r, t, v=v, fontsize=13)
+        # gallery-end
         fig.suptitle(
             f"Earth-relative gamma and heading | a={A_M / 1000:.3f} km, e={ECCENTRICITY}, i={INCLINATION_DEG:g}°\n"
             f"One Kepler period from {EPOCH_UTC} UTC | {len(t)} states | supplied state velocities",
@@ -223,7 +225,9 @@ def main(make_figures=None, fast=None):
         path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(path, dpi=150)
         plt.close(fig)
+        # gallery-call: heading_gamma_panel_ITRF.png
         fig = heading_gamma_panel()
+        # gallery-end
         fig.savefig(figpath("heading_gamma_panel_ITRF.png"), dpi=150)
         plt.close(fig)
         np.savetxt(

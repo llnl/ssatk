@@ -44,6 +44,7 @@ def main(make_figures=None, fast=None):
     x = rng.standard_normal(n_xy)
     y = rng.standard_normal(n_xy)
 
+    # gallery-call: *.jpg
     fig, axes, meta = build_dashboard(
         panels=[
             {"loc": (0, 0), "render": panel_altitude, "kwargs": {"t_min": t, "alt_km": alt}},
@@ -54,6 +55,7 @@ def main(make_figures=None, fast=None):
         figsize=(12, 4),
         show=make_figures,
     )
+    # gallery-end
 
     if make_figures:
         figsave(fig, "build_dashboard_overview.jpg")

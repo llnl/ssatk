@@ -87,7 +87,7 @@ def orbit_moon_video_demo(
     seconds_per_frame=3600,
     playback_seconds=60.0,
     trail_len=None,
-    out_name="figures/demo_orbit_moon_video.mp4",
+    out_name="demo_orbit_moon_video.mp4",
     save_gif=False,
     make_figures=True,
     fast=False,
@@ -282,6 +282,7 @@ def main(make_figures=None, fast=None, save_gif=False):
     if fast is None:
         fast = UNDER_PYTEST
 
+    # gallery-call: *.gif | *.mp4
     return orbit_moon_video_demo(
         t0="2024-01-01",
         duration_days=LUNAR_ORBIT_DAYS,
@@ -289,11 +290,12 @@ def main(make_figures=None, fast=None, save_gif=False):
         playback_seconds=60.0,
         seconds_per_frame=3600,
         trail_len=None,
-        out_name="figures/demo_orbit_moon_video.mp4",
+        out_name="demo_orbit_moon_video.mp4",
         save_gif=save_gif,
         make_figures=make_figures,
         fast=fast,
     )
+    # gallery-end
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ def main(make_figures=None, fast=None):
     r2, v2 = leapfrog(r0=[RGEO, 0, 0], v0=[0, VGEO, 0], t=t, velocity=(0, 600, -1))
 
     if make_figures:
+        # gallery-call: testing_leapfrog_RGEO.jpg
         orbit_plot(
             r1,
             view="xy",
@@ -32,6 +33,8 @@ def main(make_figures=None, fast=None):
             title="GEO",
             show=False,
         )
+        # gallery-end
+        # gallery-call: testing_leapfrog_RGEO_velocity_burn.jpg
         orbit_plot(
             r2,
             view="xy",
@@ -40,6 +43,7 @@ def main(make_figures=None, fast=None):
             title="GEO",
             show=False,
         )
+        # gallery-end
 
     return {"nominal": (r1, v1), "velocity_burn": (r2, v2)}
 

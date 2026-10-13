@@ -116,6 +116,7 @@ def orbit_animation(
         frame=frame,
         lunar_transform=lunar_transform,
         pad=pad,
+        include_groundtrack="groundtrack" in views,
     )
 
     fig = _plt.figure(dpi=dpi, figsize=figsize, facecolor=plotcolor)
@@ -153,7 +154,12 @@ def orbit_animation(
                 body_artists[(view, body)] = ([], radius/prepared["unit_conversion"])
 
     colors = _cm.rainbow(_np.linspace(0, 1, max(1, len(prepared["tracks"]))))
-    artists = _init_animation_artists(axes, views, prepared["tracks"], colors)
+    batch = None
+    if len(r_list) >= 32 and set(views) <= {"globe", "groundtrack"} and all(
+            _np.array_equal(ti.gps, t_list[0].gps) for ti in t_list):
+        batch = _ConstellationArtists(axes, prepared["tracks"], colors,
+                                       _EARTH_RADIUS/prepared["unit_conversion"])
+    artists = {} if batch else _init_animation_artists(axes, views, prepared["tracks"], colors)
     frame_count = len(frame_indices[0])
     from .camera import _camera_spec, _mpl_camera
     from dataclasses import replace
@@ -190,8 +196,14 @@ def orbit_animation(
                 for artist in previous:
                     artist.remove()
                 ax = axes[view]
+                a, b, _, _ = _VIEW_AXES[view]
+                lower = _np.array([ax.get_xlim()[0], ax.get_ylim()[0]])
+                upper = _np.array([ax.get_xlim()[1], ax.get_ylim()[1]])
+                if _np.any(center[[a, b]]+radius < lower) or _np.any(center[[a, b]]-radius > upper):
+                    body_artists[(view, body)] = ([], radius)
+                    continue
                 image_count = len(ax.images)
-                disc = body_disc(ax, body, radius, center, rotation, view=view)
+                disc = body_disc(ax, body, radius, center, rotation, view=view, resolution=512)
                 current = [disc] + list(ax.images)[image_count:]
                 body_artists[(view, body)] = (current, radius)
                 frame_artists.extend(current)
@@ -201,6 +213,10 @@ def orbit_animation(
             frame_artists.append(earth.orient(earth_rotation))
             clock.set_text(f"{epoch.utc.isot} UTC · {prepared['frame_title']}")
             frame_artists.append(clock)
+        if batch is not None:
+            index = frame_indices[0][frame_index]
+            start = frame_indices[0][max(0, frame_index-tail_points+1)]
+            return frame_artists + batch.update(start, index)
         for track_index, track in enumerate(prepared["tracks"]):
             color = colors[track_index % len(colors)]
             idx = frame_indices[track_index][frame_index]
@@ -298,7 +314,7 @@ def _animation_indices(r_list, *, max_frames):
     return [_np.linspace(0, len(track) - 1, count).astype(int) for track in r_list]
 
 
-def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad):
+def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad, include_groundtrack=True):
     if any(_np.max(_np.linalg.norm(xyz, axis=-1)) >= 0.95 * _RGEO for xyz in r_list):
         unit_conversion = _RGEO
         unit_label = "GEO"
@@ -317,20 +333,23 @@ def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad):
         "upper": _np.array([-_np.inf, -_np.inf, -_np.inf]),
     }
     tracks = []
+    body_cache = {}
     for xyz_raw, t_current in zip(r_list, t_list):
         xyz = _np.asarray(xyz_raw, dtype=float)
-        groundtrack = _groundtrack_degrees(xyz, t_current)
-        moon_body = _get_body("moon")
-        r_moon = moon_body.position(t_current).T
-        r_earth = _np.zeros(_np.shape(r_moon))
+        groundtrack = _groundtrack_degrees(xyz, t_current) if include_groundtrack else None
+        key = t_current.gps.tobytes()
+        if key not in body_cache:
+            moon_body = _get_body("moon")
+            r_moon = moon_body.position(t_current).T
+            r_earth = _np.zeros(_np.shape(r_moon))
+            if transform_func:
+                r_moon = transform_func(r_moon, t_current)
+                r_earth = transform_func(r_earth, t_current)
+            body_cache[key] = (r_moon/unit_conversion, r_earth/unit_conversion)
+        r_moon, r_earth = body_cache[key]
         if transform_func:
             xyz = transform_func(xyz, t_current)
-            r_moon = transform_func(r_moon, t_current)
-            r_earth = transform_func(r_earth, t_current)
-
         xyz = xyz / unit_conversion
-        r_moon = r_moon / unit_conversion
-        r_earth = r_earth / unit_conversion
         lower_bound, upper_bound = _find_smallest_bounding_cube(xyz, pad=pad)
         bounds["lower"] = _np.minimum(bounds["lower"], lower_bound)
         bounds["upper"] = _np.maximum(bounds["upper"], upper_bound)
@@ -356,6 +375,9 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
     for view in views:
         ax = axes[view]
         if view == "groundtrack":
+            from .plotutils import load_earth_file
+            ax.imshow(load_earth_file(), extent=(-180, 180, -90, 90),
+                      origin="upper", aspect="auto", zorder=0)
             ax.set_xlim(-180, 180)
             ax.set_ylim(-90, 90)
             ax.set_xlabel("Longitude [deg]", color=textcolor)
@@ -513,3 +535,51 @@ def _set_3d_limits(ax, bounds):
     ax.set_ylim(bounds["lower"][1], bounds["upper"][1])
     ax.set_zlim(bounds["lower"][2], bounds["upper"][2])
     ax.set_box_aspect([1, 1, 1])
+
+
+class _ConstellationArtists:
+    """Batch common-epoch globe/map tracks into two collections per panel.
+
+    This changes artist storage only: every input position is retained, with
+    the same Earth occultation and dateline rules as the single-track path.
+    """
+    def __init__(self, axes, tracks, colors, radius):
+        self.axes, self.colors, self.radius = axes, colors, radius
+        self.xyz = _np.stack([track["xyz"] for track in tracks])
+        self.lonlat = (_np.stack([track["groundtrack"] for track in tracks])
+                       if "groundtrack" in axes else None)
+        self.heads, self.tails = {}, {}
+        for view, ax in axes.items():
+            if view == "globe":
+                self.heads[view] = ax.scatter([], [], [], s=4, depthshade=False, zorder=3)
+                self.tails[view] = Line3DCollection(_np.empty((0, 2, 3)), linewidths=.45, zorder=2)
+                ax.add_collection3d(self.tails[view])
+            else:
+                self.heads[view] = ax.scatter([], [], s=4, zorder=3)
+                self.tails[view] = LineCollection([], linewidths=.45, zorder=2)
+                ax.add_collection(self.tails[view])
+
+    def update(self, start, stop):
+        artists = []
+        for view, ax in self.axes.items():
+            data = self.xyz if view == "globe" else self.lonlat
+            points = data[:, start:stop+1]
+            if view == "globe":
+                visible = visible_points(points, self.radius, ax.elev, ax.azim)
+                heads = data[:, stop][visible[:, -1]]
+                self.heads[view]._offsets3d = tuple(heads.T)
+                self.heads[view].set_facecolors(self.colors[visible[:, -1]])
+                self.heads[view].set_edgecolors("none")
+                keep = visible[:, :-1] & visible[:, 1:]
+            else:
+                self.heads[view].set_offsets(data[:, stop])
+                self.heads[view].set_facecolors(self.colors)
+                self.heads[view].set_edgecolors("none")
+                keep = _np.abs(_np.diff(points[..., 0], axis=1)) <= 180
+            segments = _np.stack((points[:, :-1], points[:, 1:]), axis=2)
+            colors = _np.repeat(self.colors[:, None, :], max(0, stop-start), axis=1)
+            colors[..., 3] = _np.linspace(.08, .7, max(0, stop-start))
+            self.tails[view].set_segments(segments[keep])
+            self.tails[view].set_color(colors[keep])
+            artists += [self.heads[view], self.tails[view]]
+        return artists

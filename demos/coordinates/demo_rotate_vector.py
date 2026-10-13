@@ -123,7 +123,7 @@ def main(make_figures=None, make_gif=None, fast=None, camera="overview"):
 
             if make_gif and frames:
                 gif_base_jpg_like = figpath(
-                    f"figures/rotate_vectors_{v_unit[0]:.0f}_{v_unit[1]:.0f}_{v_unit[2]:.0f}"
+                    f"rotate_vectors_{v_unit[0]:.0f}_{v_unit[1]:.0f}_{v_unit[2]:.0f}"
                 )
                 if gif_base_jpg_like.lower().endswith(".jpg"):
                     gif_path = gif_base_jpg_like[:-4] + ".gif"

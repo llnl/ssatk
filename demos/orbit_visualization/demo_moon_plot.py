@@ -36,13 +36,16 @@ def main(make_figures=True, fast=False):
             ("demo_moon_plot_polar", "Lunar orbit · view normal to the orbit plane", 0, -90),
             ("demo_moon_surface", "Moon surface · dated texture and illumination", 12, -80),
         ]:
+            # gallery-call: demo_moon_plot.jpg | demo_moon_plot_polar.jpg | demo_moon_surface.jpg
             moon_plot_3d(r=None if name.endswith('surface') else r_arr,
                          title=title, elev=elevation, azim=azimuth,
                          save_path=figpath(name), **common)
+            # gallery-end
             print(f"Saved: {figpath(name)}")
         moon = get_body('moon')
         earth = -np.asarray(moon.position(t0.gps)).reshape(3)
         context_azimuth = np.degrees(np.arctan2(earth[1], earth[0])) - 90.
+        # gallery-call: demo_moon_system.jpg
         moon_plot_3d(t=t_arr, r_frame='moon_centered', reference_time=t0,
                      show_earth=True, physical_body_sizes=False,
                      show_lagrange=False, show_stars=False,
@@ -50,6 +53,7 @@ def main(make_figures=True, fast=False):
                      elev=90, azim=context_azimuth, scene_pad=.08, view_zoom=1.25,
                      shade_ambient=.5, shade_diffuse=.5,
                      save_path=figpath('demo_moon_system'))
+        # gallery-end
     return dict(orbit=orbit, r=np.asarray(r_arr), v=np.asarray(v_arr), t=t_arr,
                 period_seconds=period, figures_created=bool(make_figures))
 

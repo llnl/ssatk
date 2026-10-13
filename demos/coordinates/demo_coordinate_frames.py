@@ -16,7 +16,6 @@ from ssatk.coordinates.lunar import gcrf_to_lunar_fixed
 from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 
 def main(make_figures=None, fast=None):
@@ -59,6 +58,7 @@ def main(make_figures=None, fast=None):
     r_lunar, v_lunar = gcrf_to_lunar_fixed(r_gcrf, times, v=v_gcrf)
 
     if make_figures:
+        # gallery-call: *.jpg
         fig, axes = plt.subplots(2, 2, figsize=(11, 8))
         axes[0, 0].plot(r_gcrf[:, 0] / 1e3, r_gcrf[:, 1] / 1e3)
         axes[0, 0].set_title("GCRF XY")
@@ -87,7 +87,8 @@ def main(make_figures=None, fast=None):
         axes[1, 1].grid(alpha=0.3)
 
         fig.tight_layout()
-        figsave(fig, f"{FIGDIR}/coordinate_frame_overview.jpg")
+        figsave(fig, f"coordinate_frame_overview.jpg")
+        # gallery-end
 
     return {
         "r_gcrf": r_gcrf,

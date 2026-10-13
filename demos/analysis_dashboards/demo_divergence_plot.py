@@ -30,7 +30,6 @@ DESCRIPTION = (
     "Animations show 361 frames with nominal or median position centers "
     "and the propagated nominal velocity; about 29 seconds of playback."
 )
-FIGDIR = "figures"
 GIF_FRAME_DURATION_S = 0.08
 GIF_FRAMES = 361
 
@@ -113,14 +112,17 @@ def main(make_figures=None, fast=None):
     span = f"One Orbital Period ({result['period_s'] / 3600:.3f} h)"
 
     r_final = r_histories[:, -1, :]
+    # gallery-call: divergence_plot_final_median.jpg
     fig1 = orbit_plot(
         r_final,
         view="divergence",
         v_center=v_nominal_hist[-1],
         title=f"Position Errors after {span}\nMedian Center",
         show=False,
-        save=f"{FIGDIR}/divergence_plot_final_median",
+        save=f"divergence_plot_final_median",
     )
+    # gallery-end
+    # gallery-call: divergence_plot_final_explicit.jpg
     fig2 = orbit_plot(
         r_final,
         view="divergence",
@@ -128,17 +130,20 @@ def main(make_figures=None, fast=None):
         v_center=v_nominal_hist[-1],
         title=f"Position Errors after {span}\nNominal Center",
         show=False,
-        save=f"{FIGDIR}/divergence_plot_final_explicit",
+        save=f"divergence_plot_final_explicit",
     )
+    # gallery-end
 
+    # gallery-call: orbit_divergence_samples.jpg
     orbit_plot(
         np.transpose(r_histories, (1, 2, 0)),
         t=times_gps,
         view="orbit_divergence",
         title=f"{len(r_histories)} Sample Orbits — {span}",
         show=False,
-        save=f"{FIGDIR}/orbit_divergence_samples",
+        save=f"orbit_divergence_samples",
     )
+    # gallery-end
 
     # GIF cadence is independent of integration/plot sampling. Include both
     # endpoints; supply the propagated velocity to avoid one-sided derivative
@@ -150,16 +155,18 @@ def main(make_figures=None, fast=None):
         timing_errors = np.einsum("stj,tj->st", r_histories - centers, v_nominal_hist)
         timing_errors /= np.sum(v_nominal_hist**2, axis=1)
         color_limit = float(np.max(np.abs(timing_errors)))
+        # gallery-call: divergence_test_*.gif
         gif_results[name] = divergence_gif(
             r_histories=r_histories[:, frames],
             times_gps=times_gps[frames],
-            output_path=ssatk_path(f"{FIGDIR}/divergence_test_{name}.gif"),
+            output_path=ssatk_path(f"divergence_test_{name}.gif"),
             r_nominal_hist=centers[frames],
             v_nominal_hist=v_nominal_hist[frames],
             duration=GIF_FRAME_DURATION_S,
             vmin=-color_limit,
             vmax=color_limit,
         )
+        # gallery-end
 
     plt.close("all")
     result.update(fig_median=fig1, fig_nominal=fig2, gif_results=gif_results)

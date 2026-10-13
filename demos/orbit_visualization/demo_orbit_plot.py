@@ -11,7 +11,6 @@ from ssatk.coordinates.lunar import get_lunar_rv
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 GALLERY_CATEGORY = "orbit_visualization"
-FIGDIR = "figures"
 
 
 def main(make_figures=None, fast=None):
@@ -61,11 +60,21 @@ def main(make_figures=None, fast=None):
     print(f"Plotting orbit. {np.shape(r)} {np.shape(t)}")
 
     if make_figures:
-        orbit_plot(r=r, t=t, save=f"{FIGDIR}/demo_orbit_plot")
-        orbit_plot(r=r, t=t, view="cislunar", save=f"{FIGDIR}/demo_cislunar_plot")
-        orbit_plot(r=r, t=t, view="cislunar_3d", save=f"{FIGDIR}/demo_cislunar_plot_3d")
-        orbit_plot(r=r, t=t, view="globe", save=f"{FIGDIR}/demo_globe_plot_black", scale=16)
-        orbit_plot(r=r, t=t, view="globe", save=f"{FIGDIR}/demo_globe_plot_white", scale=16, c="white")
+        # gallery-call: demo_orbit_plot.jpg
+        orbit_plot(r=r, t=t, save=f"demo_orbit_plot")
+        # gallery-end
+        # gallery-call: demo_cislunar_plot.jpg
+        orbit_plot(r=r, t=t, view="cislunar", save=f"demo_cislunar_plot")
+        # gallery-end
+        # gallery-call: demo_cislunar_plot_3d.jpg
+        orbit_plot(r=r, t=t, view="cislunar_3d", save=f"demo_cislunar_plot_3d")
+        # gallery-end
+        # gallery-call: demo_globe_plot_black.jpg
+        orbit_plot(r=r, t=t, view="globe", save=f"demo_globe_plot_black", scale=16)
+        # gallery-end
+        # gallery-call: demo_globe_plot_white.jpg
+        orbit_plot(r=r, t=t, view="globe", save=f"demo_globe_plot_white", scale=16, c="white")
+        # gallery-end
 
     # two same length orbits
     print("\nCalculating 2 orbit.")
@@ -80,9 +89,15 @@ def main(make_figures=None, fast=None):
     print(f"Plotting two orbits same length. {np.shape(r)} {np.shape(r2)} {np.shape(t)}")
 
     if make_figures:
-        orbit_plot(r=[r, r2], t=t, save=f"{FIGDIR}/demo_orbit_plot_two_orbits")
-        orbit_plot(r=[r, r2], t=t, view="cislunar", save=f"{FIGDIR}/demo_cislunar_plot_two_orbits")
-        orbit_plot(r=[r, r2], t=t, view="globe", save=f"{FIGDIR}/demo_globe_two_orbits", scale=16, c="black")
+        # gallery-call: demo_orbit_plot_two_orbits.jpg
+        orbit_plot(r=[r, r2], t=t, save=f"demo_orbit_plot_two_orbits")
+        # gallery-end
+        # gallery-call: demo_cislunar_plot_two_orbits.jpg
+        orbit_plot(r=[r, r2], t=t, view="cislunar", save=f"demo_cislunar_plot_two_orbits")
+        # gallery-end
+        # gallery-call: demo_globe_two_orbits.jpg
+        orbit_plot(r=[r, r2], t=t, view="globe", save=f"demo_globe_two_orbits", scale=16, c="black")
+        # gallery-end
 
     # two orbits different lengths
     print("\nCalculating 2 different orbit.")
@@ -91,66 +106,89 @@ def main(make_figures=None, fast=None):
     print("Plotting two orbits different lengths.")
 
     if make_figures:
+        # gallery-call: demo_orbit_plot_two_different_length_orbits.jpg
         orbit_plot(
             r=[r, r3],
             t=[t, t3],
-            save=f"{FIGDIR}/demo_orbit_plot_two_different_length_orbits",
+            save=f"demo_orbit_plot_two_different_length_orbits",
         )
+        # gallery-end
+        # gallery-call: demo_orbit_plot_two_different_length_orbits_itrf.jpg
         orbit_plot(
             r=[r, r3],
             t=[t, t3],
-            save=f"{FIGDIR}/demo_orbit_plot_two_different_length_orbits_itrf",
+            save=f"demo_orbit_plot_two_different_length_orbits_itrf",
             frame="itrf",
         )
+        # gallery-end
+        # gallery-call: demo_cislunar_plot_two_different_length_orbits.jpg
         orbit_plot(
             r=[r, r3],
             t=[t, t3],
             view="cislunar",
-            save=f"{FIGDIR}/demo_cislunar_plot_two_different_length_orbits",
+            save=f"demo_cislunar_plot_two_different_length_orbits",
         )
+        # gallery-end
+        # gallery-call: demo_globe_two_different_length_orbits.jpg
         orbit_plot(
             r=[r, r3],
             t=[t, t3],
             view="globe",
-            save=f"{FIGDIR}/demo_globe_two_different_length_orbits",
+            save=f"demo_globe_two_different_length_orbits",
             scale=16,
             c="black",
         )
+        # gallery-end
 
     # groundtrack dashboard
-    r_dash, v_dash, t_dash = ssapy_orbit(a=RGEO, e=0.2, duration=((6, "hour") if fast else (12, "hour")), t0=epoch)
+    # A full day in both gallery and standalone runs. Input samples retain
+    # orbital curvature independently of the animation's playback frame count.
+    r_dash, v_dash, t_dash = ssapy_orbit(
+        a=RGEO, e=0.2, i=np.deg2rad(20), duration=(1, "day"),
+        freq=(1, "min"), t0=epoch,
+    )
 
     if make_figures:
+        # gallery-call: demo_ground_dashboard_test.jpg
         orbit_plot(
             r_dash,
             t_dash,
             view="dashboard",
-            save=f"{FIGDIR}/demo_ground_dashboard_test",
+            save=f"demo_ground_dashboard_test",
         )
+        # gallery-end
+        # gallery-call: demo_ground_dashboard_two_different_length_orbits.jpg
         orbit_plot(
             r=[r_dash, r3],
             t=[t_dash, t3],
             view="dashboard",
-            save=f"{FIGDIR}/demo_ground_dashboard_two_different_length_orbits",
+            save=f"demo_ground_dashboard_two_different_length_orbits",
         )
+        # gallery-end
+        # gallery-call: demo_orbit_plot_dashboard_animation.gif
         orbit_plot(
             r_dash,
             t_dash,
             view=("groundtrack", "globe", "xy"),
-            save=f"{FIGDIR}/demo_orbit_plot_dashboard_animation.gif",
-            fps=8,
-            max_frames=18,
-            tail=8,
+            figsize=(12, 9),
+            save=f"demo_orbit_plot_dashboard_animation.gif",
+            fps=10,
+            max_frames=300,
+            tail=75,
+            earth_resolution=120,
         )
+        # gallery-end
+        # gallery-call: demo_orbit_plot_xy_animation.mp4
         orbit_plot(
             r_dash,
             t_dash,
             view="xy",
-            save=f"{FIGDIR}/demo_orbit_plot_xy_animation.mp4",
+            save=f"demo_orbit_plot_xy_animation.mp4",
             fps=12,
-            max_frames=24,
-            tail=10,
+            max_frames=360,
+            tail=90,
         )
+        # gallery-end
 
     print("PLOT DEMO DONE.")
 

@@ -377,10 +377,10 @@ def moon_fixed_webgl_stars(mag_limit=7.0, radius_km=4.0e6, epoch=None):
     """Return compact WebGL star arrays in the lunar body-fixed frame.
 
     Uses the same frame as the textured Moon in ``moon_webgl``; see
-    :func:`ssatk.coordinates.lunar_body_rotation`.
+    :func:`ssatk.coordinates.lunar_map_rotation`.
     """
     from astropy.time import Time
-    from ssatk.coordinates.lunar import lunar_body_rotation
+    from ssatk.coordinates.lunar import lunar_map_rotation
 
     if epoch is None:
         epoch = Time.now()
@@ -392,7 +392,7 @@ def moon_fixed_webgl_stars(mag_limit=7.0, radius_km=4.0e6, epoch=None):
     if catalogue is None:
         return None
     v, mag, rgb = (np.asarray(value, float) for value in catalogue)
-    rotation = lunar_body_rotation(float(np.atleast_1d(epoch.gps)[0]))[0]
+    rotation = lunar_map_rotation(float(np.atleast_1d(epoch.gps)[0]))[0]
     positions = (v @ rotation.T) * radius_km
     brightness = np.clip(1.60 - 0.15 * mag, 0.16, 1.0)
     return {

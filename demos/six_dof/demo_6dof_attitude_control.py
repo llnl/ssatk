@@ -68,6 +68,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         import matplotlib.pyplot as plt
 
+        # gallery-call: *.png
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
         fig.suptitle("6-DoF attitude control: free tumble vs PD torque", fontsize=18)
 
@@ -94,6 +95,7 @@ def main(make_figures=None, fast=None):
             ax.grid(True, alpha=0.3)
 
         figure_path = save_demo_figure(fig, "demo_6dof_attitude_control.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

@@ -21,7 +21,7 @@ from .sun_mpl import get_sun_position
 from .sun_render import render_sun, background_sun_radius
 from ..constants import MOON_RADIUS, EARTH_RADIUS
 from ..coordinates import gcrf_to_lunar, gcrf_to_lunar_fixed
-from ..coordinates.lunar import lunar_body_rotation
+from ..coordinates.lunar import lunar_map_rotation
 
 
 def _split_orbit_segments_for_bodies(xyz, bodies, elev_deg, azim_deg):
@@ -54,8 +54,7 @@ def _textured_body(ax, center, radius, path, rotation, sun_hat, *,
                    n=180, ambient=0.22, diffuse=0.78, color=0.6):
     """North-up -180..180 degree map on a rotated spherical mesh.
 
-    Lunar map coordinates approximate the DE440 principal-axis frame (the
-    mean-Earth map-frame offset is sub-kilometre). Colours are illustrative
+    Lunar map coordinates use the DE440 mean-Earth/polar-axis frame. Colours are illustrative
     ambient + Lambert shading, not calibrated photometry.
     """
     if is_low_spec():
@@ -186,7 +185,7 @@ def moon_plot_3d(r=None, t=None, title='', figsize=(10, 10),
     moon_gcrf = np.asarray(moon.position(epoch.gps)).reshape(3)
     rotation = np.eye(3) if r_frame == 'moon_centered' else gcrf_to_lunar(np.eye(3), epoch).T
     earth_pos = rotation @ -moon_gcrf / 1000.
-    moon_rotation = rotation @ lunar_body_rotation(epoch)[0].T
+    moon_rotation = rotation @ lunar_map_rotation(epoch)[0].T
     earth_rotation = rotation @ earth_to_scene(epoch.gps)
     moon_r, earth_r = MOON_RADIUS/1000., EARTH_RADIUS/1000.
     lower, upper = np.full(3, -moon_r), np.full(3, moon_r)

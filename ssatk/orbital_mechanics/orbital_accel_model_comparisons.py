@@ -564,124 +564,62 @@ def make_accel_ladder_dashboard_figures(
     ax[0].tick_params(axis="x", labelbottom=False)
     ax[1].tick_params(axis="x", labelbottom=False)
 
-    # -------------------------
-    # Figure 2: rung-summary + heatmap + compact header
-    # -------------------------
-    idx = np.arange(n_models, dtype=int)
-    fig2, ax2 = plt.subplots(3, 1, figsize=(13, 12))
-
-    rows = int(np.ceil(n_models / 2.0))
-    target_line_h = 0.021
-    header_pad = 0.060
-    header_height = header_pad + rows * target_line_h
-    top_axes = float(np.clip(0.985 - header_height, 0.62, 0.86))
-
-    fig2.subplots_adjust(left=0.10, right=0.98, top=top_axes, bottom=0.10, hspace=0.45)
-
-    for a in ax2:
-        a.tick_params(labelsize=11)
-
-    ax2[0].set_title("Final divergence vs reference by rung", fontsize=13, pad=10)
-    y0 = np.maximum(final_drn_vs_ref, float(epsilon_m))
-    ax2[0].set_yscale("log")
-    ax2[0].scatter(idx, y0, s=55, c=colors, edgecolors="black", linewidths=0.5)
-    ax2[0].set_ylabel("final ||dr|| (m)", fontsize=12)
-    ax2[0].grid(True, which="both", alpha=0.3)
-    for i in range(n_models):
-        ax2[0].annotate(
-            str(i),
-            xy=(idx[i], y0[i]),
-            xytext=(0, 6),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color=colors[i],
-        )
-    ax2[0].tick_params(axis="x", labelbottom=False)
-
-    ax2[1].set_title("Final incremental effect by rung (rung i minus rung i-1)", fontsize=13, pad=10)
-    y1 = np.maximum(final_drn_inc, float(epsilon_m))
-    ax2[1].set_yscale("log")
-    ax2[1].scatter(idx, y1, s=55, c=colors, edgecolors="black", linewidths=0.5)
-    ax2[1].set_ylabel("final ||dr_inc|| (m)", fontsize=12)
-    ax2[1].grid(True, which="both", alpha=0.3)
-    for i in range(n_models):
-        ax2[1].annotate(
-            str(i),
-            xy=(idx[i], y1[i]),
-            xytext=(0, 6),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color=colors[i],
-        )
-    ax2[1].tick_params(axis="x", labelbottom=False)
-
-    ax2[2].set_title("log10(||dr|| vs ref) heatmap", fontsize=13, pad=12)
-    log_drn = np.log10(np.maximum(drn_vs_ref, float(epsilon_m)))
-    vmin = float(np.log10(float(epsilon_m)))
-    vmax = float(np.log10(float(max_error_m)))
-
-    extent = [float(t_rel_s[0]), float(t_rel_s[-1]), -0.5, float(n_models - 0.5)]
-    im = ax2[2].imshow(
-        log_drn,
-        aspect="auto",
-        origin="lower",
-        extent=extent,
-        interpolation="nearest",
-        vmin=vmin,
-        vmax=vmax,
-    )
-    ax2[2].set_xlabel("t (s)", fontsize=12)
-    ax2[2].set_ylabel("rung index", fontsize=12)
-
-    step = int(max(1, np.ceil(n_models / 25.0)))
-    y_ticks = np.arange(0, n_models, step, dtype=int)
-    ax2[2].set_yticks(y_ticks)
-    ax2[2].set_yticklabels([str(i) for i in y_ticks])
-    for tick_text, i in zip(ax2[2].get_yticklabels(), y_ticks):
-        tick_text.set_color(colors[int(i)])
-        tick_text.set_fontsize(10)
-
-    cbar = fig2.colorbar(im, ax=ax2[2], pad=0.02)
-    cbar.set_label("log10(||dr||) [m]", fontsize=11)
-    cbar.ax.tick_params(labelsize=10)
-
-    # Header: key LEFT, OE RIGHT
-    header_bottom = top_axes + 0.004
-    y_top = 0.975
-    available = max(0.04, y_top - header_bottom)
-    line_height = min(target_line_h, available / float(max(1, rows)))
-
-    _draw_ladder_key_two_columns(
-        fig2,
-        labels=labels,
-        colors=colors,
-        header_x=0.10,
-        header_y=0.985,
-        x_left=0.10,
-        x_right=0.34,
-        y_top=y_top,
-        line_height=line_height,
-        idx_dx=0.045,
-        header_fontsize=14,
-        idx_fontsize=12,
-        label_fontsize=11,
-        title_gap=0.030,
-    )
-
-    if orbit_elements_text:
-        fig2.text(
-            0.98,
-            0.985,
-            str(orbit_elements_text),
-            ha="right",
-            va="top",
-            fontsize=12,
-            bbox=oe_bbox,
-        )
+    # Separate header, endpoint diagnostics and history keep long model names
+    # out of the data panels. Use the calculated range, not a fixed 10^7 m cap.
+    from matplotlib.colors import LogNorm
+    import textwrap
+    idx = np.arange(n_models)
+    fig2 = plt.figure(figsize=(14, 11), layout="constrained")
+    grid = fig2.add_gridspec(3, 2, height_ratios=(1.5, 2.4, 3.2))
+    header = fig2.add_subplot(grid[0, :])
+    header.set_axis_off()
+    header.text(0, 1, plot_title, fontsize=16, va="top", weight="bold")
+    key_lines = [f"{i}: {label}" + ("  [reference]" if i == reference else "")
+                 for i, label in enumerate(labels)]
+    split = int(np.ceil(n_models / 2))
+    for column, entries in enumerate((key_lines[:split], key_lines[split:])):
+        header.text(column*.42, .73, "\n".join(entries), fontsize=10, va="top", linespacing=1.5)
+    header.text(.99, .73, str(orbit_elements_text or ""), ha="right", va="top", fontsize=9)
+    a_final = fig2.add_subplot(grid[1, 0])
+    a_inc = fig2.add_subplot(grid[1, 1])
+    for axis, values, indices, heading in [
+        (a_final, final_drn_vs_ref, idx, "Position difference from reference at final epoch"),
+        (a_inc, final_drn_inc[1:], idx[1:], "Effect of each added model at final epoch"),
+    ]:
+        # A self-comparison is exactly zero; do not display it as a measured mm.
+        axis.plot(indices, values, color="0.65", linewidth=1, zorder=1)
+        axis.scatter(indices, values, c=colors[indices], edgecolors="black", linewidths=.4, zorder=2)
+        axis.set_yscale("symlog", linthresh=float(epsilon_m))
+        axis.set(xticks=idx, xlabel="Model index (key above)", ylabel="Position difference (m)")
+        axis.set_title(heading, fontsize=11, pad=12)
+        axis.set_ylim(bottom=0)
+        axis.margins(y=.20)
+        axis.grid(True, which="major", alpha=.25)
+    a_final.annotate("reference = 0", (reference, 0), xytext=(0, 9),
+                     textcoords="offset points", ha="center", fontsize=8)
+    a_inc.text(.02, .96, "Model 0 has no predecessor", transform=a_inc.transAxes,
+               va="top", fontsize=8, color="0.35")
+    heat = fig2.add_subplot(grid[2, :])
+    if len(t_rel_s) < 2 or np.any(np.diff(t_rel_s) <= 0):
+        raise ValueError("dashboard times must contain at least two increasing samples")
+    edges = np.r_[t_rel_s[0], (t_rel_s[:-1]+t_rel_s[1:])/2, t_rel_s[-1]]
+    values = np.ma.masked_less_equal(drn_vs_ref, 0)
+    upper = min(float(max_error_m), max(float(epsilon_m)*10, float(np.max(drn_vs_ref))))
+    upper = max(upper, float(epsilon_m)*1.01)
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad("#e9edf2")
+    im = heat.pcolormesh(edges/60, np.arange(n_models+1)-.5, values,
+                         cmap=cmap, norm=LogNorm(vmin=float(epsilon_m), vmax=upper),
+                         shading="flat", rasterized=True)
+    heat.set(yticks=idx, yticklabels=[str(i) for i in idx], xlabel="Elapsed time (min)",
+             ylabel="Model index", ylim=(n_models-.5, -.5))
+    reference_name = textwrap.shorten(labels[reference], width=65, placeholder="…")
+    heat.set_title(f"Position difference from {reference_name} over time", fontsize=12, pad=12)
+    cbar = fig2.colorbar(im, ax=heat, pad=.02, shrink=.95)
+    cbar.set_label("Position difference (m; logarithmic color scale)")
+    fig2.suptitle(f"{t_rel_s[-1]/60:.2f} min · {len(t_rel_s):,} epochs · {n_models} force models\n"
+                  f"Grey cells = exact zero; color floor = {epsilon_m:g} m; reference is another model, not truth",
+                  fontsize=10)
 
     return {
         "figure_time_domain": fig1,

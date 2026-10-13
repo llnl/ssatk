@@ -47,7 +47,9 @@ def main(make_figures=None, fast=None):
     cfg["star_mag_limit"] = 5.5 if fast else 6.5
     cfg["sphere_resolution"] = 16 if fast else 50
 
+    # gallery-call: *.html
     fig = build_figure(cfg)
+    # gallery-end
     outputs = {"figure": fig, "n_traces": len(fig.data), "html": None}
 
     if make_figures:

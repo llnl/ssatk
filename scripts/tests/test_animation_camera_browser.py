@@ -56,7 +56,7 @@ def test_plotly_follow_keeps_moving_target_at_image_center(tmp_path):
     path = tmp_path / "camera.html"
     fig.write_html(path, auto_play=False)
     options = webdriver.ChromeOptions()
-    chrome = shutil.which("google-chrome") or shutil.which("chromium")
+    chrome = os.environ.get("SSATK_CHROME_BINARY") or shutil.which("google-chrome") or shutil.which("chromium")
     if chrome:
         options.binary_location = chrome
     for arg in (
@@ -117,7 +117,7 @@ def test_browser_replaced_and_reordered_targets_do_not_leave_a_stale_subject():
     from ssatk.plots.build_satellite_viewer import text
 
     options = webdriver.ChromeOptions()
-    chrome = shutil.which("google-chrome") or shutil.which("chromium")
+    chrome = os.environ.get("SSATK_CHROME_BINARY") or shutil.which("google-chrome") or shutil.which("chromium")
     if chrome:
         options.binary_location = chrome
     for arg in ("--headless=new", "--no-sandbox", "--disable-dev-shm-usage"):

@@ -110,6 +110,30 @@ def lunar_body_rotation(t):
     return np.stack([np.asarray(moon.orientation(ti), dtype=float) for ti in _gps_seconds(t)])
 
 
+
+def lunar_map_rotation(t):
+    """GCRF -> lunar mean-Earth map axes, shape (N, 3, 3).
+
+    Apply NAIF's DE440 PA-to-ME421-aligned constant rotation to SSAPy's
+    dated DE440 principal axes. North-up LOLA/LROC maps use ME axes;
+    :func:`lunar_body_rotation` continues to return PA axes for dynamics.
+    Source: moon_de440_250416.tf, TKFRAME_31009_ANGLES (arcseconds).
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/moon_de440_250416.tf
+    """
+    from scipy.spatial.transform import Rotation
+    pa_to_map = Rotation.from_euler("zyx", np.array([67.8526, 78.6944, .2785])/3600,
+                                   degrees=True).as_matrix()
+    return pa_to_map @ lunar_body_rotation(t)
+
+
+def gcrf_to_lunar_map(r, t):
+    """Moon-centred ME map coordinates (metres) from geocentric GCRF metres."""
+    from scipy.spatial.transform import Rotation
+    pa_to_map = Rotation.from_euler("zyx", np.array([67.8526, 78.6944, .2785])/3600,
+                                   degrees=True).as_matrix()
+    return gcrf_to_lunar_body(r, t) @ pa_to_map.T
+
+
 def gcrf_to_lunar_body(r: np.ndarray, t) -> np.ndarray:
     """Convert GCRF positions in metres to Moon-centred lunar body-fixed metres.
 

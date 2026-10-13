@@ -307,7 +307,9 @@ def main(make_figures=None, fast=None, camera="overview", **simulation_kwargs):
     outputs = dict(result=result, summary=summary)
     if make_figures:
         import pandas as pd
+        # gallery-call: *.html | *.png
         fig = build_star_finder_figure(result, camera=camera)
+        # gallery-end
         html = Path(figpath('demo_star_finder.html'))
         plot_html = fig.to_html(full_html=False, auto_play=False, include_plotlyjs=True)
         html.write_text("""<!doctype html><html lang="en"><head><meta charset="utf-8">

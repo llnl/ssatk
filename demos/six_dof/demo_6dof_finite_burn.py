@@ -182,6 +182,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         import matplotlib.pyplot as plt
 
+        # gallery-call: *.png
         fig = plt.figure(figsize=(16, 11), constrained_layout=True)
         ax_orbit = fig.add_subplot(2, 2, 1, projection="3d")
         ax_offset = fig.add_subplot(2, 2, 2)
@@ -259,6 +260,7 @@ def main(make_figures=None, fast=None):
         ax_rtn.legend(fontsize=8)
 
         figure_path = save_demo_figure(fig, "demo_6dof_finite_burn.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

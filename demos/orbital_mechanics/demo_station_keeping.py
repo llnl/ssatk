@@ -204,6 +204,7 @@ def main(make_figures=None, fast=None, output_dir=None):
     if make_figures:
         print("Creating divergence dashboard...")
 
+        # gallery-call: *.png
         fig = plt.figure(figsize=(16, 7))
         gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
 
@@ -309,6 +310,7 @@ def main(make_figures=None, fast=None, output_dir=None):
         fig.tight_layout(rect=[0, 0, 1, 0.96])
         save_path = os.path.join(output_dir, "orbit_comparison_dashboard.png")
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        # gallery-end
         plt.close(fig)
         print(f"Saved: {save_path}")
         print()

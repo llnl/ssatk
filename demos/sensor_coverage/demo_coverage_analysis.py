@@ -79,6 +79,7 @@ def main(make_figures=None, fast=None):
 
         out_dir = _analysis_output_dir(SITE_NAME, SITE_LAT, SITE_LON)
 
+    # gallery-call: *.png
     result = analyse_satellite(
         sat_name=sat["name"],
         orbit=orbit,
@@ -94,6 +95,7 @@ def main(make_figures=None, fast=None):
         out_dir=out_dir,
         make_figures=make_figures,
     )
+    # gallery-end
 
     if make_figures:
         keys = [

@@ -21,7 +21,7 @@ def test_sky_rotates_resizes_and_stays_behind_opaque_geometry(tmp_path):
     from selenium.webdriver.support.ui import WebDriverWait
     from ssatk.plots._solar_scene import SolarFigure, sky_source
     options=webdriver.ChromeOptions()
-    chrome = shutil.which("google-chrome") or shutil.which("chromium")
+    chrome = os.environ.get("SSATK_CHROME_BINARY") or shutil.which("google-chrome") or shutil.which("chromium")
     if chrome:
         options.binary_location = chrome
     for arg in ('--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader'):

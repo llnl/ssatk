@@ -7,6 +7,7 @@ from matplotlib.ticker import FixedLocator, FixedFormatter
 from ssapy import groundTrack
 # from ..yastropy import astropy_gcrf_to_llh
 from ..compute import find_smallest_bounding_cube
+from ..coordinates import v_from_r
 from ..constants import EARTH_RADIUS
 from ..time_functions import to_gps
 from .plotutils import figsave, valid_orbits, _pop_save_path_aliases, _raise_unrecognized_kwargs
@@ -90,10 +91,16 @@ def groundtrack_dashboard(
         x_gt, y_gt, z_gt = groundTrack(xyz, t_i, format='cartesian')
         lon, lat, height = groundTrack(xyz, t_i, format='geodetic')
         # lon, lat, height = astropy_gcrf_to_llh(xyz, t_i)
-        try:
-            velocity = np.linalg.norm(np.gradient(xyz, axis=0), axis=1)
-        except Exception:
-            velocity = 0
+        # A backward propagation may supply decreasing epochs. Differentiate
+        # in chronological order, then restore the supplied display order.
+        if len(t_i) < 2:
+            # A growing animation begins with one position, which cannot
+            # determine velocity. Leave a gap rather than inventing zero.
+            velocity = np.full(len(t_i), np.nan)
+        elif np.all(np.diff(t_i.gps) < 0):
+            velocity = np.linalg.norm(v_from_r(xyz[::-1], t_i[::-1]), axis=1)[::-1]
+        else:
+            velocity = np.linalg.norm(v_from_r(xyz, t_i), axis=1)
 
         lons.append(np.degrees(lon))
         lats.append(np.degrees(lat))
@@ -112,7 +119,7 @@ def groundtrack_dashboard(
     earth_z = EARTH_RADIUS * np.cos(phi_earth)
 
     # Create figure and grid
-    fig = plt.figure(figsize=(24, 16))
+    fig = plt.figure(figsize=(24, 16), layout="constrained")
     gs = gridspec.GridSpec(2, 3, figure=fig)
 
     # Ground track plot (lon/lat axes)
@@ -175,7 +182,11 @@ def groundtrack_dashboard(
             ti = ti[1:-1]
             vel = vel[1:-1]
         ax_velocity.plot(ti / 60, vel / 1e3, color=colors[i], linewidth=2.5, label=labels_norm[i])
-        vmax = max(vmax, np.max(vel) if np.size(vel) > 0 else 0)
+        finite = vel[np.isfinite(vel)]
+        vmax = max(vmax, np.max(finite) if finite.size else 0)
+    if not any(np.isfinite(vel).any() for vel in velocities):
+        ax_velocity.text(.5, .5, "Speed requires at least two epochs", ha="center",
+                         va="center", transform=ax_velocity.transAxes)
     ax_velocity.set_ylim(0, vmax / 1e3 * 1.1 if vmax > 0 else 1)
     ax_velocity.set_xlabel('Time (minutes)', fontsize=fontsize)
     ax_velocity.set_ylabel('Velocity (km/s)', fontsize=fontsize)

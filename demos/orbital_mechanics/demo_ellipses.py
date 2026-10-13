@@ -8,7 +8,6 @@ from ssapy.accel import AccelKepler
 from ssapy.propagator import SciPyPropagator
 
 from ssatk.constants import EARTH_RADIUS
-from ssatk.time_functions.get_times import get_times
 from ssatk.plots.orbit_plot import orbit_plot
 from ssatk.plots.figpath import figpath
 
@@ -30,24 +29,30 @@ def main(make_figures=None, fast=None):
     ap = EARTH_RADIUS + 1000e3
 
     rs = []
+    ts = []
     peris = EARTH_RADIUS + np.linspace(200e3, 900e3, 4 if fast else 10)
     for peri in peris:
         a = (peri + ap) / 2
         e = (ap - peri) / (peri + ap)
         orbit = Orbit.fromKeplerianElements(a, e, 0, 0, 0, 0, t=t0)
 
-        times = get_times(duration=(orbit.period if not fast else min(orbit.period, 3600.0), "s"), freq=(10 if fast else 1, "s"), t0=t0)
+        times = t0 + np.linspace(0, orbit.period, 1441) / 86400.
         r, v = rv(orbit=orbit, time=times, propagator=prop)
         rs.append(r)
+        ts.append(times)
 
     if make_figures:
+        # gallery-call: testing_ellipses.jpg
         orbit_plot(
             rs,
+            t=ts,
             view="xy",
+            figsize=(10, 10),
             save_path=figpath("testing_ellipses.jpg"),
             pad=500,
             title="Exterior Earth orbits: 200–900 km perigee, 1,000 km apogee",
         )
+        # gallery-end
 
     return {"trajectories": rs}
 

@@ -63,9 +63,13 @@ def main(make_figures=None, fast=None):
                 "reason": "figures_disabled"}
 
     html_path = Path(figpath("demo_satellite_viewer.html"))
+    # gallery-call: *.html
     written = build(out_path=str(html_path), verbose=True)
+    # gallery-end
     png_path = Path(figpath("demo_satellite_viewer.png"))
+    # gallery-call: *.png
     _save_preview(html_path, png_path)
+    # gallery-end
     return {"html": str(written), "png": str(png_path), "skipped": False}
 
 

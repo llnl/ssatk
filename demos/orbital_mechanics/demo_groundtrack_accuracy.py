@@ -64,6 +64,7 @@ def main(make_figures=None, make_video=None, fast=None):
     t_hours = (t_abs - t_abs[0]) / 3600.0
 
     if make_figures:
+        # gallery-call: test_transfer_vs_ssapy_diff.jpg
         plt.figure()
         plt.plot(t_hours, dr_norm_km)
         plt.xlabel("Time since departure [hours]")
@@ -71,22 +72,27 @@ def main(make_figures=None, make_video=None, fast=None):
         plt.title("ellipse_fit transfer vs ssapy propagation: |Δr|(t)")
         out_path = figpath("test_transfer_vs_ssapy_diff.jpg")
         plt.savefig(out_path, dpi=150, bbox_inches="tight")
+        # gallery-end
         print(f"Saved: {out_path}")
         plt.close()
 
+        # gallery-call: test_transfer_vs_ssapy_diff_groundtrack.jpg
         groundtrack_plot(
             r=[r_ssa, r_tf],
             t=t_abs,
             save_path=figpath("test_transfer_vs_ssapy_diff_groundtrack.jpg"),
         )
+        # gallery-end
 
         try:
+            # gallery-call: test_transfer_vs_ssapy_diff_dashboard.jpg
             groundtrack_dashboard(
                 r=[r_ssa, r_tf],
                 t=t_abs,
                 save_path=figpath("test_transfer_vs_ssapy_diff_dashboard.jpg"),
                 show=False,
             )
+            # gallery-end
         except Exception as err:
             print(f"groundtrack_dashboard failed: {err}")
 

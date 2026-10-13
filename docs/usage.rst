@@ -54,6 +54,28 @@ dashboard's fast settings, the corresponding Python entry point is:
 
    demo_structured_transfer_api.main(make_figures=True, fast=True)
 
+Each image, animation, or interactive view also has its own **Figure call**.
+Expand **Arguments and source** to see the actual plotting statement and its
+arguments, copied from the demo source. The source link includes surrounding
+input definitions; variables in these excerpts are not standalone input data.
+
+Figure helpers already write inside the output root's ``figures`` directory.
+Pass ``"my_plot.png"`` or an intentional subfolder such as ``"benchmarks/plot.png"``;
+do not add another ``"figures/"`` prefix.
+
+The globe demo includes two 30-second views of a synthetic Walker-delta shell:
+1,584 satellites in 72 planes, 550 km altitude and 53-degree inclination, over
+two orbital periods. These are design trajectories, not live Starlink positions.
+The reusable ``ssatk.orbital_mechanics.constellations.walker_delta`` helper
+provides SSAPy orbit states for propagation with ``ssapy.rv``.
+
+Lunar surface maps use the dated DE440 mean-Earth/polar-axis orientation through
+``lunar_map_rotation``. ``lunar_body_rotation`` retains the principal-axis
+convention used by dynamics. The map correction follows NAIF's
+``moon_de440_250416.tf``; its numerical implementation is checked against 50
+independent CSPICE reference matrices. This rotation accuracy does not imply
+centimetre map georegistration or surface-image resolution.
+
 Basic Example
 -------------
 

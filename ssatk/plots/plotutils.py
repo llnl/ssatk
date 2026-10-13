@@ -695,9 +695,9 @@ def _moon_texture_rotation_rad(time):
     This diagnostic returns only an azimuth. The notebook mesh applies the
     full body rotation, including the lunar equator tilt.
     """
-    from ..coordinates.lunar import lunar_body_rotation
+    from ..coordinates.lunar import lunar_map_rotation
 
-    rotation = lunar_body_rotation(np.atleast_1d(np.asarray(time, dtype=float)))  # GCRF -> body
+    rotation = lunar_map_rotation(np.atleast_1d(np.asarray(time, dtype=float)))  # GCRF -> body
     x_axis = rotation[:, 0, :]  # body +X expressed in GCRF
     return np.arctan2(x_axis[:, 1], x_axis[:, 0])
 

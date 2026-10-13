@@ -1,8 +1,7 @@
 """Real north-up equirectangular maps on physical spheres in scene coordinates.
 
 Longitude increases eastward from -180 to 180 degrees. Matrices act on column
-vectors. Lunar maps approximate DE440 principal axes (the mean-Earth map-frame
-offset is sub-kilometre). No synthetic craters or radial displacement are added.
+vectors. Lunar maps use the DE440 mean-Earth/polar-axis frame. No synthetic craters or radial displacement are added.
 """
 from functools import lru_cache
 import warnings
@@ -18,8 +17,10 @@ BODY_COLORS = {"earth": (0.10, 0.31, 0.54), "moon": (1., 1., 1.)}
 def texture_path(body):
     if is_low_spec():
         return None
-    from ._textures import earth_texture_path, moon_texture_path
+    from ._textures import earth_texture_path, moon_texture_path, viewer_earth_day_path
     try:
+        if body == "earth" and viewer_earth_day_path().is_file():
+            return viewer_earth_day_path()
         return earth_texture_path() if body == "earth" else moon_texture_path()
     except FileNotFoundError as exc:
         warnings.warn(f"{exc} Rendering a plain {body.title()} sphere.", UserWarning, stacklevel=2)
@@ -52,10 +53,10 @@ def body_rotation(body, time=None, frame="gcrf"):
         return np.eye(3)
     from astropy.time import Time
     from ..coordinates.frames import eci_to_ecf_matrix
-    from ..coordinates.lunar import lunar_body_rotation, gcrf_to_lunar
+    from ..coordinates.lunar import lunar_map_rotation, gcrf_to_lunar
     time = time if isinstance(time, Time) else Time(time, format="gps") if np.issubdtype(np.asarray(time).dtype, np.number) else Time(time)
     gps = float(np.atleast_1d(time.gps)[0])
-    rotation = eci_to_ecf_matrix(gps).T if body == "earth" else lunar_body_rotation(gps)[0].T
+    rotation = eci_to_ecf_matrix(gps).T if body == "earth" else lunar_map_rotation(gps)[0].T
     key = frame.lower().replace("_", " ")
     if key in {"gcrf", "eci", "moon centered", "moon centered gcrf"}:
         return rotation
@@ -129,7 +130,7 @@ def body_mesh_plotly(body, center, radius, rotation=None, *, n=90, path=None, su
                      name=body.title(), hoverinfo="skip", showlegend=False)
 
 
-def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy"):
+def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy", *, resolution=1024):
     """Orthographic mapped front hemisphere for coordinate-plane plots."""
     from matplotlib.patches import Circle
     a, b = {"xy": (0, 1), "xz": (0, 2), "yz": (1, 2)}[view]
@@ -137,7 +138,7 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy"):
     circle = Circle(center[[a, b]], radius, facecolor=BODY_COLORS[body], edgecolor="none", zorder=2)
     ax.add_patch(circle)
     if not is_low_spec():
-        size = 256
+        size = int(resolution)
         axis = (np.arange(size)+.5)*2/size-1
         x, y = np.meshgrid(axis, axis)
         normals = np.zeros((size, size, 3))
@@ -146,10 +147,16 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy"):
         normals = normals @ (np.eye(3) if rotation is None else rotation)
         lon = np.arctan2(normals[..., 1], normals[..., 0])
         lat = np.arcsin(np.clip(normals[..., 2], -1, 1))
-        rgb = surface_map(body, 1024, 512)
-        col = np.floor((lon+np.pi)/(2*np.pi)*1024).astype(int) % 1024
-        row = np.clip(((np.pi/2-lat)/np.pi*512).astype(int), 0, 511)
-        image = ax.imshow(rgb[row, col], origin="lower", extent=(center[a]-radius, center[a]+radius,
-                          center[b]-radius, center[b]+radius), zorder=2)
+        # Bilinear texel lookup avoids magnifying nearest-neighbour blocks.
+        from scipy.ndimage import map_coordinates
+        width, height = 4096, 2048
+        rgb = surface_map(body, width, height)
+        col = (lon+np.pi)/(2*np.pi)*width-.5
+        row = np.clip((np.pi/2-lat)/np.pi*height-.5, 0, height-1)
+        mapped = np.stack([map_coordinates(rgb[..., channel], [row, col], order=1,
+                                           mode="grid-wrap") for channel in range(3)], axis=-1)
+        image = ax.imshow(mapped, origin="lower", interpolation="bilinear",
+                          extent=(center[a]-radius, center[a]+radius,
+                                  center[b]-radius, center[b]+radius), zorder=2)
         image.set_clip_path(circle)
     return circle

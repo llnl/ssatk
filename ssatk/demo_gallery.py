@@ -15,12 +15,13 @@ import sys
 import time
 import traceback
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
-from dataclasses import dataclass, asdict, replace
+from dataclasses import dataclass, asdict, field, replace
 from pathlib import Path
 from urllib.parse import quote, unquote
 
 from ssatk._paths import SSATK_OUTPUT_ENV, output_root as default_output_root
 from ssatk._gallery_layout import gallery_group, gallery_sort_key, gallery_title
+from ssatk._gallery_calls import collect_figure_calls
 from ssatk.gallery_validation import validate_gallery
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
@@ -90,6 +91,7 @@ class DemoResult:
     stderr: str = ""
     error: str = ""
     category: str = ""
+    figure_calls: dict = field(default_factory=dict)
 
 
 class DemoTimeoutError(TimeoutError):
@@ -269,7 +271,9 @@ def run_demo_script(
     output_root = Path(output_root).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     with _gallery_output(output_root):
-        return _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds)
+        result = _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds)
+        result.figure_calls = collect_figure_calls(path, output_root, result.name, result.files)
+        return result
 
 
 def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
@@ -405,7 +409,25 @@ def _file_preview_sort_key(file_rel: str) -> tuple[int, str, str, str]:
     return group, decoded.casefold(), decoded, file_rel
 
 
-def render_file_preview(file_rel: str) -> str:
+def render_file_preview(file_rel: str, example: dict | None = None) -> str:
+    preview = _render_file_preview(file_rel)
+    if not example:
+        return preview
+    call = (
+        '<div class="figure-call"><span>Figure call</span> '
+        f'<code>{html.escape(example["function"])}(...)</code>'
+        '<details><summary>Arguments and source</summary>'
+        f'<pre><code>{html.escape(example["code"])}</code></pre>'
+        '<p>Inputs and configuration are defined in the demo. '
+        f'<a class="file-link" href="{html.escape(example["source"], quote=True)}" '
+        f'target="_blank" rel="noopener">Demo source, lines '
+        f'{int(example["first_line"])}–{int(example["last_line"])}</a>.</p>'
+        '</details></div>'
+    )
+    return preview.removesuffix('</div>') + call + '</div>'
+
+
+def _render_file_preview(file_rel: str) -> str:
     path = html.escape(file_rel)
     name = html.escape(unquote(Path(file_rel).name))
     ext = Path(unquote(file_rel)).suffix.lower()
@@ -415,7 +437,7 @@ def render_file_preview(file_rel: str) -> str:
             f'<div class="asset">'
             f'<a href="{path}" target="_blank">'
             f'<img src="{path}" alt="{name}" loading="lazy"></a>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -424,7 +446,7 @@ def render_file_preview(file_rel: str) -> str:
             f'<div class="asset">'
             f'<a href="{path}" target="_blank">'
             f'<img src="{path}" alt="{name}" loading="lazy"></a>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -435,7 +457,7 @@ def render_file_preview(file_rel: str) -> str:
             f'style="width:100%; height:180px; object-fit:contain; background:#0a0f22; border-radius:8px;">'
             f'<source src="{path}" type="video/mp4">'
             f'</video>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -446,7 +468,7 @@ def render_file_preview(file_rel: str) -> str:
             f'style="width:100%; height:180px; object-fit:contain; background:#0a0f22; border-radius:8px;">'
             f'<source src="{path}" type="video/webm">'
             f'</video>'
-            f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'<div class="caption">{name}</div>'
             f'</div>'
         )
 
@@ -488,7 +510,7 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
         groups.setdefault(group.key, group)
         cards.setdefault(group.key, [])
         badge_class = {"success": "ok", "skipped": "skip"}.get(r.status, "fail")
-        previews = "\n".join(render_file_preview(f) for f in r.files) or "<p>No output files found.</p>"
+        previews = "\n".join(render_file_preview(f, r.figure_calls.get(f)) for f in r.files) or "<p>No output files found.</p>"
 
         stdout_block = ""
         if r.stdout:
@@ -702,6 +724,10 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       color: #cbd5e1;
       word-break: break-word;
     }}
+    .figure-call {{ margin-top: 12px; font-size: 0.85rem; overflow-wrap: anywhere; }}
+    .figure-call > span {{ color: #b8c3da; margin-right: 6px; }}
+    .figure-call code {{ color: #dbe7ff; }}
+    .figure-call pre {{ max-height: 360px; overflow-y: auto; }}
     .file-link {{
       color: #8ec5ff;
       text-decoration: none;

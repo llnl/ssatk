@@ -30,6 +30,7 @@ def main(make_figures=None, fast=None):
         return {"figure": None, "skipped": True, "reason": "figures_disabled"}
 
     try:
+        # gallery-call: *.html | *.png
         fig, stats = plot_magfield_3d(
             epoch           = 2025.0,
             fidelity        = "draft" if fast else "high",
@@ -47,6 +48,7 @@ def main(make_figures=None, fast=None):
             show_van_allen  = True,
             save_path       = figpath("demo_magfield_plot"),
         )
+        # gallery-end
     except ImportError as exc:
         print(f"Skipped: {exc}")
         return {"figure": None, "skipped": True, "reason": str(exc)}

@@ -48,7 +48,6 @@ DESCRIPTION = (
     "timing; explore a sampled 35–120 minute rendezvous trade with transfer_optimal."
 )
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 COMPARISON_TOF = 3600.0
 STAGED_LEG_TOF = COMPARISON_TOF / 2.0
@@ -432,8 +431,10 @@ def _build_overview(results, cases, trade):
 def _save_overview(results, cases, trade, *, make_figures=True):
     if not make_figures:
         return None
+    # gallery-call: *.jpg
     fig = _build_overview(results, cases, trade)
-    save_rel = f"{FIGDIR}/structured_transfer_api_overview.jpg"
+    # gallery-end
+    save_rel = f"structured_transfer_api_overview.jpg"
     return figsave(fig, figpath(save_rel))
 
 

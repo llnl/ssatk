@@ -282,6 +282,7 @@ def _demo_figures():
     shadow = ~lit
 
     # ---- Figure 1: phase-curve benchmark vs analytic reference --------
+    # gallery-call: demo_phase_curve_benchmark.jpg
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(8, 7), sharex=True,
         gridspec_kw={"height_ratios": [3, 1]})
@@ -309,9 +310,11 @@ def _demo_figures():
     ax2.legend(fontsize=9)
     fig.tight_layout()
     figsave(fig, "demo_phase_curve_benchmark.jpg")
+    # gallery-end
     plt.close(fig)
 
     # ---- Figure 2: fractional-flux agreement (machine precision) ------
+    # gallery-call: demo_fractional_flux_benchmark.jpg
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ratio = np.where(b["ref_frac"] > 0,
                      b["ours_frac"] / np.maximum(b["ref_frac"], 1e-300), np.nan)
@@ -323,9 +326,11 @@ def _demo_figures():
     ax.grid(alpha=0.3)
     fig.tight_layout()
     figsave(fig, "demo_fractional_flux_benchmark.jpg")
+    # gallery-end
     plt.close(fig)
 
     # ---- Figure 3: airmass benchmark + multi-band magnitudes ----------
+    # gallery-call: demo_airmass_and_bands.jpg
     fig, (ax1, ax2) = plt.subplots(
         1, 2, figsize=(12, 4.8), layout="constrained")
     z = np.linspace(0, 89.9, 300)
@@ -364,6 +369,7 @@ def _demo_figures():
     for ax in (ax1, ax2):
         ax.spines[["top", "right"]].set_visible(False)
     figsave(fig, "demo_airmass_and_bands.jpg")
+    # gallery-end
     plt.close(fig)
 
     print("Saved via figsave: figures/demo_phase_curve_benchmark.jpg")

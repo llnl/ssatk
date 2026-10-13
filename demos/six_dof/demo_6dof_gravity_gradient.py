@@ -70,6 +70,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         import matplotlib.pyplot as plt
 
+        # gallery-call: *.png
         fig = plt.figure(figsize=(14, 9), constrained_layout=True)
         ax_orbit = fig.add_subplot(2, 2, 1, projection="3d")
         ax_angle = fig.add_subplot(2, 2, 2)
@@ -104,6 +105,7 @@ def main(make_figures=None, fast=None):
         ax_quat.legend()
 
         figure_path = save_demo_figure(fig, "demo_6dof_gravity_gradient.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

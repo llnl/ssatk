@@ -574,8 +574,10 @@ def main():
         recon_cache[name] = recon
 
     if SAVE_PLOTS:
-        prefix = "figures/testing_ellipse_fit"
+        prefix = "testing_ellipse_fit"
+        # gallery-call: testing_ellipse_fit_arcs.png
         _plot_arcs_3d(results, P1_m, P2_m, prefix, title="ellipse_fit arcs (baseline)")
+        # gallery-end
         try:
             orbit_plot(
                 [results["A"]["r"], results["B"]["r"]],
@@ -586,10 +588,18 @@ def main():
             )
         except Exception:
             pass
+        # gallery-call: testing_ellipse_fit_recons_*.png
         _plot_recon_overlays(results, recon_cache, prefix)
+        # gallery-end
+        # gallery-call: testing_ellipse_fit_error_*.png
         _plot_error_vs_time(results, recon_cache, prefix)
+        # gallery-end
+        # gallery-call: testing_ellipse_fit_radius.png | testing_ellipse_fit_speed.png
         _plot_radius_and_speed(results, recon_cache, prefix)
+        # gallery-end
+        # gallery-call: testing_ellipse_fit_separation_AB.png
         _plot_sep_AB(results, prefix)
+        # gallery-end
 
     # Inclination sweep
     print("\n=== Inclination sweep: 1*RGEO equatorial -> 2*RGEO sphere, inc=0..90 step 15 ===")
@@ -655,8 +665,10 @@ def main():
             print(f"  inc={item['inc_deg']:+.0f} branch={item['branch']}: {item['error']}")
 
     if SAVE_PLOTS:
-        prefix = "figures/testing_ellipse_fit_incsweep_geo2_polar15"
+        prefix = "testing_ellipse_fit_incsweep_geo2_polar15"
+        # gallery-call: testing_ellipse_fit_incsweep_geo2_polar15_all_transfers.png
         _plot_incsweep_all_transfers_3d(sweep_store, P1s_m, prefix)
+        # gallery-end
 
         sweep_pts = [np.asarray(P1s_m, float)]
         for item in sweep_store:
@@ -682,6 +694,7 @@ def main():
 
             P2s_m = item["P2"]
             pp = f"{prefix}_{inc_deg:+.0f}deg"
+            # gallery-call: testing_ellipse_fit_incsweep_geo2_polar15_*deg_arcs.png
             _plot_arcs_3d(
                 rdict,
                 P1s_m,
@@ -690,6 +703,7 @@ def main():
                 title=f"Transfer arcs to 2*RGEO sphere, inc={inc_deg:+.0f} deg",
                 cube_limits=sweep_cube_limits,
             )
+            # gallery-end
 
     print("\nDONE! (baseline checks passed; sweep processed)")
     return {

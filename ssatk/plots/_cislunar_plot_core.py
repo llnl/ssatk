@@ -7,7 +7,6 @@ import matplotlib.cm as _cm
 import matplotlib.font_manager as _font_manager
 import matplotlib.pyplot as _plt
 from matplotlib.lines import Line2D as _Line2D
-from matplotlib.patches import Patch as _Patch
 from matplotlib.ticker import MaxNLocator as _MaxNLocator
 import numpy as _np
 
@@ -16,6 +15,7 @@ from ..constants import MOON_RADIUS as _MOON_RADIUS
 from ..constants import RGEO as _RGEO
 from ..coordinates import gcrf_to_lunar_fixed as _gcrf_to_lunar_fixed
 from ._legend_handlers import GradientLineHandler as _GradientLineHandler
+from ._legend_handlers import BodyMapPatch, BodyMapHandler, body_legend_handle
 from ._globe_scene import visible_points as _visible_points
 from .plotutils import figsave as _figsave
 from .plotutils import valid_orbits as _valid_orbits
@@ -302,9 +302,9 @@ def _add_cislunar_legend(ax, orbit_count, mode, legend, textcolor, plotcolor, fo
     rainbow_line = _Line2D([0], [0], color="w", linestyle="-", linewidth=2, label="Orbit Path")
     markerfacecolor = textcolor
     markersize = 10 if mode == "xy" else 6
-    legend_elements = [_Patch(facecolor="lightgrey", edgecolor=textcolor, label="Moon")]
+    legend_elements = [body_legend_handle("moon", edgecolor=textcolor)]
     if earth_visible:
-        legend_elements.insert(0, _Patch(facecolor="lightblue", edgecolor=textcolor, label="Earth"))
+        legend_elements.insert(0, body_legend_handle("earth", edgecolor=textcolor))
     if lagrange_visible:
         legend_elements.append(_Line2D([0], [0], marker="o", color="none", markerfacecolor=markerfacecolor,
                                        markersize=markersize, label="Lagrange Points"))
@@ -315,7 +315,7 @@ def _add_cislunar_legend(ax, orbit_count, mode, legend, textcolor, plotcolor, fo
     font_properties = _font_manager.FontProperties(size=legend_size)
     ax.legend(
         handles=legend_elements,
-        handler_map={rainbow_line: _GradientLineHandler()} if orbit_count == 1 else {},
+        handler_map={BodyMapPatch: BodyMapHandler(), rainbow_line: _GradientLineHandler()},
         loc="upper left",
         facecolor=plotcolor,
         edgecolor=textcolor,

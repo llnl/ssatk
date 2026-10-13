@@ -47,6 +47,7 @@ def main(make_figures=None, fast=None):
 
     labels = [f"orb_{i}" for i in range(len(r_list))]
 
+    # gallery-call: *.jpg
     out_pop = orbit_stats_dashboard(
         r_list,
         v_list=v_list,
@@ -66,6 +67,7 @@ def main(make_figures=None, fast=None):
         labels=labels,
         show_legend=True,
     )
+    # gallery-end
 
     print_population_summary(out_pop, top_k=8)
 

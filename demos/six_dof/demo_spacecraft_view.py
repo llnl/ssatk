@@ -118,15 +118,19 @@ def main(make_figures=True, fast=False, output_dir=None):
     # Sample the propagator at every encoded frame epoch. This avoids replacing
     # a full-day orbit with chords between a handful of trajectory samples.
     fps = 12 if fast else 24
+    # gallery-call: spacecraft_earth.mp4 | spacecraft_earth.png
     earth = example_view("earth", count=round(fps * GEO_PLAYBACK_SECONDS))
     paths.append(str(earth.save(output_dir / "spacecraft_earth.png")))
     paths.append(str(earth.save(output_dir / "spacecraft_earth.mp4", fps=fps,
                                duration_s=GEO_PLAYBACK_SECONDS,
                                width=960 if fast else 1280, height=640 if fast else 720)))
+    # gallery-end
+    # gallery-call: spacecraft_moon.gif | spacecraft_moon.png
     moon = example_view("moon")
     paths.append(str(moon.save(output_dir / "spacecraft_moon.png")))
     paths.append(str(moon.save(output_dir / "spacecraft_moon.gif", width=720, height=480,
                               fps=8, duration_s=2 if fast else 6)))
+    # gallery-end
     return {"title": TITLE, "files": paths}
 
 

@@ -314,9 +314,13 @@ def main(make_figures=True, fast=False, output_dir=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     entries = catalog_entries(width=480 if fast else 720, height=300 if fast else 450)
+    # gallery-call: *.html
     html = write_catalog(entries, output_dir / "spacecraft_mesh_catalog.html")
+    # gallery-end
+    # gallery-call: *.jpg | *.png
     images = write_poster(entries, output_dir / "spacecraft_mesh_catalog.png",
                           cell_width=360 if fast else 480)
+    # gallery-end
     return {"title": TITLE, "files": [str(html), *(str(path) for path in images)]}
 
 

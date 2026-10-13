@@ -286,7 +286,9 @@ def main(make_figures=None, fast=None):
         P2s_m, swA, swB, used_lon = _run_sweep_case_with_retries(P1s_m, lat_rad, tagp)
         sweep_store.append({"inc_deg": float(inc_deg), "lon_deg": float(used_lon), "P2": P2s_m, "A": swA, "B": swB})
 
+    # gallery-call: *.png
     _plot_incsweep_all_transfers_3d(sweep_store, P1s_m, make_figures=make_figures)
+    # gallery-end
 
     return {"baseline_A": resA, "baseline_B": resB, "sweep_store": sweep_store}
 

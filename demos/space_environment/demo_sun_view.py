@@ -45,6 +45,7 @@ def main(make_figures=None, fast=None):
         "dist_au": dist_au,
     }
 
+    # gallery-call: *.html
     fig = go.Figure()
 
     # Frame the camera around the near-field objects (Sun/Moon), not the
@@ -143,6 +144,7 @@ def main(make_figures=None, fast=None):
             out_html = out_html.with_suffix(".html")
         out_html.parent.mkdir(parents=True, exist_ok=True)
         fig.write_html(str(out_html))
+    # gallery-end
         print("Saved:", out_html)
         outputs["html"] = str(out_html)
 

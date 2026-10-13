@@ -246,6 +246,7 @@ def main(
             out1 = out1.with_suffix(".png")
         out1.parent.mkdir(parents=True, exist_ok=True)
 
+        # gallery-call: artemis_benchmark_position_error.png
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(hours, dr_norm_m / 1e3, label="|Δr|")
         if len(sync_indices) > 1:
@@ -256,6 +257,7 @@ def main(
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.savefig(out1, dpi=200, bbox_inches="tight")
+        # gallery-end
         plt.close(fig)
 
         out2 = Path(figpath("benchmarks/artemis_benchmark_velocity_error"))
@@ -263,6 +265,7 @@ def main(
             out2 = out2.with_suffix(".png")
         out2.parent.mkdir(parents=True, exist_ok=True)
 
+        # gallery-call: artemis_benchmark_velocity_error.png
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(hours, dv_norm_m_s, label="|Δv|")
         if len(sync_indices) > 1:
@@ -273,6 +276,7 @@ def main(
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.savefig(out2, dpi=200, bbox_inches="tight")
+        # gallery-end
         plt.close(fig)
 
         out4 = Path(figpath("benchmarks/artemis_benchmark_burn_events"))
@@ -280,6 +284,7 @@ def main(
             out4 = out4.with_suffix(".png")
         out4.parent.mkdir(parents=True, exist_ok=True)
 
+        # gallery-call: artemis_benchmark_burn_events.png
         fig4, (ax_pos, ax_vel) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
         ax_pos.plot(hours, dr_norm_m / 1e3, color="#16324f", label="Position error")
         ax_vel.plot(hours, dv_norm_m_s, color="#b24c3a", label="Velocity error")
@@ -298,6 +303,7 @@ def main(
             axis.grid(True, alpha=0.3)
         fig4.tight_layout()
         fig4.savefig(out4, dpi=200, bbox_inches="tight")
+        # gallery-end
         plt.close(fig4)
 
         out3 = Path(figpath("benchmarks/artemis_benchmark_cislunar_context"))
@@ -310,6 +316,7 @@ def main(
         r_model_plot = r_model[::step]
         t_plot = t_ref.gps[::step]
 
+        # gallery-call: artemis_benchmark_cislunar_context.png
         fig3d, ax3d = orbit_plot(
             [r_truth_plot, r_model_plot],
             t=[t_plot, t_plot],
@@ -322,6 +329,7 @@ def main(
             title="Artemis benchmark: truth vs model",
             c="white",
         )
+        # gallery-end
         plt.close(fig3d)
 
         result["position_error_plot"] = str(out1)
