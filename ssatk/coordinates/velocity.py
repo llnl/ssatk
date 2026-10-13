@@ -6,8 +6,8 @@ def v_from_r(r: np.ndarray, t: np.ndarray) -> np.ndarray:
     """
     Calculate velocity from position using numerical differentiation.
 
-    Uses centered differences for interior points and one-sided differences
-    at the endpoints.
+    Uses three-point derivatives, including one-sided endpoints, with the
+    actual time spacing (which may be nonuniform). Two samples use a secant.
 
     Parameters
     ----------
@@ -23,7 +23,7 @@ def v_from_r(r: np.ndarray, t: np.ndarray) -> np.ndarray:
     """
     r = np.asarray(r, dtype=float)
 
-    if isinstance(t[0], Time):
+    if isinstance(t, Time):
         t = t.gps
     t = np.asarray(t, dtype=float)
 
@@ -36,16 +36,8 @@ def v_from_r(r: np.ndarray, t: np.ndarray) -> np.ndarray:
     if len(r) < 2:
         raise ValueError("Need at least two samples to compute velocity")
 
-    v = np.zeros_like(r, dtype=float)
-
-    # Forward difference at the first point
-    v[0] = (r[1] - r[0]) / (t[1] - t[0])
-
-    # Centered differences for interior points
-    if len(r) > 2:
-        v[1:-1] = (r[2:] - r[:-2]) / (t[2:] - t[:-2])[:, np.newaxis]
-
-    # Backward difference at the last point
-    v[-1] = (r[-1] - r[-2]) / (t[-1] - t[-2])
-
-    return v
+    if not np.all(np.isfinite(t)) or np.any(np.diff(t) <= 0):
+        raise ValueError("Times must be finite and strictly increasing")
+    # Remove the constant origin before weighted sums, so a stationary state
+    # does not acquire roundoff velocity (and an arbitrary heading).
+    return np.gradient(r - r[0], t - t[0], axis=0, edge_order=2 if len(r) > 2 else 1)

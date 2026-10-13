@@ -1,7 +1,13 @@
-def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=False, show_legend=True, t0=None, limit=None, fontsize=18, **save_kwargs):
+def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=False, show_legend=True, t0=None, limit=None, fontsize=18, *, v=None, **save_kwargs):
     """
     Visualizes multiple satellite ground tracks, altitude/velocity over time,
     gamma over time, heading over time, and 3D trajectories (ITRF and GCRF).
+
+    Positions are GCRF metres and times are GPS seconds or Astropy Time.
+    Optional ``v`` supplies matching GCRF velocities in m/s (one track or a
+    list of tracks); otherwise velocities use time-aware finite differences.
+    Gamma and heading use Earth-relative velocity and a geocentric horizon.
+    The speed panel is explicitly GCRF speed; altitude is WGS84 geodetic.
 
     Layout (2 rows x 4 cols):
       Row 0: [ Ground map (1x2 span) | ITRF 3D | GCRF 3D ]
@@ -15,6 +21,7 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
 
     from ssapy import groundTrack
     from ..compute import find_smallest_bounding_cube
+    from ..coordinates import v_from_r
     from ..constants import EARTH_RADIUS
     from ..time_functions import to_gps
     from ..orbital_mechanics.gamma_and_heading import calc_gamma_and_heading
@@ -25,6 +32,10 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
     _raise_unrecognized_kwargs(save_kwargs, "groundtrack_dashboard_gamma_heading")
 
     r, t = valid_orbits(r, t)
+    velocity_tracks = None if v is None else valid_orbits(v, t)[0]
+    if velocity_tracks is not None and (
+            len(velocity_tracks) != len(r) or any(vi.shape != ri.shape for vi, ri in zip(velocity_tracks, r))):
+        raise ValueError("v must contain one matching (N, 3) velocity track per orbit")
 
     # Times -> GPS seconds and relative timeline
     t_gps = [to_gps(ti) for ti in t]
@@ -40,26 +51,18 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
     x_gts, y_gts, z_gts = [], [], []
     gammas, headings = [], []
 
-    for r_i, t_i in zip(r, t):
+    for track_index, (r_i, t_i) in enumerate(zip(r, t)):
         xyz = np.array(r_i)  # (n,3)
 
         # Ground track + geodetic
         x_gt, y_gt, z_gt = groundTrack(xyz, t_i, format="cartesian")
         lon, lat, height = groundTrack(xyz, t_i, format="geodetic")
 
-        # Simple speed magnitude from finite differences (display only)
-        try:
-            vel = np.linalg.norm(np.gradient(xyz, axis=0), axis=1)
-        except Exception:
-            vel = 0
-
-        # Gamma/Heading
-        try:
-            g_deg, h_deg = calc_gamma_and_heading(xyz, t_i)
-        except Exception:
-            n = xyz.shape[0]
-            g_deg = np.full(n, np.nan)
-            h_deg = np.full(n, np.nan)
+        supplied_v = None if velocity_tracks is None else velocity_tracks[track_index]
+        v_gcrf = v_from_r(xyz, t_i) if supplied_v is None else supplied_v
+        vel = np.linalg.norm(v_gcrf, axis=1)
+        # Invalid trajectories must fail visibly, not silently plot empty curves.
+        g_deg, h_deg = calc_gamma_and_heading(xyz, t_i, v=supplied_v)
 
         lons.append(np.degrees(lon))
         lats.append(np.degrees(lat))
@@ -181,10 +184,13 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
             continue
         ax_gamma.plot(ti[:n] / 60.0, g[:n], color=colors[i], linewidth=2.2, label=f"orbit {i + 1}")
     ax_gamma.set_xlabel("Time (minutes)", fontsize=fontsize)
-    ax_gamma.set_ylabel("Gamma (deg)", fontsize=fontsize)
-    ax_gamma.set_ylim(-90, 90)
+    ax_gamma.set_ylabel("Geocentric gamma (deg)", fontsize=fontsize)
+    finite_gamma = np.concatenate(gammas)
+    finite_gamma = finite_gamma[np.isfinite(finite_gamma)]
+    gamma_limit = min(90, max(1, 1.1 * np.max(np.abs(finite_gamma)))) if finite_gamma.size else 90
+    ax_gamma.set_ylim(-gamma_limit, gamma_limit)
     ax_gamma.grid(True)
-    force_title(ax_gamma, "Gamma vs Time", fontsize)
+    force_title(ax_gamma, "Earth-relative gamma", fontsize)
     ax_gamma.tick_params(axis="both", labelsize=fontsize)
     if show_legend and len(gammas) > 1:
         ax_gamma.legend(fontsize=fontsize - 4, loc="best")
@@ -194,12 +200,15 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
         n = min(len(ti), len(h))
         if n == 0:
             continue
-        ax_heading.plot(ti[:n] / 60.0, h[:n], color=colors[i], linewidth=2.2, label=f"orbit {i + 1}")
+        # A compass wrap is not a physical sweep through the other 358 degrees.
+        jumps = np.flatnonzero(np.abs(np.diff(h[:n])) > 180) + 1
+        ax_heading.plot(np.insert(ti[:n] / 60.0, jumps, np.nan), np.insert(h[:n], jumps, np.nan),
+                        color=colors[i], linewidth=2.2, label=f"orbit {i + 1}")
     ax_heading.set_xlabel("Time (minutes)", fontsize=fontsize)
     ax_heading.set_ylabel("Heading (deg)", fontsize=fontsize)
     ax_heading.set_ylim(0, 360)
     ax_heading.grid(True)
-    force_title(ax_heading, "Heading vs Time", fontsize)
+    force_title(ax_heading, "Earth-relative heading", fontsize)
     ax_heading.tick_params(axis="both", labelsize=fontsize)
     if show_legend and len(headings) > 1:
         ax_heading.legend(fontsize=fontsize - 4, loc="best")
@@ -213,7 +222,7 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
     ax_alt.set_ylim(0, altmax / 1e3 * 1.1 if altmax > 0 else 1)
     ax_alt.set_xlabel("Time (minutes)", fontsize=fontsize)
     ax_alt.set_ylabel("Altitude (km)", fontsize=fontsize)
-    force_title(ax_alt, "Altitude vs Time", fontsize)
+    force_title(ax_alt, "WGS84 altitude", fontsize)
     ax_alt.tick_params(axis="both", labelsize=fontsize)
     ax_alt.grid(True)
     if show_legend and len(altitudes) > 1:
@@ -233,8 +242,8 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
             vmax = max(vmax, float(np.nanmax(vel_plot)))
     ax_velocity.set_ylim(0, vmax / 1e3 * 1.1 if vmax > 0 else 1)
     ax_velocity.set_xlabel("Time (minutes)", fontsize=fontsize)
-    ax_velocity.set_ylabel("Velocity (km/s)", fontsize=fontsize)
-    force_title(ax_velocity, "Velocity vs Time", fontsize)
+    ax_velocity.set_ylabel("Speed (km/s)", fontsize=fontsize)
+    force_title(ax_velocity, "GCRF speed", fontsize)
     ax_velocity.tick_params(axis="both", labelsize=fontsize)
     ax_velocity.grid(True)
 

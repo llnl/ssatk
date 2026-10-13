@@ -165,7 +165,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_epoch_comparison_tolerance.py,2,R6 C,IEEE floating-point ULP and absolute GPS epoch differences,Numerical time contract
    tests/test_faceted_magnitude.py,6,R1 R4,Lambert surface cosine/area factors; magnitude flux ratio; occultation,Ideal diffuse surfaces
    tests/test_frame_and_state_references.py,11,R1 R2 R4 C,J2000 obliquity; specified axes; Astropy Sun/velocity; Kepler quantities,Mixed geometry and viewer contracts; polar-motion linearization bounded explicitly
-   tests/test_gamma_and_heading.py,3,R1,Constructed east/north/up headings and climb angles,Finite-difference circular-orbit approximation tolerance
+   tests/test_gamma_and_heading.py,8,R1/R2/C,Exact local directions singularities quadratic time derivatives and Astropy state differentials,1e-10 deg directions; 5e-9 m/s quadratic; 5e-4 deg frame comparison
    tests/test_horizon_frames.py,3,R1 R2,Cardinal hour-angle geometry; Astropy AltAz,0.5 degree approximate horizon-model budget
    tests/test_iers_global_state.py,1,R2 C,Astropy IERS UT1 before/after plotting,Global-state preservation; not independent IERS calibration
    tests/test_igrf_wrapper.py,1,R2,ppigrf geocentric magnetic synthesis,Same IGRF model; wrapper/frame validation
@@ -362,3 +362,14 @@ The latter checks model selection and coordinate handling, not flight truth.
 ``scripts/tests/test_coverage_analysis_contracts.py`` separately checks
 no-output mode and Sun/satellite/site geometry wiring. The reproducible
 full-grid and event-convergence audit is described in :doc:`coverage_validation`.
+
+Gamma and heading follow-up
+---------------------------
+
+The gamma/heading module adds eight core cases: radial/stationary and polar
+singularities, an analytic quadratic sampled at unequal intervals, invalid
+epoch ordering, and an Astropy spherical-differential state comparison.
+Two workflow cases separately check plotted speeds against straight/circular
+motion and direction symbols against cardinal/radial geometry. The demo's
+full-period comparison and explicit frame conventions are documented in
+:doc:`gamma_heading_validation`.
