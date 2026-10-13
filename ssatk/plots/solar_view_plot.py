@@ -18,6 +18,8 @@ Output
 
 from __future__ import annotations
 
+from .rendering import _with_low_spec
+
 import json
 import math
 import os
@@ -167,6 +169,7 @@ def _scene_time(cfg: dict):
 
 # ── Figure builder ────────────────────────────────────────────────────────────
 
+@_with_low_spec
 def build_figure(cfg: dict) -> go.Figure:
     # Resolve epoch; every body and trail uses geometric heliocentric
     # positions in the same mean J2000 ecliptic axes.

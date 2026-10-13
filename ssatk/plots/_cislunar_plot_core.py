@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ._body_surfaces import BodySurface as _BodySurface, body_rotation as _body_rotation, body_disc as _body_disc
+
 from ssapy import get_body as _get_body
 import matplotlib.cm as _cm
 import matplotlib.font_manager as _font_manager
@@ -82,6 +84,22 @@ def _cislunar_plot_core(
             _plot_cislunar_lunar_xy(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, lunar_unit, lunar_label, scatter_dot_colors, textcolor, fontsize)
         else:
             _plot_cislunar_lunar_3d(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, lunar_unit, lunar_label, scatter_dot_colors, textcolor, fontsize)
+
+    epoch = t[0][0]
+    for panel, ax in axes.items():
+        unit = lunar_unit if panel == "lunar" else gcrf_unit
+        frame = "lunar" if panel == "lunar" else "gcrf"
+        centers = {"moon": _np.zeros(3) if panel == "lunar" else moon_tracks[0][0]/unit,
+                   "earth": earth_tracks[0][0]/unit if panel == "lunar" else _np.zeros(3)}
+        bounds = bounds_lunar if panel == "lunar" else bounds_gcrf
+        for body, radius in [("earth", _EARTH_RADIUS/unit), ("moon", _MOON_RADIUS/unit)]:
+            center = centers[body]
+            if _bounds_mask(center.reshape(1, 3), bounds, dimensions)[0]:
+                rotation = _body_rotation(body, epoch, frame)
+                if mode == "xy":
+                    _body_disc(ax, body, radius, center, rotation)
+                else:
+                    _BodySurface(ax, body, radius, center, rotation)
 
     _finish_cislunar_axes(axes, bounds_gcrf, bounds_lunar, mode, title, textcolor, plotcolor, fontsize)
     lagrange_visible = any(_bounds_mask(_np.asarray(pos/lunar_unit).reshape(1, 3), bounds_lunar, dimensions)[0]
@@ -171,18 +189,8 @@ def _scatter_colors(r, xyz, orbit_index):
     return _cm.rainbow(_np.linspace(0, 1, len(r)))[orbit_index]
 
 
-def _sphere_mesh(radius):
-    u = _np.linspace(0, 2 * _np.pi, 180)
-    v = _np.linspace(-_np.pi / 2, _np.pi / 2, 180)
-    mesh_x = _np.outer(_np.cos(u), _np.cos(v)).T * radius
-    mesh_y = _np.outer(_np.sin(u), _np.cos(v)).T * radius
-    mesh_z = _np.outer(_np.ones(_np.size(u)), _np.sin(v)).T * radius
-    return mesh_x, mesh_y, mesh_z
-
-
 def _plot_cislunar_gcrf_3d(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
     ax.scatter3D(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=scatter_dot_colors, s=1, label="Orbit Path")
-    ax.plot_surface(*_sphere_mesh(_EARTH_RADIUS / unit_conversion), color="blue", alpha=0.6, edgecolor="none")
     ax.scatter3D(r_moon[mask_gcrf, 0], r_moon[mask_gcrf, 1], r_moon[mask_gcrf, 2], color=grey_colors, s=(_MOON_RADIUS / unit_conversion))
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=True)
 
@@ -192,7 +200,6 @@ def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_color
     colors = scatter_dot_colors[visible] if _np.ndim(scatter_dot_colors) == 2 else scatter_dot_colors
     ax.computed_zorder = False
     ax.scatter3D(*xyz_lunar[visible].T, color=colors, s=1, label="Orbit Path", zorder=15)
-    ax.plot_surface(*_sphere_mesh(_MOON_RADIUS / unit_conversion), color="lightgrey", alpha=1., edgecolor="none", zorder=10)
     ax.scatter3D(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], r_earth_lunar[mask_lunar, 2], color=blue_colors, s=55)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=True)
     for point, pos in _lagrange_points_lunar_fixed_frame().items():
@@ -203,17 +210,13 @@ def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_color
 
 
 def _plot_cislunar_gcrf_xy(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    earth_circle = _plt.Circle((0, 0), _EARTH_RADIUS / unit_conversion, color="lightblue", alpha=0.8, linestyle="dashed", fill=True)
     ax.scatter(xyz[:, 0], xyz[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path")
-    ax.add_patch(earth_circle)
     ax.scatter(r_moon[mask_gcrf, 0], r_moon[mask_gcrf, 1], color=grey_colors, s=(_MOON_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
 
 
 def _plot_cislunar_lunar_xy(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
-    moon_circle = _plt.Circle((0, 0), _MOON_RADIUS / unit_conversion, color="lightgrey", alpha=0.8, linestyle="dashed", fill=True)
     ax.scatter(xyz_lunar[:, 0], xyz_lunar[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path")
-    ax.add_patch(moon_circle)
     ax.scatter(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], color=blue_colors, s=(_EARTH_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
     for point, pos in _lagrange_points_lunar_fixed_frame().items():

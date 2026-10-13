@@ -23,8 +23,9 @@ def test_photosphere_mesh_vertices_have_ssapy_physical_radius(name,radius_km):
     else:
         trace = make_moon_traces((0,0,0),2451545.,n=16)[0]
     points = np.stack([trace.x,trace.y,trace.z],axis=-1)
-    # The sphere poles are symmetric around the center even for an even UV grid.
-    center = (points[0,0] + points[-1,0]) / 2
+    # Antipodal samples bound the center for both Surface grids and Mesh3d vertices.
+    vertices = points.reshape(-1, 3)
+    center = (vertices.min(axis=0) + vertices.max(axis=0)) / 2 if name == "Moon" else np.zeros(3)
     radii = np.linalg.norm(points-center,axis=-1) * 149597870.7
     np.testing.assert_allclose(radii,radius_km,rtol=0,atol=2e-8)
 

@@ -1,3 +1,5 @@
+
+from .rendering import _with_low_spec
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
@@ -26,6 +28,7 @@ def _earth_occultation_mask(r_scaled, earth_radius_scaled, el_deg, az_deg):
     return visible_points(r_scaled, earth_radius_scaled, el_deg, az_deg)
 
 
+@_with_low_spec
 def globe_plot(
     r,
     t=None,

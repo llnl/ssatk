@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ._body_surfaces import BodySurface, body_rotation, body_disc
+
+from .rendering import _with_low_spec
+
 from pathlib import Path
 
 import matplotlib.cm as _cm
@@ -25,6 +29,7 @@ from .plotutils import _figure_save_path, _raise_unrecognized_kwargs, valid_orbi
 _ANIMATED_VIEWS = _COORDINATE_VIEWS + ("groundtrack", "globe")
 
 
+@_with_low_spec
 def orbit_animation(
     r,
     t=None,
@@ -131,12 +136,43 @@ def orbit_animation(
                               earth_resolution, cull_backfaces=True)
         clock = ax.text2D(0.02, 0.96, "", transform=ax.transAxes, color=textcolor, fontsize=10)
 
+    body_artists = {}
+    first = prepared["tracks"][0]
+    from ..constants import MOON_RADIUS
+    for view in views:
+        if view in {"groundtrack", "globe"}:
+            continue
+        for body, radius in [("earth", _EARTH_RADIUS), ("moon", MOON_RADIUS)]:
+            center = first["r_"+body][0]
+            rotation = body_rotation(body, first["times"][0], prepared["frame_key"])
+            if view == "3d":
+                surface = BodySurface(axes[view], body, radius/prepared["unit_conversion"], center, rotation, n=45)
+                body_artists[(view, body)] = surface
+            else:
+                body_artists[(view, body)] = ([], radius/prepared["unit_conversion"])
+
     colors = _cm.rainbow(_np.linspace(0, 1, max(1, len(prepared["tracks"]))))
     artists = _init_animation_artists(axes, views, prepared["tracks"], colors)
     frame_count = len(frame_indices[0])
 
     def update(frame_index):
         frame_artists = []
+        body_index = frame_indices[0][frame_index]
+        for (view, body), surface in body_artists.items():
+            center = first["r_"+body][body_index]
+            rotation = body_rotation(body, first["times"][body_index], prepared["frame_key"])
+            if view == "3d":
+                frame_artists.append(surface.update(center, rotation))
+            else:
+                previous, radius = surface
+                for artist in previous:
+                    artist.remove()
+                ax = axes[view]
+                image_count = len(ax.images)
+                disc = body_disc(ax, body, radius, center, rotation, view=view)
+                current = [disc] + list(ax.images)[image_count:]
+                body_artists[(view, body)] = (current, radius)
+                frame_artists.extend(current)
         if earth is not None:
             epoch = t_list[0][frame_indices[0][frame_index]]
             earth_rotation = earth_to_scene(epoch.gps, prepared["frame_key"])
@@ -276,7 +312,7 @@ def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad):
         lower_bound, upper_bound = _find_smallest_bounding_cube(xyz, pad=pad)
         bounds["lower"] = _np.minimum(bounds["lower"], lower_bound)
         bounds["upper"] = _np.maximum(bounds["upper"], upper_bound)
-        tracks.append({"xyz": xyz, "r_moon": r_moon, "r_earth": r_earth, "groundtrack": groundtrack})
+        tracks.append({"xyz": xyz, "r_moon": r_moon, "r_earth": r_earth, "groundtrack": groundtrack, "times": t_current})
 
     stn = _plot_settings(frame_key, tracks[0]["r_moon"], tracks[0]["r_earth"], unit_conversion)
     return {
@@ -308,7 +344,6 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
 
         if view in {"3d", "globe"}:
             if view != "globe":
-                _draw_3d_body_background(ax, stn)
                 ax.scatter3D(secondary[:, 0], secondary[:, 1], secondary[:, 2], color=stn["secondary_color"], s=2, alpha=0.35)
             ax.set_xlabel(f"x [{unit_label}]", color=textcolor)
             ax.set_ylabel(f"y [{unit_label}]", color=textcolor)
@@ -322,21 +357,11 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
             continue
 
         x_idx, y_idx, x_name, y_name = _VIEW_AXES[view]
-        ax.add_patch(_plt.Circle(xy=(0, 0), radius=stn["primary_size"], color=stn["primary_color"], alpha=0.3))
         ax.scatter(secondary[:, x_idx], secondary[:, y_idx], color=stn["secondary_color"], s=2, alpha=0.35)
         ax.set_xlabel(f"{x_name} [{unit_label}]", color=textcolor)
         ax.set_ylabel(f"{y_name} [{unit_label}]", color=textcolor)
         ax.set_aspect("equal")
         ax.set_title(_view_title(view, title, prepared["frame_title"], frame_key), color=textcolor)
-
-
-def _draw_3d_body_background(ax, stn):
-    u = _np.linspace(0, 2 * _np.pi, 36)
-    v = _np.linspace(-_np.pi / 2, _np.pi / 2, 18)
-    mesh_x = _np.outer(_np.cos(u), _np.cos(v)).T * stn["primary_size"]
-    mesh_y = _np.outer(_np.sin(u), _np.cos(v)).T * stn["primary_size"]
-    mesh_z = _np.outer(_np.ones(_np.size(u)), _np.sin(v)).T * stn["primary_size"]
-    ax.plot_surface(mesh_x, mesh_y, mesh_z, color=stn["primary_color"], alpha=0.3, edgecolor="none")
 
 
 def _view_title(view, title, frame_title, frame_key):

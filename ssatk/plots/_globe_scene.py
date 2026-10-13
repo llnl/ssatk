@@ -5,6 +5,9 @@ All rotations act on column vectors.
 """
 from __future__ import annotations
 
+from .rendering import is_low_spec
+from ._body_surfaces import BODY_COLORS
+
 import numpy as np
 from PIL import Image
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -22,12 +25,17 @@ def earth_surface(resolution=180):
     """
     if int(resolution) != resolution or not 12 <= resolution <= 1440:
         raise ValueError("earth_resolution must be an integer between 12 and 1440")
+    if is_low_spec():
+        resolution = min(resolution, 36)
     width, height = int(resolution), int(resolution) // 2
-    path = viewer_earth_day_path()
-    if not path.is_file():
-        path = earth_texture_path()
-    with Image.open(path) as image:
-        colors = np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BOX)) / 255.0
+    if is_low_spec():
+        colors = np.broadcast_to(BODY_COLORS["earth"], (height, width, 3))
+    else:
+        path = viewer_earth_day_path()
+        if not path.is_file():
+            path = earth_texture_path()
+        with Image.open(path) as image:
+            colors = np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BOX)) / 255.0
     lon, lat = np.meshgrid(np.linspace(-np.pi, np.pi, width + 1),
                           np.linspace(np.pi / 2, -np.pi / 2, height + 1))
     vertices = np.stack((np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon),

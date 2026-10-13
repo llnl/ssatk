@@ -62,6 +62,10 @@ is 0 deg selenographic longitude, matching the texture. Pass
 
 from __future__ import annotations
 
+from ssatk.plots.rendering import is_low_spec
+
+from ssatk.plots.rendering import _with_low_spec
+
 import base64
 import http.server
 import json
@@ -385,6 +389,7 @@ _HTML = """<!DOCTYPE html>
 {three_script}
 {orbit_script}
 <script>
+const LOW_SPEC = {low_spec};
 const META   = {meta};
 const ORBITS = {orbit};
 const STARS  = {stars};
@@ -437,6 +442,7 @@ const maxAniso = renderer.capabilities.getMaxAnisotropy();
 // removes the limb speckle. Horizon textures are exempt -- they store a
 // max over a bearing, and mip-averaging a maximum is not a maximum.
 function tex(name, aniso) {
+  if (LOW_SPEC) return null;
   const t = loader.load(ASSET_URLS[name]);
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.ClampToEdgeWrapping;
@@ -467,7 +473,7 @@ const uniforms = {
 // the texture bake uses. Its own UVs are used rather than deriving
 // them from position, because a derived longitude wraps discontinuously and
 // the mip selection then shows a seam.
-const geom = new THREE.SphereGeometry(R, 256, 128);
+const geom = new THREE.SphereGeometry(R, LOW_SPEC ? 36 : 256, LOW_SPEC ? 18 : 128);
 geom.rotateX(Math.PI/2);
 const moon = new THREE.Mesh(geom, new THREE.ShaderMaterial({
   uniforms: uniforms, vertexShader: VERT, fragmentShader: FRAG
@@ -1127,6 +1133,9 @@ updateOrbitAnimation(lastAnimationTime, false);
 
 THREE.DefaultLoadingManager.onLoad = () =>
   document.getElementById('load').style.display = 'none';
+if (LOW_SPEC) {
+  document.getElementById('load').style.display = 'none';
+}
 
 addEventListener('resize', () => {
   const previousFitDistance = fitDistance(framedRadius);
@@ -1368,6 +1377,8 @@ def _viewer_page_assets(directory, runtime_urls, embed_assets):
         "moon_horizon_2.png",
         "moon_horizon_3.png",
     )
+    if is_low_spec():
+        texture_names = ()
     if not embed_assets:
         return (
             f'<script src="{runtime_urls["three.min.js"]}"></script>',
@@ -1418,6 +1429,7 @@ def _starfield_payload(epoch=None):
     return moon_fixed_webgl_stars(epoch=epoch)
 
 
+@_with_low_spec
 def moon_webgl(r=None, t=None, r_frame="gcrf",
                title="Moon — lunar-fixed frame", subtitle=None,
                sun_azimuth_deg=35.0, sun_elevation_deg=8.0,
@@ -1475,12 +1487,18 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
     animation_seconds = float(animation_seconds)
     if not np.isfinite(animation_seconds) or animation_seconds <= 0.0:
         raise ValueError("animation_seconds must be a positive finite number")
-    d, meta = find_moon_cache(cache)
+    if is_low_spec():
+        d = os.fspath(cache) if cache is not None else cache_dir()
+        meta = dict(n_az=0, angle_lo_deg=0, angle_hi_deg=90)
+    else:
+        d, meta = find_moon_cache(cache)
     tracks = _resolve_orbit_positions(
         r, t, r_frame, orbit, propagator, n_steps, n_orbits, orbit_json)
 
     if subtitle is None:
-        if tracks:
+        if is_low_spec():
+            subtitle = "Low-spec white Moon · physical sphere · surface textures disabled"
+        elif tracks:
             radii = np.concatenate([
                 np.linalg.norm(np.asarray(track["xyz"]).reshape(-1, 3), axis=1)
                 for track in tracks
@@ -1510,6 +1528,11 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
     if star_epoch is not None:
         star_epoch = _time_as_gps(star_epoch).reshape(-1)[0]
     stars = _starfield_payload(star_epoch)
+    fragment = """precision highp float;
+        uniform vec3 uSunDir; uniform float uExposure; varying vec3 vPos;
+        void main() { float mu = max(0., dot(normalize(vPos), normalize(uSunDir)));
+            gl_FragColor = vec4(vec3(min(1., (.18+.82*mu)*uExposure)), 1.); }
+        """ if is_low_spec() else _FRAG
     doc = _HTML
     for key, val in (("{title}", title),
                      ("{three_script}", three_script),
@@ -1521,7 +1544,8 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
                      ("{asset_urls}", json.dumps(asset_urls)),
                      ("{radius}", repr(R_MOON_KM)),
                      ("{vert}", json.dumps(_VERT)),
-                     ("{frag}", json.dumps(_FRAG)),
+                     ("{frag}", json.dumps(fragment)),
+                     ("{low_spec}", json.dumps(is_low_spec())),
                      ("{sun_az}", repr(float(sun_azimuth_deg))),
                      ("{sun_el}", repr(float(sun_elevation_deg))),
                      ("{exposure}", repr(float(exposure))),
@@ -1576,6 +1600,7 @@ def _handler(html_path, cache_path):
     return H
 
 
+@_with_low_spec
 def show(html_path=None, cache=None, port=0, open_browser=True):
     """
     Serve the page and its textures on loopback, and open a browser.
@@ -1584,7 +1609,10 @@ def show(html_path=None, cache=None, port=0, open_browser=True):
     cross-origin -- so the page needs an HTTP origin even locally.
     Blocks until interrupted.
     """
-    d, _ = find_moon_cache(cache)
+    if is_low_spec():
+        d = os.fspath(cache) if cache is not None else cache_dir()
+    else:
+        d, _ = find_moon_cache(cache)
     html_path = html_path or os.path.join(d, "moon_webgl.html")
     if not os.path.exists(html_path):
         html_path = moon_webgl(cache=cache)

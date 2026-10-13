@@ -41,6 +41,9 @@ comment above _EARTH_DAYNIGHT_COLORSCALE for details.)
 
 from __future__ import annotations
 
+from .rendering import is_low_spec, low_spec_mode
+from ._body_surfaces import body_mesh_plotly, body_rotation
+
 import os
 
 import numpy as np
@@ -500,7 +503,9 @@ class EarthShadingLayer:
         nv: int = 70,
         time=None,
         rotation_deg=None,
+        low_spec=None,
     ):
+        self.low_spec = is_low_spec(low_spec)
         self.sun_hat = np.asarray(sun_pos_eci, dtype=float)
         if np.linalg.norm(self.sun_hat) > 0:
             self.sun_hat = self.sun_hat / np.linalg.norm(self.sun_hat)
@@ -512,9 +517,15 @@ class EarthShadingLayer:
                              if rotation_deg is None else float(rotation_deg))
 
     def build_traces(self) -> list:
+        with low_spec_mode(self.low_spec):
+            return self._build_traces()
+
+    def _build_traces(self) -> list:
         """Return a single, fully-opaque trace for the Earth: a real
         texture-mapped go.Mesh3d if earth.png is found, or a plain
         color-gradient go.Surface as a fallback."""
+        if is_low_spec():
+            return [body_mesh_plotly("earth", self.center, self.radius, n=18, sun_hat=self.sun_hat)]
         texture_path = _find_texture("earth")
 
         if texture_path is not None:
@@ -592,7 +603,9 @@ class MoonShadingLayer:
         radius_km: float = R_MOON_KM,
         nu: int = 100,
         nv: int = 50,
+        time=None, low_spec=None,
     ):
+        self.time, self.low_spec = time, is_low_spec(low_spec)
         self.moon_center = np.asarray(moon_center, dtype=float)
         sun_from_moon = np.asarray(sun_pos_eci, dtype=float) - self.moon_center
         norm = np.linalg.norm(sun_from_moon)
@@ -602,52 +615,9 @@ class MoonShadingLayer:
         self.nv = nv
 
     def build_traces(self) -> list:
-        """Return a single, fully-opaque trace for the Moon: a real
-        texture-mapped go.Mesh3d if moon.png is found, or a plain
-        color-gradient go.Surface as a fallback."""
-        texture_path = _find_texture("moon")
-
-        if texture_path is not None:
-            x, y, z, phi, theta, i, j, k = _uv_sphere_with_faces(self.nu, self.nv)
-            rgb = _sample_texture_rgb(texture_path, phi, theta)
-            if rgb is not None:
-                lit = _lit_multiplier(x, y, z, self.sun_hat)
-                shaded_rgb = (rgb * lit[:, None]).reshape(self.nv, self.nu, 3)
-                shaded_rgb = stabilize_sphere_poles(shaded_rgb).reshape(-1, 3)
-                return [go.Mesh3d(
-                    x=self.moon_center[0] + self.radius * x,
-                    y=self.moon_center[1] + self.radius * y,
-                    z=self.moon_center[2] + self.radius * z,
-                    i=i, j=j, k=k,
-                    vertexcolor=_rgb_strings(shaded_rgb),
-                    opacity=1.0,
-                    name="Moon",
-                    legendgroup="Moon",
-                    showlegend=True,
-                    hoverinfo="skip",
-                    lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0,
-                                  roughness=1.0, fresnel=0.0),
-                )]
-
-        # Fallback: no real texture available -- plain color gradient.
-        x, y, z = _unit_sphere_mesh(self.nu, self.nv)
-        shadow = _shadow_surface_color(x, y, z, self.sun_hat, 1.0)
-        return [go.Surface(
-            x=self.moon_center[0] + self.radius * x,
-            y=self.moon_center[1] + self.radius * y,
-            z=self.moon_center[2] + self.radius * z,
-            surfacecolor=shadow,
-            colorscale=_MOON_DAYNIGHT_COLORSCALE,
-            cmin=0.0, cmax=1.0,
-            showscale=False,
-            opacity=1.0,
-            name="Moon",
-            legendgroup="Moon",
-            showlegend=True,
-            hoverinfo="skip",
-            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0,
-                          roughness=1.0, fresnel=0.0),
-        )]
+        with low_spec_mode(self.low_spec):
+            return [body_mesh_plotly("moon", self.moon_center, self.radius,
+                    body_rotation("moon", self.time), n=self.nv, sun_hat=self.sun_hat)]
 
 
 # ---------------------------------------------------------------------------

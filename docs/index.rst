@@ -33,6 +33,7 @@ body and component model.
    spacecraft_view
    gallery_hosting
    gallery_scene_fidelity
+   rendering_modes
    star_finder
    coverage_validation
    gamma_heading_validation

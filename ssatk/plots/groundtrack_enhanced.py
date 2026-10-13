@@ -46,6 +46,8 @@ Interface
 """
 from __future__ import annotations
 
+from .rendering import is_low_spec
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
@@ -217,6 +219,8 @@ def _load_earth_texture():
     (lon -180..180, lat +90..-90 top-to-bottom), or None if unavailable.
     """
     global _earth_texture_cache
+    if is_low_spec():
+        return np.array([[[26, 79, 138]]], dtype=np.uint8)
     if _earth_texture_cache is not None:
         return _earth_texture_cache
     try:

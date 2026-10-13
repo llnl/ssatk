@@ -7,6 +7,9 @@ See ``docs/spacecraft_view.rst`` for camera, interpolation, and rendering limits
 
 from __future__ import annotations
 
+from .rendering import is_low_spec
+from ._body_surfaces import BODY_COLORS
+
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -310,7 +313,7 @@ class SpacecraftView:
     def __init__(self, r, t, q, *, mesh=None, body=None, units="m", frame="gcrf",
                  environment="auto", sun_position=None, moon_position=None,
                  camera_offset=None, camera_up=(0, 0, 1), fov_deg=50.0,
-                 stars=True, textures=True, title="Spacecraft attitude"):
+                 stars=True, textures=True, title="Spacecraft attitude", low_spec=None):
         self.time = t if isinstance(t, Time) else Time(t, format="gps")
         self.gps = np.atleast_1d(self.time.gps).astype(float)
         if (self.gps.ndim != 1 or len(self.gps) == 0
@@ -362,7 +365,8 @@ class SpacecraftView:
         self.fov_deg = float(fov_deg)
         if not np.isfinite(self.fov_deg) or not 5 <= self.fov_deg <= 120:
             raise ValueError("fov_deg must be between 5 and 120 degrees")
-        self.stars, self.textures, self.title = bool(stars), bool(textures), str(title)
+        self.low_spec = is_low_spec(low_spec)
+        self.stars, self.textures, self.title = bool(stars), bool(textures) and not self.low_spec, str(title)
         self._star_data = None
         if self.stars:
             from .starfield import star_directions
@@ -439,7 +443,7 @@ class SpacecraftView:
             # Surface-to-Sun geometry; shading is illustrative Lambertian light.
             sunlight = _unit(self.sun[index] - center - radius * normal)
             light = np.maximum(np.sum(normal * sunlight, axis=1), 0)
-            color = np.tile((0.16, 0.38, 0.65) if name == "earth" else (0.56, 0.55, 0.52), (mask.sum(), 1))
+            color = np.tile(BODY_COLORS[name], (mask.sum(), 1))
             texture = _texture(name) if self.textures else None
             if texture is not None:
                 if name == "earth":
@@ -577,7 +581,7 @@ class SpacecraftView:
                           moon_position=interpolate(self.moon) if self._supplied_moon else None,
                           camera_offset=interpolate(self.camera_offset) if self.camera_offset is not None else None,
                           camera_up=self.camera_up, fov_deg=self.fov_deg,
-                          stars=self.stars, textures=self.textures, title=self.title)
+                          stars=self.stars, textures=self.textures, title=self.title, low_spec=self.low_spec)
 
     def save(self, path, *, index=0, fps=15, duration_s=8.0, **render_kwargs):
         """Export PNG/JPG or a GIF/MP4 spanning the entire supplied time interval.

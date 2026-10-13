@@ -17,6 +17,8 @@ def fixed_frame(monkeypatch):
     the real coordinate transform therefore gives an exact identity basis.
     """
     class Moon:
+        def orientation(self, t):
+            return np.eye(3)  # Explicit synthetic body axes; framing oracle is unchanged.
         def position(self, t):
             gps = np.atleast_1d(t.gps if hasattr(t, 'gps') else t)
             return np.array([np.full_like(gps, 384400000.), 1000.*(gps-1.4e9), np.zeros_like(gps)])

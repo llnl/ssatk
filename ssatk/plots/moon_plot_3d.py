@@ -1,4 +1,9 @@
 """Dated, textured lunar scenes in Moon-centred inertial or rotating axes."""
+
+from .rendering import is_low_spec
+from ._body_surfaces import BODY_COLORS, texture_path
+
+from .rendering import _with_low_spec
 import os
 
 import numpy as np
@@ -11,7 +16,6 @@ from ssapy import get_body
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
 from .plotutils import valid_orbits, figsave
-from ._textures import earth_texture_path
 from ._globe_scene import earth_to_scene
 from .sun_mpl import get_sun_position
 from .sun_render import render_sun, background_sun_radius
@@ -43,13 +47,7 @@ def _split_orbit_segments_for_bodies(xyz, bodies, elev_deg, azim_deg):
 
 def _ssapy_texture(name):
     """Resolve installed textures without downloading anything."""
-    if name == "earth":
-        try:
-            return earth_texture_path()
-        except FileNotFoundError:
-            return None
-    from .starfield import find_data_file
-    return find_data_file("moon.png")
+    return texture_path(name)
 
 
 def _textured_body(ax, center, radius, path, rotation, sun_hat, *,
@@ -60,6 +58,8 @@ def _textured_body(ax, center, radius, path, rotation, sun_hat, *,
     mean-Earth map-frame offset is sub-kilometre). Colours are illustrative
     ambient + Lambert shading, not calibrated photometry.
     """
+    if is_low_spec():
+        n, path = min(n, 18), None
     width, height = n * 2, n
     if path is None:
         rgb = np.full((height, width, 3), color)
@@ -114,6 +114,7 @@ def _scene_stars(ax, rotation, epoch, elev, azim, mag_limit):
     ax.patch.set_alpha(0)
 
 
+@_with_low_spec
 def moon_plot_3d(r=None, t=None, title='', figsize=(10, 10),
                  save_path=False, show=False, elev=30, azim=45,
                  show_lagrange=True, show_stars=True, show_sun=True,
@@ -241,10 +242,10 @@ def moon_plot_3d(r=None, t=None, title='', figsize=(10, 10),
             if len(segments):
                 ax.add_collection3d(Line3DCollection(segments, colors=[color], linewidth=1.5, zorder=order))
     _textured_body(ax, np.zeros(3), moon_display, _ssapy_texture('moon'), moon_rotation,
-                   sun_hat, ambient=shade_ambient, diffuse=shade_diffuse)
+                   sun_hat, ambient=shade_ambient, diffuse=shade_diffuse, color=BODY_COLORS["moon"])
     if draw_earth:
         earth_artist = _textured_body(ax, earth_pos, earth_display, _ssapy_texture('earth'), earth_rotation,
-                                      earth_sun_hat, n=90, ambient=shade_ambient, diffuse=shade_diffuse)
+                                      earth_sun_hat, n=90, ambient=shade_ambient, diffuse=shade_diffuse, color=BODY_COLORS["earth"])
         el, az = np.radians([elev, azim])
         camera = np.array([np.cos(el)*np.cos(az), np.cos(el)*np.sin(az), np.sin(el)])
         earth_artist.set_zorder(11 if earth_pos @ camera > 0 else 9)

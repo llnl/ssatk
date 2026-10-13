@@ -1,3 +1,5 @@
+
+from .rendering import is_low_spec, _with_low_spec
 # --- Standard library ---
 import io
 import os
@@ -570,6 +572,8 @@ def valid_orbits(r, t, drop_empty=True, warn=True):
 
 
 def load_earth_file():
+    if is_low_spec():
+        return PILImage.new("RGB", (2, 1), "#1a4f8a")
     earth = PILImage.open(earth_texture_path())
     earth = earth.resize((5400 // 5, 2700 // 5))
     return earth
@@ -586,6 +590,7 @@ def _require_ipyvolume():
     return ipyvolume
 
 
+@_with_low_spec
 def drawEarth(time, ngrid=100, R=EARTH_RADIUS, rfactor=1):
     """
     Parameters
@@ -602,7 +607,8 @@ def drawEarth(time, ngrid=100, R=EARTH_RADIUS, rfactor=1):
     """
     ipv = _require_ipyvolume()
 
-    earth = load_earth_file()
+    earth = None if is_low_spec() else load_earth_file()
+    ngrid = min(ngrid, 36) if is_low_spec() else ngrid
 
     lat = np.linspace(-np.pi / 2, np.pi / 2, ngrid)
     lon = np.linspace(-np.pi, np.pi, ngrid)
@@ -613,35 +619,34 @@ def drawEarth(time, ngrid=100, R=EARTH_RADIUS, rfactor=1):
     u = np.linspace(0, 1, ngrid)
     v, u = np.meshgrid(u, u)
 
-    # Earth rotation angle for t, from UT1 as in SSAPy's groundTrack
     if isinstance(time, Time):
         time = time.gps
-    if isinstance(time, Real):
-        time = np.array([time])
-
-    from .scene_primitives import _greenwich_azimuth_rad
-    gst = np.atleast_1d(_greenwich_azimuth_rad(time))
-
-    u = u - (gst / (2 * np.pi))[:, None, None]
-    v = np.broadcast_to(v, u.shape)
-
+    from ._body_surfaces import body_rotation
+    rotations = np.stack([body_rotation("earth", epoch) for epoch in np.atleast_1d(time)])
+    fixed = np.stack((x, y, z), axis=-1)
+    vertices = np.einsum("tij,abj->tabi", rotations, fixed) * R * rfactor
     return ipv.plot_mesh(
-        x * R * rfactor, y * R * rfactor, z * R * rfactor,
-        u=u, v=v, wireframe=False, texture=earth
+        vertices[..., 0], vertices[..., 1], vertices[..., 2],
+        u=u, v=v, wireframe=False, texture=earth,
+        color="blue" if is_low_spec() else "white"
     )
 
 
+@_with_low_spec
 def draw_earth(time, ngrid=100, R=EARTH_RADIUS, rfactor=1):
     """Draw the textured Earth mesh; snake-case alias for :func:`drawEarth`."""
     return drawEarth(time, ngrid=ngrid, R=R, rfactor=rfactor)
 
 
 def load_moon_file():
+    if is_low_spec():
+        return PILImage.new("RGB", (2, 1), "white")
     moon = PILImage.open(find_file("moon", ext=".png"))
     moon = moon.resize((5400 // 5, 2700 // 5))
     return moon
 
 
+@_with_low_spec
 def drawMoon(time, ngrid=100, R=MOON_RADIUS, rfactor=1):
     """
     Parameters
@@ -658,7 +663,8 @@ def drawMoon(time, ngrid=100, R=MOON_RADIUS, rfactor=1):
     """
     ipv = _require_ipyvolume()
 
-    moon = load_moon_file()
+    moon = None if is_low_spec() else load_moon_file()
+    ngrid = min(ngrid, 36) if is_low_spec() else ngrid
 
     lat = np.linspace(-np.pi / 2, np.pi / 2, ngrid)
     lon = np.linspace(-np.pi, np.pi, ngrid)
@@ -671,19 +677,14 @@ def drawMoon(time, ngrid=100, R=MOON_RADIUS, rfactor=1):
 
     if isinstance(time, Time):
         time = time.gps
-    if isinstance(time, Real):
-        time = np.array([time])
-
-    # Rotate the texture by the Moon's own prime-meridian angle (DE440 lunar
-    # principal axes), not Earth's sidereal angle as before.
-    angle = _moon_texture_rotation_rad(time)
-
-    u = u - (angle / (2 * np.pi))[:, None, None]
-    v = np.broadcast_to(v, u.shape)
-
+    from ._body_surfaces import body_rotation
+    rotations = np.stack([body_rotation("moon", epoch) for epoch in np.atleast_1d(time)])
+    fixed = np.stack((x, y, z), axis=-1)
+    vertices = np.einsum("tij,abj->tabi", rotations, fixed) * R * rfactor
     return ipv.plot_mesh(
-        x * R * rfactor, y * R * rfactor, z * R * rfactor,
-        u=u, v=v, wireframe=False, texture=moon
+        vertices[..., 0], vertices[..., 1], vertices[..., 2],
+        u=u, v=v, wireframe=False, texture=moon,
+        color="white" if is_low_spec() else "white"
     )
 
 
@@ -691,9 +692,8 @@ def _moon_texture_rotation_rad(time):
     """Azimuth (rad) in the GCRF x-y plane of the Moon's body +X axis
     (0 deg selenographic longitude) at GPS seconds ``time``.
 
-    The texture spins about the GCRF z axis only, so the ~6.7 deg tilt of the
-    lunar equator is not drawn; the prime meridian, which faces Earth within
-    the optical libration (about 8 deg), is placed correctly.
+    This diagnostic returns only an azimuth. The notebook mesh applies the
+    full body rotation, including the lunar equator tilt.
     """
     from ..coordinates.lunar import lunar_body_rotation
 
@@ -702,6 +702,7 @@ def _moon_texture_rotation_rad(time):
     return np.arctan2(x_axis[:, 1], x_axis[:, 0])
 
 
+@_with_low_spec
 def draw_moon(time, ngrid=100, R=MOON_RADIUS, rfactor=1):
     """Draw the textured Moon mesh; snake-case alias for :func:`drawMoon`."""
     return drawMoon(time, ngrid=ngrid, R=R, rfactor=rfactor)

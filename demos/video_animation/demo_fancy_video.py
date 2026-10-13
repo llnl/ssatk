@@ -14,7 +14,8 @@ from ssapy.propagator import default_numerical
 from astropy.time import Time
 
 from ssatk.coordinates.lunar import get_lunar_rv
-from ssatk.constants import EARTH_RADIUS
+from ssatk.constants import EARTH_RADIUS, MOON_RADIUS
+from ssatk.plots._body_surfaces import BodySurface, body_rotation
 from ssatk.plots.figpath import figpath
 from ssatk.plots.orbit_animation import _animation_writer
 
@@ -77,16 +78,6 @@ def _movie_times(t0_gps, duration_days, playback_seconds, fps):
         raise ValueError("Durations and frame rate must be positive")
     count = max(2, int(round(playback_seconds * fps)))
     return t0_gps + np.linspace(0.0, duration_days * 86400.0, count)
-
-
-def _draw_sphere(ax, center, radius, color, alpha=1.0, resolution=30):
-    """Draw a filled sphere at `center` with given radius and color."""
-    u = np.linspace(0, 2 * np.pi, resolution)
-    v = np.linspace(0, np.pi, resolution)
-    x = center[0] + radius * np.outer(np.cos(u), np.sin(v))
-    y = center[1] + radius * np.outer(np.sin(u), np.sin(v))
-    z = center[2] + radius * np.outer(np.ones(np.size(u)), np.cos(v))
-    ax.plot_surface(x, y, z, color=color, alpha=alpha, linewidth=0, antialiased=True)
 
 
 def orbit_moon_video_demo(
@@ -178,13 +169,12 @@ def orbit_moon_video_demo(
     COLOR_MOON_TRAIL = "#7A7A82"  # slightly darker grey trail
     COLOR_SC        = "#FF8C00"   # orange satellite dot
     COLOR_SC_TRAIL  = "#FF6A00"   # deeper orange trail
-    COLOR_EARTH     = "#1E6FD9"   # blue Earth sphere
 
 
     fig = plt.figure(figsize=(8, 8), dpi=100 if fast else 150)
     fig.patch.set_facecolor("black")
     fig.suptitle(f"Cislunar trajectory · {duration_days:.3f} days", color="white")
-    fig.text(0.5, 0.03, "Earth at physical scale · markers locate Moon and spacecraft",
+    fig.text(0.5, 0.03, "Earth/Moon at physical scale · cross marks Moon centre",
              ha="center", color="#aebacb", fontsize=9)
 
     ax = fig.add_subplot(111, projection="3d")
@@ -203,10 +193,11 @@ def orbit_moon_video_demo(
     ax.set_zticks([])
 
     # Earth sphere at origin
-    _draw_sphere(ax, center=(0.0, 0.0, 0.0), radius=EARTH_RADIUS, color=COLOR_EARTH, alpha=1.0)
+    earth_surface = BodySurface(ax, "earth", EARTH_RADIUS, n=30)
+    moon_surface = BodySurface(ax, "moon", MOON_RADIUS, r_moon[0], n=30)
 
     # Animated artists
-    moon_pt,   = ax.plot([], [], [], marker="o", markersize=7,  color=COLOR_MOON,       linewidth=0)
+    moon_pt,   = ax.plot([], [], [], marker="+", markersize=7,  color=COLOR_MOON,       linewidth=0)
     sc_pt,     = ax.plot([], [], [], marker="o", markersize=4,  color=COLOR_SC,         linewidth=0)
     moon_trail,= ax.plot([], [], [], color=COLOR_MOON_TRAIL,    linewidth=1.2, alpha=0.45)
     sc_trail,  = ax.plot([], [], [], color=COLOR_SC_TRAIL,      linewidth=1.6, alpha=0.65)
@@ -216,7 +207,7 @@ def orbit_moon_video_demo(
     ax.set_ylim(center[1] - lim, center[1] + lim)
     ax.set_zlim(center[2] - lim, center[2] + lim)
     ax.set_box_aspect((1, 1, 1))
-    ax.text2D(0.03, 0.06, "● Moon", transform=ax.transAxes, color=COLOR_MOON)
+    ax.text2D(0.03, 0.06, "+ Moon centre", transform=ax.transAxes, color=COLOR_MOON)
     ax.text2D(0.03, 0.03, "● Spacecraft", transform=ax.transAxes, color=COLOR_SC)
 
     def init():
@@ -237,6 +228,8 @@ def orbit_moon_video_demo(
                      azim=-65 + 120*frame/(len(t_frames)-1))
         rm = r_moon[i]
         rs = r_sc_f[i]
+        earth_surface.update(rotation=body_rotation("earth", t_geometry[i]))
+        moon_surface.update(rm, body_rotation("moon", t_geometry[i]))
         moon_pt.set_data([rm[0]], [rm[1]])
         moon_pt.set_3d_properties([rm[2]])
         sc_pt.set_data([rs[0]], [rs[1]])

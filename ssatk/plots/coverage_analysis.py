@@ -27,6 +27,8 @@ Run interactively:
   python -m ssatk.plots.coverage_analysis --lat 28.39 --lon -80.60 --name "Cape Canaveral"
 """
 
+from .rendering import is_low_spec
+
 import argparse
 import json
 import warnings
@@ -59,6 +61,9 @@ from ..io.tle_updater import load_satellites, update_satellites_auto
 # coverage plots below don't need their own separate implementation.
 def _fallback_draw_continents(ax):
     """Self-contained fallback if groundtrack_enhanced.py isn't importable."""
+    if is_low_spec():
+        ax.set_facecolor("#1a4f8a")
+        return "low-spec blue background"
     try:
         from PIL import Image as _PILImage
         from ._textures import earth_texture_path

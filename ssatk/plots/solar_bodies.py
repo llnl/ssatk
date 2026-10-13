@@ -29,6 +29,11 @@ flat marker.
 """
 
 from __future__ import annotations
+
+from .rendering import _with_low_spec
+
+from .rendering import is_low_spec
+from ._body_surfaces import body_mesh_plotly, body_rotation
 from io import BytesIO
 
 import numpy as np
@@ -407,6 +412,7 @@ def _earth_rotation_from_plot_time(time):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+@_with_low_spec
 def make_planet_traces(
     name: str,
     pos_au: tuple,
@@ -433,6 +439,15 @@ def make_planet_traces(
     -------
     list of go.Surface / go.Scatter3d traces
     """
+    if name == "Moon":
+        traces = [body_mesh_plotly("moon", pos_au, _R_AU["Moon"]*scale_au,
+                  body_rotation("moon", time, "ecliptic"), n=n)]
+        if show_label:
+            traces.append(go.Scatter3d(x=[pos_au[0]], y=[pos_au[1]], z=[pos_au[2]],
+                          mode="text", text=["Moon"], hoverinfo="skip", showlegend=False))
+        return traces
+    if is_low_spec():
+        n = min(n, 24)
     r = _R_AU[name] * scale_au
     cx, cy, cz = pos_au
 
@@ -440,7 +455,10 @@ def make_planet_traces(
     xs, ys, zs = _apply_tilt(xs, ys, zs, _TILT[name])
 
     color_fn = _COLOR_FN.get(name)
-    if color_fn is None:
+    if is_low_spec() and name in {"Earth", "Moon"}:
+        color = "#1a4f8a" if name == "Earth" else "#ffffff"
+        surf_c, cs = np.zeros((n, n)), [[0, color], [1, color]]
+    elif color_fn is None:
         surf_c, cs = np.ones((n, n)) * 0.5, [[0, "#888"], [1, "#ccc"]]
     elif name == "Earth":
         earth_rot = _earth_rotation_from_plot_time(time) if rotation_deg is None else float(rotation_deg)
@@ -681,6 +699,7 @@ def _moon_offset_au(t_jd: float, orbit_scale: float = 1.0, ephemeris="builtin") 
     return body_position_au("moon", t_jd, ephemeris=ephemeris, origin="earth") * orbit_scale
 
 
+@_with_low_spec
 def make_moon_traces(
     earth_pos_au: tuple,
     t_jd: float,
@@ -700,25 +719,11 @@ def make_moon_traces(
     cx, cy, cz = earth_pos_au[0] + offset[0], earth_pos_au[1] + offset[1], earth_pos_au[2] + offset[2]
     pos = (cx, cy, cz)
 
-    xs, ys, zs = _unit_sphere(n)
-    xs, ys, zs = _apply_tilt(xs, ys, zs, _TILT["Moon"])
-    surf_c, cs = _color_moon(n)
-    r = _R_AU["Moon"] * scale_au
-
-    real_dist_km = float(np.linalg.norm(offset) * _AU_KM / orbit_scale) if orbit_scale else 0.0
-
-    traces = [go.Surface(
-        x=cx + r * xs, y=cy + r * ys, z=cz + r * zs,
-        surfacecolor=surf_c, colorscale=cs, cmin=0.0, cmax=1.0,
-        showscale=False, name="Moon",
-        hovertext=f"<b>Moon</b><br>{real_dist_km:,.0f} km from Earth "
-                  f"<br>Radius = {MOON_RADIUS / 1000:,.1f} km; display ×{scale_au:g}"
-                  f"<br>Distance display ×{orbit_scale:g}",
-        hoverinfo="text",
-        lighting=_planet_lighting(pos),
-        lightposition=_sun_lightposition(pos),
-        opacity=1.0,
-    )]
+    from astropy.time import Time
+    rotation = body_rotation("moon", Time(t_jd, format="jd", scale="utc"), "ecliptic")
+    sun_hat = -np.asarray(pos) / np.linalg.norm(pos)
+    traces = [body_mesh_plotly("moon", pos, _R_AU["Moon"]*scale_au,
+                              rotation, n=n, sun_hat=sun_hat)]
 
     if show_label:
         traces.append(go.Scatter3d(

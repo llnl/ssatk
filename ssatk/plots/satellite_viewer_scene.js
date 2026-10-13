@@ -839,6 +839,12 @@ function buildStarfield() {
 // Earth -- custom day/night/specular shader on a 256 x 128 sphere
 // ---------------------------------------------------------------------------
 function buildEarth() {
+  if (LOW_SPEC) {
+    earthMesh = new THREE.Mesh(new THREE.SphereGeometry(R_EARTH_KM, 36, 18),
+      new THREE.MeshLambertMaterial({color: 0x1a4f8a}));
+    scene.add(earthMesh);
+    return;
+  }
   const loader = new THREE.TextureLoader();
   const dayTex = loader.load(DAY_TEXTURE_DATAURI);
   const nightTex = loader.load(NIGHT_TEXTURE_DATAURI);
@@ -930,6 +936,7 @@ function buildEarth() {
 // sun direction with the Earth shader.
 // ---------------------------------------------------------------------------
 function buildClouds() {
+  if (LOW_SPEC) { cloudsGroup = new THREE.Group(); return; }
   const loader = new THREE.TextureLoader();
   const cloudTex = loader.load(CLOUDS_TEXTURE_DATAURI);
   cloudTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -956,6 +963,7 @@ function buildClouds() {
 // Atmosphere -- Fresnel rim glow, additive-blended, brighter on the day side
 // ---------------------------------------------------------------------------
 function buildAtmosphere() {
+  if (LOW_SPEC) return;
   const geom = new THREE.SphereGeometry(R_EARTH_KM * 1.025, 256, 128);
   const mat = new THREE.ShaderMaterial({
     uniforms: {

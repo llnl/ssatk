@@ -18,14 +18,12 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from astropy.time import Time
-from PIL import Image as PILImage
 
 from ssapy.orbit import Orbit
 from ssapy.propagator import KeplerianPropagator, SciPyPropagator
 from ssapy.accel import AccelKepler, AccelSolRad, AccelDrag, AccelEarthRad
 from ssapy.gravity import AccelHarmonic, AccelThirdBody
 from ssapy.body import get_body
-from ssatk.plots._textures import earth_texture_path
 import ssapy.compute as compute
 
 from ssatk.constants import EARTH_MU, EARTH_RADIUS, RGEO
@@ -224,36 +222,9 @@ def main(make_figures=None, fast=None, output_dir=None):
             alpha=0.8, ls="--"
         )
 
-        try:
-            earth_png = PILImage.open(earth_texture_path())
-            scale = 2
-            earth_png = earth_png.resize((5400 // scale, 2700 // scale))
-            bm = np.array(earth_png.resize([int(d) for d in earth_png.size])) / 256.0
-
-            lons = np.linspace(-180, 180, bm.shape[1]) * np.pi / 180
-            lats = np.linspace(-90, 90, bm.shape[0])[::-1] * np.pi / 180
-            earth_radius_km = EARTH_RADIUS / 1e3
-            mesh_x = np.outer(np.cos(lons), np.cos(lats)).T * earth_radius_km
-            mesh_y = np.outer(np.sin(lons), np.cos(lats)).T * earth_radius_km
-            mesh_z = np.outer(np.ones(np.size(lons)), np.sin(lats)).T * earth_radius_km
-
-            ax_3d.plot_surface(
-                mesh_x, mesh_y, mesh_z,
-                rstride=4, cstride=4,
-                facecolors=bm, shade=False, zorder=0
-            )
-        except Exception as e:
-            print(f"Warning: Could not load Earth texture ({e}), using simple sphere")
-            u = np.linspace(0, 2 * np.pi, 50)
-            v = np.linspace(0, np.pi, 50)
-            earth_radius_km = EARTH_RADIUS / 1e3
-            x_earth = earth_radius_km * np.outer(np.cos(u), np.sin(v))
-            y_earth = earth_radius_km * np.outer(np.sin(u), np.sin(v))
-            z_earth = earth_radius_km * np.outer(np.ones(np.size(u)), np.cos(v))
-            ax_3d.plot_surface(
-                x_earth, y_earth, z_earth,
-                color="lightblue", alpha=0.5, edgecolor="none"
-            )
+        from ssatk.plots._body_surfaces import BodySurface, body_rotation
+        BodySurface(ax_3d, "earth", EARTH_RADIUS/1e3,
+                    rotation=body_rotation("earth", t0_gps), zorder=0)
 
         ax_3d.set_xlabel("X [km]", fontsize=10, labelpad=8)
         ax_3d.set_ylabel("Y [km]", fontsize=10, labelpad=8)

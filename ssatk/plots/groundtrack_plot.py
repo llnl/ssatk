@@ -11,6 +11,8 @@ Features
 - Longitude tick labels formatted as 120W, 60E, etc.
 """
 
+from .rendering import _with_low_spec
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -124,6 +126,7 @@ def _set_longitude_ticks(ax, xmin, xmax, relabel_xticks=True):
     ax.set_xticklabels([_format_lon_label(v) for v in tickvals])
 
 
+@_with_low_spec
 def groundtrack_plot(
     r,
     t,

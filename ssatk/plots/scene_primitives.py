@@ -7,6 +7,8 @@ field lines — without copying geometry code between demos.
 
 from __future__ import annotations
 
+from .rendering import _with_low_spec
+
 from datetime import datetime
 
 import numpy as np
@@ -223,6 +225,7 @@ def light_direction_from_sun(*, target_km=None, sun_position_km=None, sun_hat=No
     return normalized_vector(np.asarray(sun_position_km, dtype=float) - target, fallback=sun_hat)
 
 
+@_with_low_spec
 def earth_trace(*, sun_hat=None, sun_position_km=None, n_lat=120, n_lon=240,
                 radius_scale=1.0, center=(0.0, 0.0, 0.0), rotation_deg=None,
                 time=None, show_city_lights=False, night_lift_strength=0.0,
@@ -337,9 +340,10 @@ def sun_traces(*, scene_radius_km, sun_hat=None, position_km=None,
     return _sun_sphere_traces(np.asarray(position, dtype=float), radius, seed=seed)
 
 
+@_with_low_spec
 def moon_trace(*, center_km, sun_hat=None, sun_position_km=None,
                radius_km=MOON_RADIUS_KM, real_center_km=None, mode="lunar",
-               eclipse_tint=True, n_lat=90, n_lon=180):
+               eclipse_tint=True, n_lat=90, n_lon=180, time=None):
     """Return a textured Moon mesh trace shaded from the Sun position."""
     from .moon_render import moon_mesh_plotly
 
@@ -359,6 +363,7 @@ def moon_trace(*, center_km, sun_hat=None, sun_position_km=None,
         eclipse_tint=eclipse_tint,
         n_lat=int(n_lat),
         n_lon=int(n_lon),
+        time=time,
     )
 
 

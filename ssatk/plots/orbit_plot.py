@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .rendering import _with_low_spec
+
 from collections.abc import Iterable as _Iterable
 from pathlib import Path
 
@@ -143,6 +145,7 @@ _DIVERGENCE_VIEW_ALIASES = {
 }
 
 
+@_with_low_spec
 def orbit_plot(
     r,
     t=None,

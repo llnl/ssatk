@@ -24,6 +24,8 @@ Output
 
 from __future__ import annotations
 
+from .rendering import _with_low_spec
+
 import datetime as _dt
 import json
 import math
@@ -208,6 +210,7 @@ def _resolve_start_jd(cfg: dict) -> float:
 
 
 # ── Figure builders ────────────────────────────────────────────────────────────
+@_with_low_spec
 def build_figure(cfg: dict) -> go.Figure:
     """Animated Earth-orbits-the-Sun figure — one frame per step across a year."""
     t_jd0      = _resolve_start_jd(cfg)
@@ -279,6 +282,7 @@ def build_figure(cfg: dict) -> go.Figure:
     return fig
 
 
+@_with_low_spec
 def build_static_figure(cfg: dict) -> go.Figure:
     """A single high-resolution, non-animated frame — for the JPG snapshot."""
     t_jd0   = _resolve_start_jd(cfg)

@@ -211,3 +211,6 @@ Lagrange markers when they are outside the shown panels, and ``legend=False``
 also applies to paired views. The Moon is an opaque sphere with its true
 radius; samples behind its projected disc are hidden for the static camera.
 This is an orthographic diagram, not a textured surface or photometric model.
+
+Moon surface maps and the shared :doc:`low-spec mode <rendering_modes>`
+are available in these views.

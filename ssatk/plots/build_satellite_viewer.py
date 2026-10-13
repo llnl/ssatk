@@ -16,6 +16,10 @@ files can sit flat in an existing package folder or in their own subdirectory,
 whichever suits the repo -- no particular directory structure is required.
 """
 
+from .rendering import is_low_spec
+
+from .rendering import _with_low_spec
+
 import base64
 import csv
 import json
@@ -805,6 +809,7 @@ __THREE_JS__
 __SATELLITE_JS__
 </script>
 <script>
+const LOW_SPEC = __LOW_SPEC__;
 const DAY_TEXTURE_DATAURI = "data:image/jpeg;base64,__DAY_B64__";
 const NIGHT_TEXTURE_DATAURI = "data:image/jpeg;base64,__NIGHT_B64__";
 const SPECULAR_TEXTURE_DATAURI = "data:image/jpeg;base64,__SPEC_B64__";
@@ -823,6 +828,7 @@ __SCENE_JS__
 </html>
 """
 
+@_with_low_spec
 def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
           propagator="sgp4"):
     """Assemble the self-contained Three.js viewer and write it to disk.
@@ -866,7 +872,9 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         ' &middot; Blue Marble, Jan 2004 &middot; 8192 &times; 4096'
         if viewer_earth_day_path().is_file() else 'Earth textures: ssa-data-core (2K fallback)'
     )
-    _tex = load_textures()
+    if is_low_spec():
+        earth_credit = "Low-spec blue Earth · surface textures disabled"
+    _tex = dict.fromkeys(("day", "night", "specular", "clouds"), "") if is_low_spec() else load_textures()
     day_b64 = _tex["day"]
     night_b64 = _tex["night"]
     spec_b64 = _tex["specular"]
@@ -888,6 +896,7 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     scene_js = text("satellite_viewer_scene.js")
 
     replacements = {
+        "LOW_SPEC": json.dumps(is_low_spec()),
         "SATELLITE_JS": satellite_js,
         "DAY_B64": day_b64,
         "EARTH_CREDIT": earth_credit,
@@ -919,6 +928,7 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     return out_path
 
 
+@_with_low_spec
 def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
                      verbose=True, database_path=None, propagator="sgp4"):
     """Write the satellite WebGL viewer from propagated SSAPy state arrays.
