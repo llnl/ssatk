@@ -41,8 +41,6 @@ test cases, but must not be described as measured flight or laboratory data.
   gallery workflow, on pull requests and on pushes to `main`.
   Selected geometry and rendering contracts in `scripts/tests` also run in
   the Python CI matrix with its installed Matplotlib version.
-- Import paths and aliases are compatibility checks, isolated in
-  `test_legacy_import_name.py`, rather than physical reference tests.
 - Argument validation and error messages, unless the rejected input is
   physically meaningful.
 - Code paths exercised only to raise a coverage percentage.

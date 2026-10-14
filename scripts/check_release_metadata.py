@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Check that every file carrying the SSATK release version agrees.
 
-The version lives in five places: ``pyproject.toml``, ``codemeta.json``,
-``CITATION.cff``, and the ``ssapy-toolkit`` compatibility distribution's own
-version and its ``ssatk==`` pin. Without arguments this checks that they all
-agree (the Repository Policy workflow runs it on every push and pull request).
-With ``--tag vX.Y.Z`` it also checks that they equal the tag (the Publish
-workflow runs it before building anything).
+The version lives in three places: ``pyproject.toml``, ``codemeta.json`` and
+``CITATION.cff``. Without arguments this checks that they all agree (the
+Repository Policy workflow runs it on every push and pull request). With
+``--tag vX.Y.Z`` it also checks that they equal the tag (the Publish workflow
+runs it before building anything).
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ except ModuleNotFoundError:  # Python 3.10
         sys.exit("check_release_metadata.py needs Python >= 3.11 or the tomli package")
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPAT_PYPROJECT = Path("packaging", "ssapy-toolkit-compat", "pyproject.toml")
 
 
 def _toml_project(path: Path) -> dict:
@@ -43,11 +41,6 @@ def release_versions(root: Path = ROOT) -> dict[str, str]:
     citation = (root / "CITATION.cff").read_text(encoding="utf-8")
     match = re.search(r"^version:\s*[\"']?([^\"'\s]+)", citation, flags=re.MULTILINE)
     found["CITATION.cff"] = match.group(1) if match else "<missing>"
-
-    compat = _toml_project(root / COMPAT_PYPROJECT)
-    found["ssapy-toolkit-compat version"] = compat["version"]
-    pins = [dep for dep in compat.get("dependencies", []) if re.match(r"ssatk\s*==", dep)]
-    found["ssapy-toolkit-compat ssatk pin"] = pins[0].split("==", 1)[1].strip() if len(pins) == 1 else "<missing>"
     return found
 
 

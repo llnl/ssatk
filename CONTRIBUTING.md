@@ -32,6 +32,8 @@ Use the existing top-level structure for new work:
 | `docs/` | Narrative documentation and API documentation. |
 | `scripts/` | Maintainer/development utilities, not importable package code. |
 | `.github/` | GitHub Actions, issue/PR templates, and ownership policy. |
+| `AGENTS.md` | Working rules and checks for changes to this repository. |
+| `skills.md` | Concise guide to using the package from code. |
 
 Do not introduce new top-level directories or project-level configuration files
 unless the pull request explains why the existing layout cannot support the

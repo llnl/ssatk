@@ -35,8 +35,8 @@ jobs:
           # PR branch, so main never received its version bump).
           git merge-base --is-ancestor HEAD origin/main \
             || { echo "::error::$RELEASE_TAG is not on main; merge first, then tag a commit on main."; exit 1; }
-          # pyproject.toml, codemeta.json, CITATION.cff and the ssapy-toolkit
-          # compatibility package must all carry the tag's version.
+          # pyproject.toml, codemeta.json and CITATION.cff must all carry the
+          # tag's version.
           python scripts/check_release_metadata.py --tag "$RELEASE_TAG"
 
       - name: Find the previous release on main
@@ -107,12 +107,10 @@ jobs:
           pip install build twine
 
       - name: Build distributions
-        run: |
-          python -m build
-          python -m build packaging/ssapy-toolkit-compat --outdir dist-compat
+        run: python -m build
 
       - name: Check distributions
-        run: python -m twine check dist/* dist-compat/*
+        run: python -m twine check dist/*
 
       - name: Smoke-test wheel
         run: |
@@ -140,38 +138,7 @@ jobs:
           assert earth_texture_path().is_file()
           scripts = {entry.name for entry in entry_points(group="console_scripts")}
           assert {"ssatk-demo-gallery", "ssatk-benchmark", "ssatk-magnetosphere"} <= scripts
-          assert find_spec("ssapy_toolkit") is None, "the ssatk wheel must not ship the legacy alias"
           PY
 
-      - name: Smoke-test ssapy-toolkit compatibility wheel
-        run: |
-          # ssatk is already installed from dist/, so --no-deps checks this
-          # wheel against the release being published rather than PyPI.
-          pip install --no-deps dist-compat/ssapy_toolkit-*.whl
-          python -I - <<'PY'
-          import warnings
-          from importlib.metadata import requires, version
-
-          with warnings.catch_warnings(record=True) as caught:
-              warnings.simplefilter("always")
-              import ssapy_toolkit
-              import ssapy_toolkit.coordinates.frames as frames_old
-          import ssatk
-          import ssatk.coordinates.frames as frames_new
-
-          assert any(issubclass(w.category, FutureWarning) for w in caught)
-          assert version("ssapy-toolkit") == version("ssatk") == ssatk.__version__
-          assert requires("ssapy-toolkit") == [f"ssatk=={ssatk.__version__}"], requires("ssapy-toolkit")
-          assert ssapy_toolkit.__version__ == ssatk.__version__
-          assert frames_old.eci_to_ecf_matrix is frames_new.eci_to_ecf_matrix
-          PY
-
-      - name: Publish ssatk to PyPI
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: Publish ssapy-toolkit compatibility package to PyPI
-        # Needs a PyPI trusted publisher for ssapy-toolkit naming LLNL/ssatk,
-        # publish.yml and the pypi environment.
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-compat/

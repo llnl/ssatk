@@ -187,7 +187,6 @@ built with Sphinx:
 git clone https://github.com/LLNL/ssatk.git
 cd ssatk
 python -m pip install -e ".[dev,geomagnetics,atmosphere,propulsion]"
-python -m pip install --no-deps -e packaging/ssapy-toolkit-compat   # tests the legacy import name
 pytest tests
 ```
 

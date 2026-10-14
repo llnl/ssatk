@@ -144,8 +144,8 @@ def _resolve_texture_path(texture_path, allow_download=False):
     so the result is the same file on every installation, offline included.
 
     This used to try home-directory and working-directory guesses
-    (``~/earth_texture.jpg``, ``~/SSAPy-Toolkit/assets/...``,
-    ``./assets/earth_texture.jpg``) and then download Blue Marble from NASA on
+    (``~/earth_texture.jpg``, an ``assets/`` folder in a home-directory
+    checkout, ``./assets/earth_texture.jpg``) and then download Blue Marble from NASA on
     first use. On a machine whose network silently drops traffic that blocked
     the plot for more than 250 s before falling back, and the texture used
     depended on which files happened to sit in the user's home or current

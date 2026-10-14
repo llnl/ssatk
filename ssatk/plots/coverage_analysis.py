@@ -42,9 +42,7 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 
 # No sys.path manipulation: this is package code, reached through normal
-# imports. It previously prepended ~/SSAPy and ~/SSAPy-Toolkit, which only
-# worked if the checkout happened to sit at those exact paths in the current
-# user's home directory.
+# imports, so it does not depend on where a checkout sits on disk.
 import ssapy
 from astropy.coordinates import GCRS, ITRS, CartesianRepresentation
 from astropy.time import Time

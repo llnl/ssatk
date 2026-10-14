@@ -35,16 +35,12 @@ def ensure_file_parent(path: str | Path) -> Path:
 
 
 CACHE_ENV = "SSATK_CACHE"
-LEGACY_CACHE_ENVS = ("SSAPY_TOOLKIT_CACHE", "ssapy_toolkit_CACHE")
 
 
 def cache_env_dir() -> str | None:
-    """Cache directory from ``$SSATK_CACHE`` (or the pre-rename names), if set."""
-    for name in (CACHE_ENV, *LEGACY_CACHE_ENVS):
-        value = os.environ.get(name, "").strip()
-        if value:
-            return os.path.expanduser(value)
-    return None
+    """Cache directory from ``$SSATK_CACHE``, if set."""
+    value = os.environ.get(CACHE_ENV, "").strip()
+    return os.path.expanduser(value) if value else None
 
 
 def output_root() -> Path:

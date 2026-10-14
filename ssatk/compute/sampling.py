@@ -27,7 +27,7 @@ import numpy as np
 # ---------------------------------------------------------------------
 # Cache settings for get_sigmas
 # ---------------------------------------------------------------------
-ENV_VAR = "SSATK_CACHE"   # legacy SSAPY_TOOLKIT_CACHE / ssapy_toolkit_CACHE also read
+ENV_VAR = "SSATK_CACHE"
 DEFAULT_FILE = "covariance_sigmas.npy"
 
 
@@ -326,7 +326,7 @@ def get_sigmas(n: int = 25, path: Optional[str] = None) -> np.ndarray:
       * Velocities are uniformly sampled inside a 3D ball of radius 1.
 
     Cache path resolution when `path` is None:
-      1) Use directory from env var SSATK_CACHE (legacy SSAPY_TOOLKIT_CACHE)
+      1) Use directory from env var SSATK_CACHE
          (file name: covariance_sigmas.npy)
       2) Fallback to ~/.cache/ssatk/covariance_sigmas.npy
 

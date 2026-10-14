@@ -112,7 +112,7 @@ Limits that remain explicit
   geometry, and inference for those constructed cases.
 * **Optional tools:** Basilisk, Orekit/EIGEN-6S, and SpacePy/IRBEM checks count
   only when actually executed with their required tools/data. Report skips
-  separately. Installing an import alias validates compatibility only.
+  separately.
 * **Conservation and broad bounds:** epoch invariance, round trips, angular
   momentum, libration bounds, and geographic magnetic-field bounds constrain
   specific properties. They are not independent measurements of every output.
@@ -189,7 +189,6 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_lambert_reference.py,2,R1 R2,Circular arc velocities and SSAPy Kepler boundary propagation,Zero-revolution cases
    tests/test_lambertian_photometry.py,3,R1 R2 R3,Independent Planck quadrature; Lambert phase geometry; solar magnitude,Shared geometric Sun input; apparent-Sun model difference checked separately
    tests/test_launch_gravity_turn.py,1,R1,Known vertical/azimuth/half-turn thrust directions plus gravity,Prescribed steering law
-   tests/test_legacy_import_name.py,3,C,Identity of alias objects; warning and pickle compatibility,Compatibility only; no physical accuracy claim
    tests/test_low_precision_moon.py,1,R2,Astropy lunar coordinates over 2000-2040,200 samples; 6/3.5 arcmin and 550 km budgets
    tests/test_lunar_rotating_frame.py,1,R1 R4,Earth at negative lunar X and constructed frame vectors,Paired exact circular-ephemeris kinematics in review regressions
    tests/test_magfield_physics.py,22,R1 R2 R3 R4,Geopack; ppigrf; dipole field theory; IRBEM when present; Astropy star frames,Contains approximate geographic/model sanity bounds; AE8/AP8 cache and IRBEM optional

@@ -17,6 +17,7 @@ ALLOWED_TOP_LEVEL = {
     ".gitignore",
     ".gitlab-ci.yml",
     ".readthedocs.yaml",
+    "AGENTS.md",
     "CHANGELOG.md",
     "CITATION.cff",
     "CODE_OF_CONDUCT.md",
@@ -31,8 +32,8 @@ ALLOWED_TOP_LEVEL = {
     "pyproject.toml",
     "requirements-dev.txt",
     "scripts",
+    "skills.md",
     "ssatk",
-    "packaging",   # packaging/ssapy-toolkit-compat: transitional ssapy-toolkit -> ssatk distribution
     "tests",
 }
 
@@ -210,7 +211,7 @@ def deduplicate_changed_paths(changed: list[ChangedPath]) -> list[ChangedPath]:
 
 
 def source_changed(path: str) -> bool:
-    return (path.startswith(("ssatk/", "packaging/ssapy-toolkit-compat/ssapy_toolkit/")) and path.endswith(".py")) or path == "pyproject.toml"
+    return (path.startswith("ssatk/") and path.endswith(".py")) or path == "pyproject.toml"
 
 
 def test_changed(path: str) -> bool:
