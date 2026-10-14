@@ -31,23 +31,37 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          project_version="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
+          # Release only commits that main contains (v1.1.3 was cut from a
+          # PR branch, so main never received its version bump).
+          git merge-base --is-ancestor HEAD origin/main \
+            || { echo "::error::$RELEASE_TAG is not on main; merge first, then tag a commit on main."; exit 1; }
+          # pyproject.toml, codemeta.json, CITATION.cff and the ssapy-toolkit
+          # compatibility package must all carry the tag's version.
+          python scripts/check_release_metadata.py --tag "$RELEASE_TAG"
 
-          with (Path("pyproject.toml")).open("rb") as handle:
-              print(tomllib.load(handle)["project"]["version"])
-          PY
-          )"
-          test "$RELEASE_TAG" = "v$project_version"
+      - name: Find the previous release on main
+        id: previous
+        run: |
+          set -euo pipefail
+          # Lint and policy checks cover everything since the last release
+          # reachable from this tag. merge-base(origin/main, HEAD) equals HEAD
+          # for a tag on main, which left those checks with nothing to check.
+          if previous="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null)"; then
+            echo "ref=$previous" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$(git rev-list --max-parents=0 HEAD | tail -n 1)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run tests
         run: python -m pytest -q
 
       - name: Run Ruff syntax checks
+        env:
+          BASE_REF: ${{ steps.previous.outputs.ref }}
         run: |
           set -euo pipefail
-          base_ref="$(git merge-base origin/main HEAD)"
+          echo "Checking Python files changed since $BASE_REF"
+          base_ref="$BASE_REF"
           mapfile -t python_files < <(
             git diff --name-only --diff-filter=ACMR "$base_ref" HEAD -- '*.py'
           )
@@ -56,7 +70,9 @@ jobs:
           fi
 
       - name: Check repository policy
-        run: python scripts/check_repository_policy.py --base-ref "$(git merge-base origin/main HEAD)" --head-ref HEAD
+        env:
+          BASE_REF: ${{ steps.previous.outputs.ref }}
+        run: python scripts/check_repository_policy.py --base-ref "$BASE_REF" --head-ref HEAD
 
       - name: Run analytical validation profile
         run: python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
@@ -91,10 +107,12 @@ jobs:
           pip install build twine
 
       - name: Build distributions
-        run: python -m build
+        run: |
+          python -m build
+          python -m build packaging/ssapy-toolkit-compat --outdir dist-compat
 
       - name: Check distributions
-        run: python -m twine check dist/*
+        run: python -m twine check dist/* dist-compat/*
 
       - name: Smoke-test wheel
         run: |
@@ -124,5 +142,36 @@ jobs:
           assert {"ssatk-demo-gallery", "ssatk-benchmark", "ssatk-magnetosphere"} <= scripts
           assert find_spec("ssapy_toolkit") is None, "the ssatk wheel must not ship the legacy alias"
           PY
-      - name: Publish to PyPI
+
+      - name: Smoke-test ssapy-toolkit compatibility wheel
+        run: |
+          # ssatk is already installed from dist/, so --no-deps checks this
+          # wheel against the release being published rather than PyPI.
+          pip install --no-deps dist-compat/ssapy_toolkit-*.whl
+          python -I - <<'PY'
+          import warnings
+          from importlib.metadata import requires, version
+
+          with warnings.catch_warnings(record=True) as caught:
+              warnings.simplefilter("always")
+              import ssapy_toolkit
+              import ssapy_toolkit.coordinates.frames as frames_old
+          import ssatk
+          import ssatk.coordinates.frames as frames_new
+
+          assert any(issubclass(w.category, FutureWarning) for w in caught)
+          assert version("ssapy-toolkit") == version("ssatk") == ssatk.__version__
+          assert requires("ssapy-toolkit") == [f"ssatk=={ssatk.__version__}"], requires("ssapy-toolkit")
+          assert ssapy_toolkit.__version__ == ssatk.__version__
+          assert frames_old.eci_to_ecf_matrix is frames_new.eci_to_ecf_matrix
+          PY
+
+      - name: Publish ssatk to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish ssapy-toolkit compatibility package to PyPI
+        # Needs a PyPI trusted publisher for ssapy-toolkit naming LLNL/ssatk,
+        # publish.yml and the pypi environment.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-compat/

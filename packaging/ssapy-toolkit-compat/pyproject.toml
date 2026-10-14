@@ -2,20 +2,21 @@
 # ssatk in 1.1.0. Publishing this keeps `pip install -U ssapy-toolkit` and
 # `import ssapy_toolkit` working: it installs only the ssapy_toolkit alias
 # package and depends on the matching ssatk release. Its version must equal
-# the ssatk version (publish.yml checks this against the tag).
+# the ssatk version (scripts/check_release_metadata.py checks this on every
+# push, and publish.yml checks it against the tag and publishes both).
 [build-system]
 requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssapy-toolkit"
-version = "1.1.1"
+version = "1.1.4"
 description = "Renamed to ssatk (Space Situational Awareness Toolkit); this package installs ssatk plus the ssapy_toolkit import alias"
 authors = [{ name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }]
 readme = "README.md"
 license = "BSD-3-Clause"
 requires-python = ">=3.10"
-dependencies = ["ssatk==1.1.1"]
+dependencies = ["ssatk==1.1.4"]
 
 [project.urls]
 Homepage = "https://github.com/LLNL/ssatk"

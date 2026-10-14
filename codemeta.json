@@ -6,7 +6,7 @@
     "codeRepository": "https://github.com/LLNL/ssatk",
     "url": "https://github.com/LLNL/ssatk",
     "license": "https://spdx.org/licenses/BSD-3-Clause",
-    "version": "1.1.2",
+    "version": "1.1.4",
     "programmingLanguage": "Python",
     "creator": {
         "@type": "Person",

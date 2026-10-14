@@ -40,8 +40,21 @@ jobs:
             fi
           fi
           if ! git cat-file -e "$BASE_REF^{commit}" 2>/dev/null; then
+            # A force push leaves the old head unreachable from every ref, so
+            # checkout does not fetch it; GitHub still serves it by SHA.
+            git fetch --no-tags --quiet origin "$BASE_REF" 2>/dev/null || true
+          fi
+          if git cat-file -e "$BASE_REF^{commit}" 2>/dev/null; then
+            # Equal to BASE_REF for ordinary pushes and pull requests; after a
+            # history rewrite, the last commit both heads share, so every
+            # rewritten commit is checked rather than only the newest one.
+            BASE_REF="$(git merge-base "$BASE_REF" "$HEAD_REF")"
+          else
             echo "Base commit $BASE_REF is unavailable; checking the rewritten head against its parent."
             BASE_REF="$(git rev-parse "$HEAD_REF^")"
           fi
 
           python scripts/check_repository_policy.py --base-ref "$BASE_REF" --head-ref "$HEAD_REF"
+
+      - name: Check release metadata agrees
+        run: python scripts/check_release_metadata.py
