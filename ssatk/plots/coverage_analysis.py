@@ -1620,8 +1620,7 @@ def analyse_satellite(sat_name, orbit, site_name, lat, lon, alt_m,
                      fontsize=13, fontweight="bold")
         for ax, (values, title, cmap) in zip(axes.ravel(), metric_panels):
             _draw_continents(ax)
-            colors = plt.get_cmap(cmap).copy()
-            colors.set_bad("#dddddd")
+            colors = plt.get_cmap(cmap).with_extremes(bad="#dddddd")
             im = ax.pcolormesh(maps["lon_edges"], maps["lat_edges"], values,
                                cmap=colors, shading="flat", alpha=0.88, zorder=1,
                                vmin=0 if "Mean" not in title else None)

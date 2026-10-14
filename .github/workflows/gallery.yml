@@ -18,13 +18,13 @@ concurrency:
 
 jobs:
   build-gallery:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       MPLBACKEND: Agg
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set absolute gallery data paths
         run: |
@@ -32,17 +32,17 @@ jobs:
           echo "OREKIT_DATA_DIR=$RUNNER_TEMP/ssatk-cache/orekit" >> "$GITHUB_ENV"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Set up Java for Orekit comparisons
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -58,11 +58,11 @@ jobs:
         run: plotly_get_chrome -y
 
       - name: Install Orekit reference runtime
-        # Maven is provided by the ubuntu-latest runner image.
+        # Maven is provided by the ubuntu-24.04 runner image.
         run: mvn -B -q -f demos/benchmarks/orekit/pom.xml dependency:build-classpath
 
       - name: Cache reference data and Earth/Moon source maps
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.SSATK_CACHE }}
           key: gallery-reference-data-${{ hashFiles('scripts/prepare_gallery_data.py', 'ssatk/io/moon_maps.py') }}
@@ -91,14 +91,14 @@ jobs:
 
       - name: Upload GitHub Pages artifact
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
     if: github.event_name != 'pull_request'
     needs: build-gallery
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -106,4 +106,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
