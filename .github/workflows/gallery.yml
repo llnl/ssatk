@@ -19,9 +19,9 @@ concurrency:
 jobs:
   build-gallery:
     runs-on: ubuntu-latest
-    env:
-      MPLBACKEND: Agg
-      SSATK_CACHE: ${{ runner.temp }}/ssatk-cache
+        env:
+          MPLBACKEND: Agg
+          SSATK_CACHE: $RUNNER_TEMP/ssatk-cache
       OREKIT_DATA_DIR: ${{ runner.temp }}/ssatk-cache/orekit
 
     steps:
