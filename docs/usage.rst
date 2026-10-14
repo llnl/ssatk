@@ -4,7 +4,7 @@ Usage Guide
 Installation
 ------------
 
-SSATK supports Python 3.10–3.13:
+SSATK supports Python 3.10–3.14:
 
 .. code-block:: bash
 

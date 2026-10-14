@@ -606,8 +606,7 @@ def make_accel_ladder_dashboard_figures(
     values = np.ma.masked_less_equal(drn_vs_ref, 0)
     upper = min(float(max_error_m), max(float(epsilon_m)*10, float(np.max(drn_vs_ref))))
     upper = max(upper, float(epsilon_m)*1.01)
-    cmap = plt.get_cmap("viridis").copy()
-    cmap.set_bad("#e9edf2")
+    cmap = plt.get_cmap("viridis").with_extremes(bad="#e9edf2")
     im = heat.pcolormesh(edges/60, np.arange(n_models+1)-.5, values,
                          cmap=cmap, norm=LogNorm(vmin=float(epsilon_m), vmax=upper),
                          shading="flat", rasterized=True)

@@ -37,7 +37,7 @@ python -m pip install ssatk
 
 ## Installation
 
-SSATK supports Python 3.10–3.13.
+SSATK supports Python 3.10–3.14.
 
 ```bash
 python -m pip install ssatk
@@ -191,7 +191,7 @@ python -m pip install --no-deps -e packaging/ssapy-toolkit-compat   # tests the 
 pytest tests
 ```
 
-CI runs the tests on Python 3.10–3.13, builds the docs with warnings treated as
+CI runs the tests on Python 3.10–3.14, builds the docs with warnings treated as
 errors, runs the demo gallery, and enforces the repository policy in
 [`CONTRIBUTING.md`](CONTRIBUTING.md). Its lint gate checks fatal Ruff errors
 (`E9,F63,F7,F82`) in changed Python files.
