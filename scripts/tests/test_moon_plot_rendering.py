@@ -2,6 +2,7 @@
 import importlib
 
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
 import pytest
 from astropy import units as u
@@ -39,7 +40,7 @@ def test_demo_matches_independent_lunar_kepler_ellipse(fast):
     assert np.max(np.diff(mean)) <= np.radians(1)+1e-10
 
 
-def test_texture_vertices_and_texels_follow_literal_longitude_latitude(tmp_path):
+def test_texture_vertices_and_texels_follow_literal_longitude_latitude(tmp_path, submitted_vertices):
     """R1/C: quarter-turned north-up map; 1e-12 km vertex budget, exact texels."""
     rgb = np.arange(3*6*3, dtype=np.uint8).reshape(3, 6, 3)*4
     path = tmp_path/'map.png'
@@ -55,14 +56,14 @@ def test_texture_vertices_and_texels_follow_literal_longitude_latitude(tmp_path)
             for lon, lat in [(west, north), (west+60, north), (west+60, north-60), (west, north-60)]:
                 lon, lat = np.radians([lon+90, lat])
                 expected.append(center+5*np.array([np.cos(lat)*np.cos(lon), np.cos(lat)*np.sin(lon), np.sin(lat)]))
-    np.testing.assert_allclose(body._vec[:3].T, expected, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(submitted_vertices(body), expected, rtol=0, atol=1e-12)
     np.testing.assert_array_equal(body._facecolor3d[:, :3]*255, rgb.reshape(-1, 3))
     plt.close(fig)
 
 
 @pytest.mark.parametrize('frame', ['gcrf', 'moon_centered'])
 @pytest.mark.parametrize('date', ['2025-01-01', '2025-06-01'])
-def test_bodies_lighting_and_bounds_match_independent_ephemeris(monkeypatch, frame, date):
+def test_bodies_lighting_and_bounds_match_independent_ephemeris(monkeypatch, frame, date, submitted_vertices):
     """R2: Astropy ERFA Moon (20 km) and apparent Sun (0.02 deg) vs DE440.
 
     These budgets cover independent ephemeris model differences and solar
@@ -74,7 +75,7 @@ def test_bodies_lighting_and_bounds_match_independent_ephemeris(monkeypatch, fra
     original = scene._textured_body
     def draw(ax, center, radius, path, rotation, sun_hat, **kwargs):
         artist = original(ax, center, radius, None, rotation, sun_hat, n=6)
-        capture.append((np.array(center), radius, rotation, sun_hat, artist._vec[:3].T))
+        capture.append((np.array(center), radius, rotation, sun_hat, submitted_vertices(artist)))
         return artist
     monkeypatch.setattr(scene, '_textured_body', draw)
     fig, ax = scene.moon_plot_3d(t=epoch.tt, r_frame=frame, show_earth=True,
@@ -120,8 +121,11 @@ def test_short_arc_keeps_moon_in_view_and_hides_far_side_pixels(monkeypatch):
             show_lagrange=False, physical_body_sizes=True, scene_pad=.05, figsize=(4, 4))
         limits = np.array([ax.get_xlim(), ax.get_ylim(), ax.get_zlim()])
         assert np.all(limits[:, 0] <= -1738.1) and np.all(limits[:, 1] >= 1738.1)
-        fig.canvas.draw()
-        pixels = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(float)
+        # The returned figure has a closed pyplot manager. Attach the raster
+        # backend explicitly instead of relying on a retained canvas renderer.
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        pixels = np.asarray(canvas.buffer_rgba())[..., :3].astype(float)
         orange = (pixels[..., 0] > 160) & (pixels[..., 1] > 65) & (pixels[..., 1] < 190) & (pixels[..., 2] < 100)
         counts.append(int(orange.sum()))
         assert ((pixels.max(axis=2)-pixels.min(axis=2) < 2) & (pixels[..., 0] > 100)).sum() > 1000

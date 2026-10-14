@@ -21,12 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MPLBACKEND: Agg
-      SSATK_CACHE: $RUNNER_TEMP/ssatk-cache
-      OREKIT_DATA_DIR: $RUNNER_TEMP/ssatk-cache/orekit
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set absolute gallery data paths
+        run: |
+          echo "SSATK_CACHE=$RUNNER_TEMP/ssatk-cache" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_DIR=$RUNNER_TEMP/ssatk-cache/orekit" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,all-data,geomagnetics,video,static,browser]" "matplotlib<3.11"
+          pip install -e ".[dev,all-data,geomagnetics,video,static,browser]"
 
       - name: Install Chrome for static previews
         run: plotly_get_chrome -y

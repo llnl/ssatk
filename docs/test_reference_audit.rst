@@ -381,7 +381,7 @@ full-period comparison and explicit frame conventions are documented in
 Dated globe rendering follow-up
 -------------------------------
 
-``scripts/tests/test_globe_rendering.py`` contains six test functions, thirteen
+``scripts/tests/test_globe_rendering.py`` contains seven test functions, fourteen
 parametrized cases. R1/R2 references are the explicit spherical-coordinate map,
 prescribed satellite positions, opaque-sphere visibility and Astropy GCRS/ITRS
 coordinates. They inspect rendered polygon vertices and pixels, rather than
@@ -391,6 +391,18 @@ comparing two uses of the same SSATK transform. The frame comparison allows
 reject absent, repeated, reversed or asynchronous animation epochs and suppress
 a highlighted satellite marker at an unsupplied time. They do not establish telemetry
 accuracy or physical surface fidelity of the Earth imagery.
+
+The batched-rendering contract uses 32 synthetic tracks: positions at
++7000 km along the viewing axis are visible, while positions at -7000 km
+with lateral offsets no larger than 100 km are behind Earth. It draws the
+initial frame with empty trails and the following frame, checking visible
+head pixels and fixed overview limits. This catches Matplotlib 3.11's empty
+collection autoscaling failure without treating an exported file as a
+physical reference. Polygon tests observe public ``set_verts`` calls while
+preserving the real renderer and the existing independent references; they
+do not read Matplotlib's removed private ``_vec`` buffer. Pixel checks attach
+an Agg canvas explicitly when the plotting function closes its pyplot manager.
+These contracts also run in the Python CI matrix without a Matplotlib pin.
 
 Lunar plot follow-up
 --------------------

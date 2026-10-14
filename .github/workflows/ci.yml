@@ -45,6 +45,17 @@ jobs:
       - name: Run tests
         run: pytest tests
 
+      - name: Check rendering on the installed Matplotlib version
+        env:
+          MPLBACKEND: Agg
+        run: >-
+          python -m pytest -q
+          scripts/tests/test_globe_rendering.py
+          scripts/tests/test_body_rendering_modes.py
+          scripts/tests/test_moon_plot_rendering.py
+          scripts/tests/test_cislunar_framing.py
+          scripts/tests/test_orbit_occultation.py
+
       - name: Run analytical validation profile
         if: matrix.python-version == '3.13'
         run: python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
