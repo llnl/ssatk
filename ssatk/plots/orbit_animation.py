@@ -552,7 +552,9 @@ class _ConstellationArtists:
             if view == "globe":
                 self.heads[view] = ax.scatter([], [], [], s=4, depthshade=False, zorder=3)
                 self.tails[view] = Line3DCollection(_np.empty((0, 2, 3)), linewidths=.45, zorder=2)
-                ax.add_collection3d(self.tails[view])
+                # Bounds already include all tracks. Matplotlib 3.11 cannot
+                # autoscale an empty collection before its first frame.
+                ax.add_collection3d(self.tails[view], autolim=False)
             else:
                 self.heads[view] = ax.scatter([], [], s=4, zorder=3)
                 self.tails[view] = LineCollection([], linewidths=.45, zorder=2)

@@ -35,7 +35,7 @@ def test_mode_precedence_restoration_and_validation(monkeypatch):
     set_low_spec_mode(None)
 
 
-def test_mapped_vertices_match_literal_longitudes_and_texels(tmp_path):
+def test_mapped_vertices_match_literal_longitudes_and_texels(tmp_path, submitted_vertices):
     """R1/C: exact north-up map and 90-degree rotation; 1e-12 length budget.
 
     A deliberately asymmetric six-column map exposes half-turn/latitude flips.
@@ -55,7 +55,7 @@ def test_mapped_vertices_match_literal_longitudes_and_texels(tmp_path):
     with low_spec_mode(False):
         fig = plt.figure()
         surface = BodySurface(fig.add_subplot(projection='3d'), 'moon', 5., center, rotation, n=3, path=path)
-        np.testing.assert_allclose(surface.artist._vec[:3].T, expected, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(submitted_vertices(surface.artist), expected, rtol=0, atol=1e-12)
         np.testing.assert_array_equal(surface.artist._facecolor3d[:, :3]*255, rgb.reshape(-1, 3))
         mesh = body_mesh_plotly('moon', center, 5., rotation, n=3, path=path)
         vertices = np.column_stack((mesh.x, mesh.y, mesh.z))
@@ -228,7 +228,7 @@ def test_eclipse_moon_map_has_no_half_turn_shift(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('body,radius', [('earth', 12756.274), ('moon', 3476.2)])
-def test_layer_radius_scale_is_applied_in_both_backends(body, radius):
+def test_layer_radius_scale_is_applied_in_both_backends(body, radius, submitted_vertices):
     """R1: explicit 2x display scale times SSAPy's adopted radius, 0.1 mm budget.
 
     This catches the former Matplotlib path ignoring radius_scale while the
@@ -243,7 +243,7 @@ def test_layer_radius_scale_is_applied_in_both_backends(body, radius):
     center = np.zeros(3) if body == 'earth' else layer._moon_position_km(epoch.gps)
     fig = plt.figure()
     artist = layer.add_to_mpl(fig.add_subplot(projection='3d'), state)[0]
-    np.testing.assert_allclose(np.linalg.norm(artist._vec[:3].T-center, axis=1), radius, rtol=0, atol=1e-7)
+    np.testing.assert_allclose(np.linalg.norm(submitted_vertices(artist)-center, axis=1), radius, rtol=0, atol=1e-7)
     plotly = go.Figure()
     layer.add_to_plotly(plotly, state)
     mesh = plotly.data[0]

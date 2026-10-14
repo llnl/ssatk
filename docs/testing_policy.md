@@ -39,6 +39,8 @@ test cases, but must not be described as measured flight or laboratory data.
 
 - Plot, viewer, and HTML rendering, and demo execution. Demos run in the
   gallery workflow, on pull requests and on pushes to `main`.
+  Selected geometry and rendering contracts in `scripts/tests` also run in
+  the Python CI matrix with its installed Matplotlib version.
 - Import paths and aliases are compatibility checks, isolated in
   `test_legacy_import_name.py`, rather than physical reference tests.
 - Argument validation and error messages, unless the rejected input is

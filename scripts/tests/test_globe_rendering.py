@@ -32,12 +32,6 @@ def _transform(points, epoch, source, target):
     return result.cartesian.xyz.to_value(u.m).T
 
 
-def _vertices(artist, unit):
-    # Inspect geometry passed to Matplotlib, not a second invocation of SSATK's
-    # rotation helper. _vec is Matplotlib's homogeneous polygon vertex buffer.
-    return artist._vec[:3].T.copy() * unit
-
-
 def _literal_sphere():
     # Independent spherical-coordinate definition, north to south, west to east.
     out = []
@@ -72,7 +66,7 @@ def test_texture_cells_follow_north_up_east_positive_projection(texture):
 
 @pytest.mark.parametrize('frame', ['gcrf', 'itrf'])
 @pytest.mark.parametrize('distance', [7e6, 45e6], ids=['km-axis', 'GEO-axis'])
-def test_rendered_earth_and_markers_at_each_epoch_match_astropy(texture, monkeypatch, tmp_path, frame, distance):
+def test_rendered_earth_and_markers_at_each_epoch_match_astropy(texture, monkeypatch, tmp_path, frame, distance, submitted_vertices):
     """R2/R1: actual frame vertices and positions vs Astropy GCRS/ITRS.
 
     The IAU 1976/1980 SSAPy chain differs from Astropy IAU 2006/2000A. Budget:
@@ -94,7 +88,7 @@ def test_rendered_earth_and_markers_at_each_epoch_match_astropy(texture, monkeyp
                 ax = self.fig.axes[0]
                 earth = next(c for c in ax.collections if c.get_zorder() == 1)
                 head = ax.lines[0]
-                captured.append((_vertices(earth, unit), np.asarray(head.get_data_3d()).T * unit,
+                captured.append((submitted_vertices(earth) * unit, np.asarray(head.get_data_3d()).T * unit,
                                  [text.get_text() for text in ax.texts]))
     monkeypatch.setattr(module, 'FuncAnimation', Capture)
     # Looking down the pole keeps the equatorial test spacecraft unocculted
@@ -116,7 +110,7 @@ def test_rendered_earth_and_markers_at_each_epoch_match_astropy(texture, monkeyp
 
 
 @pytest.mark.parametrize('frame', ['gcrf', 'itrf'])
-def test_still_uses_selected_epoch_and_marker_position(texture, frame):
+def test_still_uses_selected_epoch_and_marker_position(texture, frame, submitted_vertices):
     """R2/C: static public dispatch also honours frame and reference date (0.5")."""
     from ssatk.plots import orbit_plot
     from matplotlib import pyplot as plt
@@ -132,7 +126,7 @@ def test_still_uses_selected_epoch_and_marker_position(texture, frame):
         expected_position = r[:1]
         if frame == 'itrf':
             expected_position = _transform(expected_position, epochs[0], GCRS, ITRS)
-        np.testing.assert_allclose(_vertices(earth, RGEO), expected_earth, rtol=0, atol=16)
+        np.testing.assert_allclose(submitted_vertices(earth) * RGEO, expected_earth, rtol=0, atol=16)
         np.testing.assert_allclose(np.array(marker._offsets3d).T * RGEO, expected_position, rtol=0, atol=18)
     finally:
         plt.close(fig)
@@ -171,6 +165,45 @@ def test_rendered_pixels_hide_marker_and_trail_behind_earth(texture, monkeypatch
                            views=('globe',), el=0, az=0, earth_resolution=12,
                            save_path=tmp_path/'hidden.gif')
     assert counts[0] >= 10 and counts[1] == 0
+
+
+def test_constellation_renders_empty_first_trails_and_occulted_second_frame(monkeypatch, tmp_path):
+    """R1/C: 32 synthetic tracks enter the batched globe export path.
+
+    Viewed along +X, their first positions at +7000 km are in front of Earth;
+    their second positions at -7000 km, |y| <= 100 km are behind its disc.
+    Draw real frames to catch empty-collection autoscaling failures, and check
+    rendered head pixels against that literal ray/sphere visibility oracle.
+    """
+    module = importlib.import_module('ssatk.plots.orbit_animation')
+    monkeypatch.setattr(module._cm, 'rainbow', lambda values: np.tile([0, 1., 0, 1.], (len(values), 1)))
+    tracks = [np.array([[7e6, y, 0.], [-7e6, y, 0.]])
+              for y in np.linspace(-1e5, 1e5, 32)]
+    counts = []
+
+    class Capture:
+        def __init__(self, fig, update, frames, **kwargs):
+            self.fig, self.update, self.frames = fig, update, frames
+
+        def save(self, *args, **kwargs):
+            ax = self.fig.axes[0]
+            limits = None
+            for index in range(self.frames):
+                self.update(index)
+                self.fig.canvas.draw()
+                if limits is None:
+                    limits = np.array([ax.get_xlim(), ax.get_ylim(), ax.get_zlim()])
+                np.testing.assert_array_equal(
+                    [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()], limits)
+                pixels = np.asarray(self.fig.canvas.buffer_rgba())
+                green = (pixels[..., 1] > 230) & (pixels[..., 0] < 30) & (pixels[..., 2] < 30)
+                counts.append(int(green.sum()))
+
+    monkeypatch.setattr(module, 'FuncAnimation', Capture)
+    module.orbit_animation(tracks, 1.4e9+np.arange(2.), views=('globe',),
+                           el=0, az=0, earth_resolution=12, low_spec=True,
+                           save_path=tmp_path/'constellation.gif')
+    assert len(counts) == 2 and counts[0] >= 10 and counts[1] == 0
 
 
 @pytest.mark.parametrize('bad_time', ['missing', 'repeated', 'reversed', 'different-tracks'])

@@ -2,8 +2,10 @@
 import importlib
 
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
 import pytest
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from ssatk.constants import MOON_RADIUS, EARTH_RADIUS, RGEO
 from ssatk.plots.orbit_plot import orbit_plot
@@ -41,7 +43,7 @@ def points(artist):
 
 
 @pytest.mark.parametrize('view', ['cislunar_3d', 'cislunar', 'cislunar_xy'])
-def test_lunar_circle_fits_literal_limits_and_physical_radius(fixed_frame, view):
+def test_lunar_circle_fits_literal_limits_and_physical_radius(fixed_frame, view, submitted_vertices):
     """R1: 3000-km circle + 8% padding => +/-3480 km; 1e-8 km roundoff budget."""
     theta = np.linspace(0, 2*np.pi, 33)
     circle = 3e6*np.column_stack((np.cos(theta), np.sin(theta), np.zeros_like(theta)))
@@ -71,13 +73,15 @@ def test_lunar_circle_fits_literal_limits_and_physical_radius(fixed_frame, view)
         drawn.append(points(track).copy())
         return original_draw(renderer)
     track.draw = capture
-    fig.canvas.draw()
+    # Plotters close their pyplot manager before returning. Matplotlib 3.11
+    # detaches its renderer then; explicitly attach the raster backend tested.
+    FigureCanvasAgg(fig).draw()
     finite = np.all(np.isfinite(drawn[0]), axis=1)
     np.testing.assert_allclose(drawn[0][finite], circle[visible, :dims]/1000., rtol=0, atol=1e-8)
     np.testing.assert_allclose(points(track), circle[:, :dims]/1000., rtol=0, atol=1e-8)
     if dims == 3:
-        surface = next(c for c in ax.collections if hasattr(c, '_vec'))
-        np.testing.assert_allclose(np.linalg.norm(surface._vec[:3].T, axis=1), 1738.1, rtol=0, atol=1e-9)
+        surface = next(c for c in ax.collections if isinstance(c, Poly3DCollection))
+        np.testing.assert_allclose(np.linalg.norm(submitted_vertices(surface), axis=1), 1738.1, rtol=0, atol=1e-9)
     else:
         assert ax.patches[0].radius == pytest.approx(1738.1, abs=1e-10)
     # C: no legend entries for off-screen Earth/Lagrange points; every panel
