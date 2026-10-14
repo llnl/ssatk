@@ -131,7 +131,11 @@ def fit_star_attitude(camera_directions, reference_directions):
     if min(np.linalg.svd(body, compute_uv=False)[1], np.linalg.svd(reference, compute_uv=False)[1]) < 1e-6:
         raise ValueError("star directions are parallel or ill-conditioned")
     left, _, right = np.linalg.svd(reference.T @ body)
-    return left @ np.diag([1., 1., np.linalg.det(left @ right)]) @ right
+    rotation = left @ np.diag([1., 1., np.linalg.det(left @ right)]) @ right
+    # Project once more onto SO(3) so platform-dependent LAPACK roundoff does
+    # not leave a determinant a few ulps outside an otherwise exact rotation.
+    left, _, right = np.linalg.svd(rotation)
+    return left @ right
 
 
 def match_star_directions(camera_directions, reference_directions, prior_rotation, gate_rad):
