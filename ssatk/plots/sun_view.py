@@ -695,11 +695,26 @@ def _load_star_catalog(mag_limit: float = 6.5):
     if _STAR_CACHE is not None and _STAR_CACHE.get("mag_limit") == mag_limit:
         return _STAR_CACHE
 
+    # Prefer the split ssa-data-* packages (and $SSAPY_DATA / sibling-checkout
+    # overrides) that starfield.find_data_file resolves -- the _HYG_PATHS
+    # list below only ever matched a catalog dropped by hand at one of three
+    # fixed locations, so a normal package install always fell through to
+    # the random placeholder sky.
+    from .starfield import find_data_file
     csv_path = None
-    for p in _HYG_PATHS:
-        if os.path.exists(p):
-            csv_path = p
+    for name in ("bright_stars_mag9.csv", "bright_stars.csv"):
+        try:
+            found = find_data_file(name)
+        except NameError:
+            found = None
+        if found is not None:
+            csv_path = str(found)
             break
+    if csv_path is None:
+        for p in _HYG_PATHS:
+            if os.path.exists(p):
+                csv_path = p
+                break
     if csv_path is None:
         return None
 
