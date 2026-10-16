@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -13,8 +14,12 @@ def save_json(filename: str, data) -> None:
     def encode(obj):
         if isinstance(obj, np.ndarray):
             return {"__type__": "ndarray", "data": obj.tolist()}
+        if isinstance(obj, np.bool_):
+            return bool(obj)
         if isinstance(obj, (np.integer, np.floating)):
             return obj.item()
+        if isinstance(obj, (bytes, bytearray)):
+            return {"__type__": "bytes", "data": list(obj)}
         if isinstance(obj, datetime):
             return {"__type__": "datetime", "data": obj.isoformat()}
         if isinstance(obj, Time):
@@ -29,9 +34,15 @@ def save_json(filename: str, data) -> None:
             return {"__type__": "tuple", "data": list(obj)}
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
+    # Serialize to a string first so a value that can't be encoded raises
+    # before anything on disk is touched, then atomically replace the target
+    # file so a failure (or a crash mid-write) never leaves a
+    # truncated/invalid file where a good one used to be.
+    text = json.dumps(data, default=encode, indent=4)
     path = ensure_file_parent(filename)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, default=encode, indent=4)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def load_json(filename: str):
@@ -47,6 +58,8 @@ def load_json(filename: str):
             return datetime.fromisoformat(obj["data"])
         if obj_type == "astropy_time":
             return Time(obj["data"], scale=obj["scale"])
+        if obj_type == "bytes":
+            return bytes(obj["data"])
         if obj_type == "set":
             return set(obj["data"])
         if obj_type == "tuple":

@@ -1,5 +1,6 @@
 import json
 import inspect
+import os
 import numpy as np
 from ssatk._paths import ensure_file_parent
 from datetime import datetime
@@ -161,10 +162,15 @@ def save_workspace(filename='workspace.json', exclude=None):
         'variables': workspace
     }
     
-    # Save to file
+    # Save to file. Serialize to a string first so a bad value raises before
+    # anything on disk is touched, then atomically replace the target so a
+    # failure (or a crash mid-write) never leaves a truncated/invalid file
+    # where a good previous save used to be.
+    text = json.dumps(result, indent=2)
     path = ensure_file_parent(filename)
-    with path.open('w', encoding='utf-8') as f:
-        json.dump(result, f, indent=2)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
     
     print(f"✓ Workspace saved to '{filename}'")
     print(f"  - Saved {len(workspace)} variables")
