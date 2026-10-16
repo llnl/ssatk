@@ -27,6 +27,7 @@ Example
 """
 
 import numpy as np
+import warnings
 
 from ssapy.accel import AccelKepler, AccelConstNTW
 from ssapy.orbit import Orbit
@@ -351,7 +352,7 @@ def transfer_ssapy(
     thrust=None,
     mass=None,
     isp=None,
-    prograde=True,
+    prograde=None,
     arrival_mode=None,
     arrival_burn=True,
     propagate=True,
@@ -427,8 +428,14 @@ def transfer_ssapy(
         dynamics are unchanged: attaches a Tsiolkovsky propellant-mass
         estimate to each burn (sequentially debited between burns) and
         to the summary.
-    prograde : bool
-        Sense of motion for the Lambert geometry.
+    prograde : bool or None
+        Sense of motion for the Lambert geometry: ``True`` selects the
+        transfer conic with +z angular momentum, ``False`` selects -z
+        (see :func:`solve_lambert`). Default ``None`` matches the
+        departure orbit's own sense (+z if ``cross(r1, v1)[2] >= 0`` else
+        -z), which is the geometry a coast or small maneuver needs; pass
+        an explicit ``True``/``False`` to force a branch regardless of
+        the departure orbit's inclination.
     arrival_mode : {"inject", "intercept", "rendezvous", "insertion"}, optional
         User-facing terminology for the arrival constraint. ``"inject"`` means
         perform only the departure burn that places the spacecraft on the
@@ -557,6 +564,13 @@ def transfer_ssapy(
             "unavailable with burn_accel alone).")
     a_spec = (thrust / mass) if thrust is not None else burn_accel
 
+    # Default: match the departure orbit's own sense of motion rather than
+    # always forcing the +z Lambert branch, which is the wrong geometry for
+    # a co-rotating transfer whenever the departure orbit has i > 90 deg
+    # (see solve_lambert's prograde convention above).
+    if prograde is None:
+        prograde = bool(np.cross(r1, v1)[2] >= 0)
+
     # --- Lambert solution and burns --------------------------------------
     v1_req, v2_req = solve_lambert(r1, r2, tof, mu=mu, prograde=prograde)
 
@@ -596,6 +610,7 @@ def transfer_ssapy(
     transfer_orbit = Orbit(r1, v1_req, t1, mu=mu)
 
     # --- optional differential correction (shooting) ----------------------
+    refine_converged = None
     if propagate:
         from ssapy.compute import rv
 
@@ -615,6 +630,7 @@ def transfer_ssapy(
         # size -> refine until each burn's implied thrust m*|dv|/d
         # matches the specified engine to ~2%.
         a_burn = a_spec
+        sizing_converged = a_burn is None
         for _sizing in range(4):
             if arrival_burn:
                 seg_edges = [t1, t1 + d1, t2 - d2, t2]
@@ -767,7 +783,9 @@ def transfer_ssapy(
                     # Intercept: a single position-targeting stage.
                     x, pos_err = newton_3x3(
                         x, slice(0, 3), r2, lambda rr, vv: rr, pos_tol)
+                    refine_converged = pos_err < pos_tol
                 else:
+                    refine_converged = False
                     for _ in range(max_refine_iter):
                         x, pos_err = newton_3x3(
                             x, slice(0, 3), r2, lambda rr, vv: rr, pos_tol)
@@ -779,6 +797,7 @@ def transfer_ssapy(
                             rf, vf = end_state(x)
                             if (np.linalg.norm(rf - r2) < pos_tol
                                     and np.linalg.norm(vf - v2) < vel_tol):
+                                refine_converged = True
                                 break
 
 
@@ -799,12 +818,44 @@ def transfer_ssapy(
             if arrival_burn:
                 drift = max(drift, abs(nd2 - d2) / max(d2, 1e-3))
             if drift < 0.02:
+                sizing_converged = True
                 break               # durations consistent with refined dv
             d1, d2 = nd1, nd2
             # Warm-start the next refinement from this solution.
             dv1_ntw = x[:3].copy()
             if arrival_burn:
                 dv2_ntw = x[3:].copy()
+
+        if not sizing_converged:
+            warnings.warn(
+                f"Hardware burn-duration sizing did not converge to 2% "
+                f"drift after 4 passes (final drift {drift:.1%}); using "
+                "the last iterate. Final burn durations may be mildly "
+                "inconsistent with the specified thrust/mass or burn_accel.")
+        # Rebuild seg_edges from the durations actually used below: the loop
+        # above may update d1/d2 on its last pass (sizing or warm-start)
+        # without re-deriving the segment boundaries from them, which would
+        # otherwise apply the new burn delta-v over the old segment length.
+        if arrival_burn:
+            seg_edges = [t1, t1 + d1, t2 - d2, t2]
+        else:
+            seg_edges = [t1, t1 + d1, t2]
+
+        if refine and not refine_converged:
+            if arrival_burn:
+                warnings.warn(
+                    f"Differential-correction refinement did not converge "
+                    f"(position error {pos_err:.3g} m vs tolerance "
+                    f"{pos_tol:.3g} m, velocity error {vel_err:.3g} m/s vs "
+                    f"tolerance {vel_tol:.3g} m/s) after {max_refine_iter} "
+                    "iterations; the returned trajectory may miss the "
+                    "target state.")
+            else:
+                warnings.warn(
+                    f"Differential-correction refinement did not converge "
+                    f"(position error {pos_err:.3g} m vs tolerance "
+                    f"{pos_tol:.3g} m); the returned trajectory may miss "
+                    "the target position.")
 
         # Final piecewise propagation with the (possibly refined) burns,
         # sampled for the returned trajectory.
@@ -835,7 +886,6 @@ def transfer_ssapy(
                f"the {dv_budget:.3f} m/s budget.")
         if raise_on_budget:
             raise ValueError(msg)
-        import warnings
         warnings.warn(msg)
 
     return _transfer_ssapy_to_standard_dict(
@@ -854,6 +904,7 @@ def transfer_ssapy(
         arrival_burn=arrival_burn,
         propagate=propagate,
         refine=refine,
+        refine_converged=refine_converged,
         burn_accel=burn_accel,
         thrust=thrust,
         mass=mass,
@@ -878,6 +929,7 @@ def _transfer_ssapy_to_standard_dict(
     arrival_burn,
     propagate,
     refine,
+    refine_converged,
     burn_accel,
     thrust,
     mass,
@@ -951,6 +1003,7 @@ def _transfer_ssapy_to_standard_dict(
             "arrival_burn": bool(arrival_burn),
             "propagate": bool(propagate),
             "refine": bool(refine),
+            "refine_converged": (None if refine_converged is None else bool(refine_converged)),
             "mu": mu,
         },
     )
