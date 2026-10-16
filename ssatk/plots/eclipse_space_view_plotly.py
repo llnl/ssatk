@@ -1087,7 +1087,6 @@ def find_and_plot_eclipse(mode="lunar", save_path=None, search_days=None, verbos
     cos_sep_mid = np.dot(-occ_hat_mid, sun_win[mid])
     sep_deg_mid = np.degrees(np.arccos(np.clip(cos_sep_mid, -1, 1)))
 
-    frac_umbra = np.mean(illum_win < 0.02) * 100
     dt_mean = np.mean(np.diff(t_win)) if len(t_win) > 1 else 0
     dur_umbra_hr = np.sum(illum_win < 0.02) * dt_mean / 3600.0
     dur_total_hr = np.sum(illum_win < 0.999) * dt_mean / 3600.0
@@ -2395,7 +2394,6 @@ def plot_space_view_plotly(mode="lunar", search_days=None, save_path=None, verbo
     _, stats = find_and_plot_eclipse(mode=mode, search_days=search_days,
                                      save_path=None, verbose=verbose, event=event)
     window = _eclipse_window(mode, search_days=search_days, event=event, n_steps=4000, verbose=False)
-    t_fine = window["t_s"]
     r_fine = window["r_moon"]
     sun_fine = window["sun_hat"]
     illum_fine = window["illum"]
