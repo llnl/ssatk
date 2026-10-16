@@ -89,6 +89,7 @@ def read_3le(data_file, makedf=True, verbose=False):
             "drag",
             "elset_type",
             "elset#",
+            "check_sum_line1",
             "inc_deg",
             "raan_deg",
             "ecc",
@@ -149,7 +150,19 @@ def read_3le(data_file, makedf=True, verbose=False):
                 data["nddot"].append(split_mantassa(splits[4 + i]))
                 data["drag"].append(split_mantassa(splits[5 + i]))
                 data["elset_type"].append(int(splits[6 + i]))
-                data["elset#"].append(int(splits[7 + i]))
+                # Columns 65-68 (1-indexed) are the element set number and
+                # column 69 is the checksum, with no separating whitespace
+                # between them -- token splits on whitespace (splits[-1])
+                # fold the checksum digit into the element set number (e.g.
+                # elset 292 checksum 7 read back as 2927). Read the fixed
+                # TLE columns on the full line instead, matching
+                # read_3le_by_bit.TLE_FIELDS's [64:68]/[68] slices.
+                if len(line) >= 69:
+                    data["elset#"].append(int(line[64:68]))
+                    data["check_sum_line1"].append(int(line[68]) if line[68].isdigit() else None)
+                else:
+                    data["elset#"].append(int(splits[7 + i]))
+                    data["check_sum_line1"].append(None)
 
             elif key == "2":
                 # Use fixed-width slices per TLE spec; token splits are brittle here.
