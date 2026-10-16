@@ -22,34 +22,41 @@ def proper_motion(x: np.ndarray, y: np.ndarray, z: np.ndarray, vx: np.ndarray, v
     input_unit (str): 'si' for m and m/s, or 'rebound' for au and au per REBOUND time unit (yr2pi = 1/k day).
 
     Returns:
-    float or None: The total proper motion in arcseconds per second for either input unit, NaN if the object is at the Earth's position, or None for an unrecognized input_unit.
+    float or np.ndarray: The total proper motion in arcseconds per second for either input
+        unit (a scalar for scalar inputs, or an array vectorized along the sample axis of
+        array-like inputs), NaN where the object is at the Earth's position, or None for an
+        unrecognized input_unit.
 
     Author: Travis Yeager (yaeger7@llnl.gov)
     """
-    x_rot = x - xe
-    y_rot = y - ye
-    z_rot = z - ze
-    vx_rot = vx - vxe
-    vy_rot = vy - vye
-    vz_rot = vz - vze
+    x_rot, y_rot, z_rot, vx_rot, vy_rot, vz_rot = np.broadcast_arrays(
+        np.asarray(x, dtype=float) - xe, np.asarray(y, dtype=float) - ye, np.asarray(z, dtype=float) - ze,
+        np.asarray(vx, dtype=float) - vxe, np.asarray(vy, dtype=float) - vye, np.asarray(vz, dtype=float) - vze,
+    )
+    scalar_input = x_rot.ndim == 0
 
-    d_earth_mag = np.linalg.norm([x_rot, y_rot, z_rot])
-    if d_earth_mag == 0:
-        return np.nan
+    los_vector = np.stack([x_rot, y_rot, z_rot], axis=-1)
+    v_ast_earth = np.stack([vx_rot, vy_rot, vz_rot], axis=-1)
 
-    v_ast_earth = np.array([vx_rot, vy_rot, vz_rot])
-    los_vector = np.array([x_rot, y_rot, z_rot])
+    d_earth_mag = np.linalg.norm(los_vector, axis=-1)
+    zero = d_earth_mag == 0
 
-    # Avoid subtracting nearly equal squared speeds for mostly radial motion.
-    v_transverse = np.linalg.norm(np.cross(v_ast_earth, los_vector / d_earth_mag))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        safe_d_earth_mag = np.where(zero, 1.0, d_earth_mag)
+        # Avoid subtracting nearly equal squared speeds for mostly radial motion.
+        v_transverse = np.linalg.norm(
+            np.cross(v_ast_earth, los_vector / safe_d_earth_mag[..., None]), axis=-1)
+        pm = np.where(zero, np.nan, v_transverse / safe_d_earth_mag)
 
     if input_unit == 'si':
-        return v_transverse / d_earth_mag * rad_to_arcsecond
+        pm = pm * rad_to_arcsecond
     elif input_unit == 'rebound':
-        return v_transverse / d_earth_mag * rad_to_arcsecond / _REBOUND_TIME_UNIT_S
+        pm = pm * rad_to_arcsecond / _REBOUND_TIME_UNIT_S
     else:
         warnings.warn("input_unit must be 'si' or 'rebound'.", UserWarning, stacklevel=2)
         return None
+
+    return float(pm) if scalar_input else pm
 
 
 def proper_motion_ra_dec(
@@ -72,8 +79,12 @@ def proper_motion_ra_dec(
     ----------
     r : numpy.ndarray, optional
         3D position vector (x, y, z) in SI units (m).
+    r : numpy.ndarray, optional
+        3D position vector (x, y, z) in SI units (m), shape ``(3,)`` for a
+        single state or ``(N, 3)`` for a batch.
     v : numpy.ndarray, optional
-        3D velocity vector (vx, vy, vz) in SI units (m/s).
+        3D velocity vector (vx, vy, vz) in SI units (m/s), matching the
+        shape of ``r``.
     x, y, z : float, optional
         Individual position coordinates in meters, used when ``r`` is absent.
     vx, vy, vz : float, optional
@@ -86,10 +97,11 @@ def proper_motion_ra_dec(
 
     Returns
     -------
-    tuple of numpy.ndarray
-        ``(pmra, pmdec)`` in arcseconds per second for either input unit.
-        ``pmra`` is the great-circle rate along increasing RA, i.e.
-        ``mu_alpha * cos(dec)``.
+    tuple of float or numpy.ndarray
+        ``(pmra, pmdec)`` in arcseconds per second for either input unit:
+        scalars for a single ``(3,)``/``x, y, z`` state, arrays of shape
+        ``(N,)`` for an ``(N, 3)`` batch. ``pmra`` is the great-circle rate
+        along increasing RA, i.e. ``mu_alpha * cos(dec)``.
     """
     if r is None or v is None:
         if x is not None and y is not None and z is not None and vx is not None and vy is not None and vz is not None:
@@ -97,6 +109,12 @@ def proper_motion_ra_dec(
             v = np.array([vx, vy, vz])
         else:
             raise ValueError("Either provide r and v arrays or individual coordinates (x, y, z) and velocities (vx, vy, vz)")
+
+    r = np.asarray(r, dtype=float)
+    v = np.asarray(v, dtype=float)
+    single_state = r.ndim == 1
+    r = np.atleast_2d(r)
+    v = np.atleast_2d(v)
 
     # Subtract Earth's position and velocity from the input arrays
     r = r - r_earth
@@ -112,6 +130,9 @@ def proper_motion_ra_dec(
     dec_unit_vector = -np.array([np.cos(np.pi / 2 - dec) * np.cos(ra), np.cos(np.pi / 2 - dec) * np.sin(ra), -np.sin(np.pi / 2 - dec)]).T
     pmra = (np.einsum('ij,ij->i', v, ra_unit_vector)) / d_earth_mag * rad_to_arcsecond
     pmdec = (np.einsum('ij,ij->i', v, dec_unit_vector)) / d_earth_mag * rad_to_arcsecond
+
+    if single_state:
+        pmra, pmdec = pmra[0], pmdec[0]
 
     if input_unit == 'si':
         return pmra, pmdec
