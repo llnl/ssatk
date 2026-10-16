@@ -86,9 +86,12 @@ def main(make_figures=None, fast=None):
 
         for index, label in enumerate(("x", "y", "z")):
             axes[1, 0].plot(time_hr, uncontrolled.omega[:, index], label=f"ω{label}", lw=2)
-            axes[1, 1].plot(time_hr, controlled_x_axis[:, index], label=f"body +X {label}", lw=2)
+            axes[1, 1].plot(
+                time_hr, uncontrolled_x_axis[:, index], label=f"uncontrolled +X {label}", lw=2, linestyle="--"
+            )
+            axes[1, 1].plot(time_hr, controlled_x_axis[:, index], label=f"controlled +X {label}", lw=2)
         axes[1, 0].set_ylabel("uncontrolled ω [rad/s]")
-        axes[1, 1].set_ylabel("controlled body +X in GCRF")
+        axes[1, 1].set_ylabel("body +X in GCRF")
         for ax in axes[1, :]:
             ax.set_xlabel("time [hr]")
             ax.legend()
