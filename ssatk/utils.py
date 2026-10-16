@@ -1,6 +1,10 @@
 # flake8: noqa: E501
 from pandas import DataFrame
-from ssapy.body import get_body
+# body_pos() needs frame transforms (icrs/gcrs/*ecliptic) on a body position;
+# ssapy.body.get_body(name, model=None) returns an SSAPy Body with no such
+# frames, so this uses astropy.coordinates.get_body(name, time) instead, which
+# returns a GCRS SkyCoord that can be transformed to each documented frame.
+from astropy.coordinates import get_body
 import scipy
 from scipy import stats
 import numpy as np
@@ -570,16 +574,17 @@ def body_pos(body: str = 'earth', t: float = None, coord: str = 'icrs',
     """
     if t is None:
         t = Time(date, format=format)
+    position = get_body(body, t)
     if coord == 'heliocentricmeanecliptic':
-        return get_body(body, t).heliocentricmeanecliptic.cartesian.get_xyz().to(u.m).value
+        return position.heliocentricmeanecliptic.cartesian.get_xyz().to(u.m).value
     if coord == 'gcrs':
-        return get_body(body, t).gcrs.cartesian.get_xyz().to(u.m).value
+        return position.gcrs.cartesian.get_xyz().to(u.m).value
     if coord == 'icrs':
-        return get_body(body, t).icrs.cartesian.get_xyz().to(u.m).value
+        return position.icrs.cartesian.get_xyz().to(u.m).value
     if coord == 'barycentricmeanecliptic':
-        return get_body(body, t).barycentricmeanecliptic.cartesian.get_xyz().to(u.m).value
+        return position.barycentricmeanecliptic.cartesian.get_xyz().to(u.m).value
     if coord == 'barycentrictrueecliptic':
-        return get_body(body, t).barycentrictrueecliptic.cartesian.get_xyz().to(u.m).value
+        return position.barycentrictrueecliptic.cartesian.get_xyz().to(u.m).value
 
 
 def close_to_any(a: np.ndarray, floats: np.ndarray, **kwargs) -> bool:
