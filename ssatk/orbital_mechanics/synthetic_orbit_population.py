@@ -33,6 +33,7 @@ from ssapy import Orbit
 from ssapy.propagator import KeplerianPropagator
 
 from ..constants import EARTH_MU
+from ..time_functions._gps import _to_gps_seconds
 
 
 def synthetic_orbit_population(
@@ -124,16 +125,11 @@ def synthetic_orbit_population(
     # Returned time base is seconds-from-start (SI)
     t_rel = np.arange(N, dtype=float) * float(dt)
 
-    # SSAPy propagation uses absolute times; for float epochs this is just t_start + t_rel
-    # (and if you want true GPS seconds, pass t_start accordingly).
-    if np.isscalar(t_start):
-        t_abs = float(t_start) + t_rel
-    else:
-        # astropy Time supports addition with seconds via TimeDelta, but we avoid
-        # importing astropy here; SSAPy will accept Time, and Orbit.at uses it.
-        # We still build a float grid for outputs; for at(), pass t_start + seconds
-        # via numpy array and let astropy handle if user supplied Time.
-        t_abs = t_start + t_rel  # relies on astropy Time behavior if t_start is Time
+    # SSAPy propagation uses absolute times. Convert t_start to GPS seconds
+    # first: an astropy Time plus a bare float/array is interpreted as a
+    # TimeDelta in days, not seconds, which silently corrupts the absolute
+    # epoch used below for Orbit.at() (t_rel is already in seconds).
+    t_abs = _to_gps_seconds(t_start) + t_rel
 
     def _draw(scale, size):
         if distribution == "normal":
