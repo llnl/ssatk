@@ -204,6 +204,8 @@ class FrameTransform:
         r_eci : np.ndarray,
         v_eci : np.ndarray | None = None,
         t_gps : float | None = None,
+        r_ref : np.ndarray | None = None,
+        v_ref : np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Transform a single ECI position into the target frame.
@@ -211,6 +213,13 @@ class FrameTransform:
         r_eci : (3,) km
         v_eci : (3,) km/s  — required for LVLH / RTN / NTW
         t_gps : GPS seconds — required for ECF (overrides self.t_gps)
+        r_ref, v_ref : (3,) km, km/s, optional
+            Reference ECI state (e.g. a chief spacecraft) whose LVLH/RTN/NTW
+            frame ``r_eci`` is expressed relative to, as ``M(r_ref, v_ref) @
+            (r_eci - r_ref)``. Omit both to express the point in the frame it
+            defines for itself (legacy behaviour): since R_hat = r/|r| and
+            S_hat, W_hat are both orthogonal to r, that is always
+            [|r|, 0, 0] and carries no relative-motion information.
         """
         r = np.asarray(r_eci, dtype=float)
         v = np.asarray(v_eci, dtype=float) if v_eci is not None else None
@@ -225,11 +234,23 @@ class FrameTransform:
         if self.frame in (Frame.LVLH, Frame.RTN):
             if v is None:
                 raise ValueError("velocity required for LVLH/RTN transform")
+            if r_ref is not None or v_ref is not None:
+                if r_ref is None or v_ref is None:
+                    raise ValueError("r_ref and v_ref must be supplied together")
+                r_ref = np.asarray(r_ref, dtype=float)
+                v_ref = np.asarray(v_ref, dtype=float)
+                return lvlh_matrix(r_ref, v_ref) @ (r - r_ref)
             return lvlh_matrix(r, v) @ r
 
         if self.frame == Frame.NTW:
             if v is None:
                 raise ValueError("velocity required for NTW transform")
+            if r_ref is not None or v_ref is not None:
+                if r_ref is None or v_ref is None:
+                    raise ValueError("r_ref and v_ref must be supplied together")
+                r_ref = np.asarray(r_ref, dtype=float)
+                v_ref = np.asarray(v_ref, dtype=float)
+                return ntw_matrix(r_ref, v_ref) @ (r - r_ref)
             return ntw_matrix(r, v) @ r
 
         raise ValueError(f"Unknown frame: {self.frame}")
@@ -265,6 +286,8 @@ class FrameTransform:
         r_eci : np.ndarray,
         v_eci : np.ndarray,
         t_gps : np.ndarray | None = None,
+        r_ref : np.ndarray | None = None,
+        v_ref : np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Transform an (N, 3) ECI position array into the target frame.
@@ -274,6 +297,16 @@ class FrameTransform:
         r_eci : (N, 3) km
         v_eci : (N, 3) km/s
         t_gps : (N,) GPS seconds — required for ECF
+        r_ref, v_ref : (3,) km, km/s, optional
+            Reference ECI state (e.g. a chief spacecraft, or the
+            trajectory's own first sample) that fixes a single LVLH/RTN/NTW
+            frame for every row: ``M(r_ref, v_ref) @ (r_eci[i] - r_ref)``.
+            Omit both to keep the legacy per-row behaviour, where row ``i``
+            is projected onto the frame built from its own ``(r[i], v[i])``.
+            Because R_hat = r/|r| and S_hat, W_hat are both orthogonal to r,
+            that per-row projection is always [|r[i]|, 0, 0] regardless of
+            the trajectory's actual shape -- pass r_ref/v_ref (for example
+            ``r_eci[0], v_eci[0]``) to see real relative motion.
 
         Returns
         -------
@@ -295,12 +328,26 @@ class FrameTransform:
             return out
 
         if self.frame in (Frame.LVLH, Frame.RTN):
+            if r_ref is not None or v_ref is not None:
+                if r_ref is None or v_ref is None:
+                    raise ValueError("r_ref and v_ref must be supplied together")
+                r_ref = np.asarray(r_ref, dtype=float)
+                v_ref = np.asarray(v_ref, dtype=float)
+                M = lvlh_matrix(r_ref, v_ref)
+                return (r - r_ref) @ M.T
             for i in range(N):
                 M = lvlh_matrix(r[i], v[i])
                 out[i] = M @ r[i]
             return out
 
         if self.frame == Frame.NTW:
+            if r_ref is not None or v_ref is not None:
+                if r_ref is None or v_ref is None:
+                    raise ValueError("r_ref and v_ref must be supplied together")
+                r_ref = np.asarray(r_ref, dtype=float)
+                v_ref = np.asarray(v_ref, dtype=float)
+                M = ntw_matrix(r_ref, v_ref)
+                return (r - r_ref) @ M.T
             for i in range(N):
                 M = ntw_matrix(r[i], v[i])
                 out[i] = M @ r[i]
@@ -318,8 +365,18 @@ class FrameTransform:
         """
         Transform trajectory and subtract first point — useful for
         LVLH plots centred on the reference spacecraft.
+
+        For LVLH/RTN/NTW this fixes the frame to the trajectory's own first
+        sample (``transform_trajectory``'s ``r_ref``/``v_ref``) instead of
+        re-deriving it from every row, so the result is the trajectory's
+        actual relative motion rather than the degenerate [|r|, 0, 0] a
+        per-row frame gives for every sample (see ``transform_trajectory``).
         """
-        out = self.transform_trajectory(r_eci, v_eci, t_gps)
+        r = np.asarray(r_eci, dtype=float)
+        v = np.asarray(v_eci, dtype=float)
+        if self.frame in (Frame.LVLH, Frame.RTN, Frame.NTW):
+            return self.transform_trajectory(r, v, t_gps, r_ref=r[0], v_ref=v[0])
+        out = self.transform_trajectory(r, v, t_gps)
         return out - out[0]
 
 
