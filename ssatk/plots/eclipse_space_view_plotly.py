@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
 from ssatk.constants import EARTH_MEAN_RADIUS_KM, EARTH_MU_KM3_S2, MOON_MEAN_RADIUS_KM
+from ssatk.coordinates.equatorial_ecliptic import ecliptic_xyz_to_equatorial_xyz
 
 try:
     from .globe_orbit_daynight_plotly import _earth_mesh, _sun_sphere_traces, _earth_atmosphere_trace, RE_KM
@@ -871,10 +872,24 @@ def _synthetic_eclipse_window(mode, search_days=None, *, n_steps=4000, verbose=T
     lunar_period_days = 27.32
     n_orbits_year = search_days / lunar_period_days
     coarse_density = 60 if mode == "lunar" else 1500
-    t_s, r_moon, _ = propagate_eci(
+    t_s, r_moon_ecl, _ = propagate_eci(
         a_km=D_MOON_A_KM, e=D_MOON_E, inc_deg=D_MOON_INC_DEG,
         raan_deg=0.0, argp_deg=0.0, nu0_deg=0.0,
         n_orbits=n_orbits_year, n_steps=int(n_orbits_year * coarse_density),
+    )
+    # D_MOON_INC_DEG (5.145 deg) is the Moon's inclination to the ECLIPTIC,
+    # so propagate_eci's x-y plane here (its inc_deg=0 plane, raan/argp
+    # measured from it) is the ecliptic, not the equator -- but
+    # sun_direction_eci returns the Sun in the true equatorial (GCRF)
+    # frame. Left unrotated, the two "orbits" are tilted against each
+    # other for no physical reason and never line up, so
+    # illumination_fraction below never sees a real eclipse (illum_coarse
+    # stays flat at 1.0 for every mode/search_days). Rotating the Moon's
+    # ecliptic-frame position by the obliquity puts it in the same
+    # equatorial frame as sun_hat.
+    r_moon = np.stack(
+        ecliptic_xyz_to_equatorial_xyz(r_moon_ecl[:, 0], r_moon_ecl[:, 1], r_moon_ecl[:, 2]),
+        axis=1,
     )
     sun_hat = sun_direction_eci(t_s)
     r_eval = r_moon if mode == "lunar" else -r_moon
@@ -900,12 +915,18 @@ def _synthetic_eclipse_window(mode, search_days=None, *, n_steps=4000, verbose=T
     nu_start = 2*np.arctan2(np.sqrt(1+D_MOON_E)*np.sin(E_start/2), np.sqrt(1-D_MOON_E)*np.cos(E_start/2))
     n_orbits_window = (2 * window_days) / lunar_period_days
 
-    t_fine, r_fine, _ = propagate_eci(
+    t_fine, r_fine_ecl, _ = propagate_eci(
         a_km=D_MOON_A_KM, e=D_MOON_E, inc_deg=D_MOON_INC_DEG,
         raan_deg=0.0, argp_deg=0.0, nu0_deg=np.degrees(nu_start),
         n_orbits=n_orbits_window, n_steps=int(n_steps),
     )
     t_fine = t_fine + t_window_start
+    # Same ecliptic -> equatorial rotation as the coarse pass above (both
+    # need it; this one refines the window found there).
+    r_fine = np.stack(
+        ecliptic_xyz_to_equatorial_xyz(r_fine_ecl[:, 0], r_fine_ecl[:, 1], r_fine_ecl[:, 2]),
+        axis=1,
+    )
     sun_fine = sun_direction_eci(t_fine)
     r_eval_fine = r_fine if mode == "lunar" else -r_fine
     illum_fine = illumination_fraction(r_eval_fine, sun_fine, R_body_km=R_occ,
@@ -1149,6 +1170,20 @@ def find_and_plot_eclipse(mode="lunar", save_path=None, search_days=None, verbos
     ingress = np.where((t_hr < 0) & (t_hr > -bound_hr))[0]
     egress = np.where((t_hr > 0) & (t_hr < bound_hr))[0]
     illum_min = illum_win.min()
+
+    # illum_win is exactly flat (no partial overlap anywhere in the window)
+    # when the search window never actually contains an eclipse -- the
+    # no-overlap branch of illumination_fraction returns a literal 1.0,
+    # not a near-1 value, so this comparison is exact rather than a
+    # tolerance guess. When that happens (or the window is so one-sided
+    # that it has no samples before or after the reported peak) there is
+    # nothing here to render; fail clearly instead of the subsequent
+    # argmin crashing on an empty ingress/egress array.
+    if illum_win.max() == illum_min or ingress.size == 0 or egress.size == 0:
+        plt.close(fig)
+        raise ValueError(
+            "no eclipse found in this window; try a longer search_days or pass event="
+        )
 
     # Target specific illumination LEVELS (not time offsets) for each
     # step, bunched non-linearly toward the deepest point — this
