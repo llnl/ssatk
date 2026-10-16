@@ -31,7 +31,13 @@ def read_csv(file_name: str, sep: Optional[str] = None, dtypes: Optional[Dict[st
     if skiprows is None:
         skiprows = []
 
-    if col and not isinstance(col, list):
+    # None/False/True all mean "no column filter" (read every column);
+    # anything else is a single column name or an explicit list of names.
+    # Previously True became usecols=[True] and None became usecols=[None],
+    # both of which pandas rejects.
+    if col in (None, False, True):
+        col = False
+    elif not isinstance(col, list):
         col = [col]  # Ensure col is always a list
 
     if sep is None:
