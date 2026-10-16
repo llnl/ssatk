@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401; required for 3D projection
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 -- required for 3D projection
 from matplotlib.lines import Line2D
 from .plotutils import figsave, _pop_save_path_aliases, _raise_unrecognized_kwargs
 from ..constants import EARTH_MU, EARTH_RADIUS
