@@ -440,8 +440,17 @@ def make_planet_traces(
     list of go.Surface / go.Scatter3d traces
     """
     if name == "Moon":
+        # body_rotation() treats a bare numeric time as GPS seconds, but
+        # this module's `time` is Julian Date (UTC) -- see make_moon_traces
+        # below, which already wraps it the same way.
+        from astropy.time import Time
+        moon_time = (
+            Time(float(time), format="jd", scale="utc")
+            if isinstance(time, (int, float, np.integer, np.floating))
+            else time
+        )
         traces = [body_mesh_plotly("moon", pos_au, _R_AU["Moon"]*scale_au,
-                  body_rotation("moon", time, "ecliptic"), n=n)]
+                  body_rotation("moon", moon_time, "ecliptic"), n=n)]
         if show_label:
             traces.append(go.Scatter3d(x=[pos_au[0]], y=[pos_au[1]], z=[pos_au[2]],
                           mode="text", text=["Moon"], hoverinfo="skip", showlegend=False))

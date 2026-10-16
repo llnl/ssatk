@@ -638,6 +638,11 @@ class MoonShadingLayer:
         time=None, low_spec=None,
     ):
         self.time, self.low_spec = time, is_low_spec(low_spec)
+        # body_rotation() treats a bare numeric time as GPS seconds, but this
+        # module's convention (see sun_position_eci above) is that a bare
+        # float is a Julian Date (UTC).
+        if self.time is not None and not isinstance(self.time, Time):
+            self.time = Time(float(self.time), format="jd", scale="utc")
         self.moon_center = np.asarray(moon_center, dtype=float)
         sun_from_moon = np.asarray(sun_pos_eci, dtype=float) - self.moon_center
         norm = np.linalg.norm(sun_from_moon)
