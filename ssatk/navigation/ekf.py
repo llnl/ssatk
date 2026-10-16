@@ -54,9 +54,14 @@ class EKFState:
     def __post_init__(self):
         x = _vector(self.x, np.asarray(self.x).size, "x")
         covariance = _matrix(self.covariance, (x.size, x.size), "covariance")
-        if not np.allclose(covariance, covariance.T, rtol=0.0, atol=1e-12):
+        # Tolerances scale with the matrix magnitude: a fixed 1e-12 absolute
+        # tolerance rejects physically symmetric/PSD covariances with large
+        # entries purely from roundoff (e.g. rotated SI covariances).
+        scale = max(float(np.max(np.abs(covariance))), np.finfo(float).tiny)
+        if not np.allclose(covariance, covariance.T, rtol=0.0, atol=1e-10 * scale):
             raise ValueError("covariance must be symmetric.")
-        if np.any(np.linalg.eigvalsh(covariance) < -1e-12):
+        covariance = 0.5 * (covariance + covariance.T)
+        if np.any(np.linalg.eigvalsh(covariance) < -1e-10 * scale):
             raise ValueError("covariance must be positive semidefinite.")
         object.__setattr__(self, "x", x.copy())
         object.__setattr__(self, "covariance", covariance.copy())

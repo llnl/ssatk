@@ -410,9 +410,14 @@ def _covariance(value, name):
     covariance = np.asarray(value, dtype=float)
     if covariance.shape != (3, 3) or not np.all(np.isfinite(covariance)):
         raise ValueError(f"{name} must be a finite 3x3 covariance in m^2.")
-    if not np.allclose(covariance, covariance.T, rtol=0.0, atol=1.0e-12):
+    # Tolerances scale with the matrix magnitude: a fixed 1e-12 absolute
+    # tolerance rejects physically symmetric/PSD covariances with large
+    # entries (e.g. rotated SI covariances) purely from roundoff.
+    scale = max(float(np.max(np.abs(covariance))), np.finfo(float).tiny)
+    if not np.allclose(covariance, covariance.T, rtol=0.0, atol=1.0e-10 * scale):
         raise ValueError(f"{name} must be symmetric.")
-    if np.any(np.linalg.eigvalsh(covariance) < -1.0e-12):
+    covariance = 0.5 * (covariance + covariance.T)
+    if np.min(np.linalg.eigvalsh(covariance)) < -1.0e-10 * scale:
         raise ValueError(f"{name} must be positive semidefinite.")
     return covariance
 
