@@ -1280,14 +1280,10 @@ def main(argv=None):
     return 0
 
 
-# Entry point -- this used to live right after plot_magfield_3d() and ran the
-# GUI_CONFIG path unconditionally, so `python -m ssatk.plots.magfield_plot_3d
-# --help` (or any other argv) ignored its arguments and tried to render a
-# figure instead of printing argparse help. It has to live down here, after
-# main() is defined, since it now calls main() for the non-GUI case. The
-# console-script entry point declared in pyproject.toml
-# (ssatk-magnetosphere = ...:main) still calls main() directly and does not
-# go through this block at all.
+# Entry point. `python -m ssatk.plots.magfield_plot_3d` runs the argparse CLI
+# (main) unless $GUI_CONFIG is set, in which case it renders from that GUI
+# config. It sits after main() because it calls it. The ssatk-magnetosphere
+# console script calls main() directly and does not use this block.
 if __name__ == "__main__":
     gui_cfg_path = os.environ.get("GUI_CONFIG", "")
     if not gui_cfg_path:
