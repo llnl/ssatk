@@ -44,34 +44,46 @@ _ROLES = {"r": "r", "v": "v", "t": "t", "time": "t", "epoch": "t"}
 
 
 def _role_signature(func):
-    """Resolve ``func``'s positional parameters to (r, v, t) roles by name.
+    """Resolve ``func``'s leading positional parameters to (r, v, t) roles by name.
 
     Returns ``None`` when ``func``'s signature cannot be inspected at all
     (rare -- some C-implemented callables), in which case ``call_acceleration``
-    falls back to the documented ``(r, t)`` / ``(r)`` call patterns. Raises
-    ``TypeError`` when the signature *can* be inspected but has a positional
-    parameter that is not named r/v/t (or time/epoch): calling such a model
-    positionally would silently hand it the wrong value (this is how
-    ``accel_radial(r, magnitude)`` used to receive a GPS epoch as its
-    ``magnitude``) rather than require it to be bound (e.g. via
-    ``functools.partial``) before being passed to ``accel_add``.
+    falls back to the documented ``(r, t)`` / ``(r)`` call patterns.
+
+    Parameters are matched by name (r, v, t, time, epoch) in order, stopping
+    at the first one that isn't a role name. A model like
+    ``accel_equatorial(r, v=None, magnitude=None)`` resolves to ``(r, v)``:
+    ``magnitude`` isn't passed at all and simply keeps its default, rather
+    than silently receiving ``t``. Raises ``TypeError`` only when that first
+    non-role parameter is *required* (no default) -- e.g.
+    ``accel_radial(r, magnitude)`` -- since there is then no default for it
+    to fall back to and no safe value to guess (this is how it used to
+    silently receive a GPS epoch as its ``magnitude``); such a model must be
+    bound (e.g. via ``functools.partial``) before being passed to
+    ``accel_add``.
     """
     try:
         sig = inspect.signature(func)
     except (TypeError, ValueError):
         return None
     params = list(sig.parameters.values())
-    positional = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-    if not positional or any(p.kind == p.VAR_POSITIONAL for p in params):
+    if any(p.kind == p.VAR_POSITIONAL for p in params):
         raise TypeError("acceleration model must have a fixed (r) or (r, t) signature")
-    names = [p.name.lstrip("_") for p in positional]
-    unknown = [n for n in names if n not in _ROLES]
-    if unknown:
-        raise TypeError(
-            f"acceleration model has unrecognized parameter(s) {unknown}; "
-            "bind extra parameters (e.g. via functools.partial) before passing it to accel_add"
-        )
-    return tuple(_ROLES[n] for n in names)
+    positional = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    if not positional:
+        raise TypeError("acceleration model must have a fixed (r) or (r, t) signature")
+    roles = []
+    for p in positional:
+        name = p.name.lstrip("_")
+        if name not in _ROLES:
+            if p.default is inspect.Parameter.empty:
+                raise TypeError(
+                    f"acceleration model has a required non-r/v/t parameter {p.name!r}; "
+                    "bind it (e.g. via functools.partial) before passing it to accel_add"
+                )
+            break  # p and any later parameters keep their defaults, unpassed
+        roles.append(_ROLES[name])
+    return tuple(roles)
 
 
 def call_acceleration(func, r, v=None, t=None):
