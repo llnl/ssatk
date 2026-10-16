@@ -65,9 +65,15 @@ class WheelConstraintTests(unittest.TestCase):
 
 
     def test_variational_saturation_includes_change_in_hit_time(self):
+        # Translation is decoupled from attitude here (mu=0, no body forces), so
+        # rows 0-5 of the checked STM column are analytically zero. A zero
+        # r0/v0 keeps them exactly zero; orbit-scale values would leave
+        # platform-dependent roundoff there, divided by jacobian_step, that is
+        # comparable to atol and unrelated to the wheel physics under test.
         result = propagate_6dof_variational(
             times=[0, 1], jacobian_step=1e-5,
-            **self.options(omega0=[0, 0, 0.03], wheel_momentum0=[0.001],
+            **self.options(r0=[0, 0, 0], v0=[0, 0, 0],
+                           omega0=[0, 0, 0.03], wheel_momentum0=[0.001],
                            rtol=1e-11, atol=1e-14),
         )
         tr = result.trajectory

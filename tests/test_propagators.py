@@ -45,21 +45,34 @@ def test_orbit_stm_matches_finite_difference_of_propagated_state():
     radius = 7_000_000.0
     speed = np.sqrt(EARTH_MU / radius)
     times = np.linspace(0.0, 900.0, 5)
+    # The finite-difference reference is the difference of two nonlinear
+    # propagations, so its noise floor is their integration error rather than
+    # the perturbation size. The default tolerances leave that floor within a
+    # few times this test's tolerance, so all three propagations use converged
+    # tolerances; tightening them further does not change the result.
+    fd_rtol = 1.0e-13
+    fd_atol = 1.0e-10
     state = propagate_orbit_state_with_stm(
         r0=[radius, 0.0, 0.0],
         v0=[0.0, speed, 0.0],
         times=times,
+        rtol=fd_rtol,
+        atol=fd_atol,
     )
     delta = np.array([0.2, -0.1, 0.05, 1.0e-4, -2.0e-4, 3.0e-4])
     plus = propagate_orbit_state(
         r0=np.array([radius, 0.0, 0.0]) + delta[:3],
         v0=np.array([0.0, speed, 0.0]) + delta[3:],
         times=times,
+        rtol=fd_rtol,
+        atol=fd_atol,
     )
     minus = propagate_orbit_state(
         r0=np.array([radius, 0.0, 0.0]) - delta[:3],
         v0=np.array([0.0, speed, 0.0]) - delta[3:],
         times=times,
+        rtol=fd_rtol,
+        atol=fd_atol,
     )
     predicted = np.einsum("tij,j->ti", state.stm, delta)
     actual = 0.5 * np.column_stack((plus.r - minus.r, plus.v - minus.v))
