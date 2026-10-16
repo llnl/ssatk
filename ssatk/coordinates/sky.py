@@ -68,13 +68,21 @@ def ra_dec(
         else:
             raise ValueError("Either provide r and v arrays or individual coordinates (x, y, z) and velocities (vx, vy, vz)")
 
-    # Subtract Earth's position and velocity from the input arrays
-    r = r - r_earth
-    v = v - v_earth
+    r = np.asarray(r, dtype=float)
+    v = np.asarray(v, dtype=float)
+    single_state = r.ndim == 1
+
+    # Subtract Earth's position and velocity, then promote to (N, 3) so a
+    # single state (1-D r, v, or the x,y,z/vx,vy,vz form above) uses the same
+    # axis=1 reduction as a batch of states instead of raising an AxisError.
+    r = np.atleast_2d(r - r_earth)
+    v = np.atleast_2d(v - v_earth)
 
     d_earth_mag = np.linalg.norm(r, axis=1)
     ra = rad0to2pi(np.arctan2(r[:, 1], r[:, 0]))  # in radians
     dec = np.arcsin(r[:, 2] / d_earth_mag)
+    if single_state:
+        return ra[0], dec[0]
     return ra, dec
 
 
