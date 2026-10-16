@@ -26,7 +26,7 @@ stages:
     - pip install pytest pytest-cov
   script:
     - mkdir -p reports
-    - pytest -q --maxfail=1 --disable-warnings \
+    - pytest -q --disable-warnings \
         --junitxml=reports/junit.xml \
         --cov=. --cov-report=xml:reports/coverage.xml --cov-report=term
   artifacts:
