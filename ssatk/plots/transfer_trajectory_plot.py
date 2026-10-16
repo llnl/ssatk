@@ -91,9 +91,6 @@ def transfer_trajectory_plot(result, ax=None, three_d=False,
         raise ValueError("result has no trajectory; rerun the transfer "
                          "with propagate=True.")
     burns = transfer.get("burns") if isinstance(transfer, dict) else transfer.burns
-    import matplotlib
-    if should_save:
-        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     fig = None

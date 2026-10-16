@@ -33,9 +33,6 @@ def transfer_designer_curves_plot(result, title=None, save_path=None, **save_kwa
     _raise_unrecognized_kwargs(save_kwargs, "transfer_designer_curves_plot")
     should_save = save_path is not None and save_path is not False
 
-    import matplotlib
-    if should_save:
-        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.colors import LogNorm
 
