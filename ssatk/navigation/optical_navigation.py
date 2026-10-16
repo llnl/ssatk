@@ -169,9 +169,15 @@ def update_orbit_from_optical_fix(
     if fix.time < current_time:
         raise ValueError("optical fix precedes the current filter epoch")
     covariance = np.asarray(position_covariance_m2, dtype=float)
-    if (covariance.shape != (3, 3) or not np.isfinite(covariance).all()
-            or not np.allclose(covariance, covariance.T, rtol=0, atol=1e-12)):
+    if covariance.shape != (3, 3) or not np.isfinite(covariance).all():
         raise ValueError("position covariance must be a finite symmetric positive-definite 3x3 matrix")
+    # Tolerance scales with the matrix magnitude: a fixed 1e-12 absolute
+    # tolerance rejects physically symmetric covariances with large entries
+    # (e.g. rotated SI covariances) purely from roundoff.
+    scale = max(float(np.max(np.abs(covariance))), np.finfo(float).tiny)
+    if not np.allclose(covariance, covariance.T, rtol=0, atol=1e-10 * scale):
+        raise ValueError("position covariance must be a finite symmetric positive-definite 3x3 matrix")
+    covariance = 0.5 * (covariance + covariance.T)
     try:
         np.linalg.cholesky(covariance)
     except np.linalg.LinAlgError as exc:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from .rendering import _with_low_spec
 
 from datetime import datetime
+import warnings
 
 import numpy as np
 
@@ -196,9 +197,17 @@ def moon_position_gcrf_km(epoch=None):
     """Return the Moon geocentric GCRF/ECI position in kilometres."""
     t_gps = _gps_seconds(epoch)
     try:
-        import ssapy.compute
-        return np.asarray(ssapy.compute.moonPos(t_gps), dtype=float).reshape(-1)[:3] / 1000.0
-    except Exception:
+        # ssapy.compute.moonPos does not exist; the real ephemeris lives on
+        # the Body object. position() returns metres, shape (3,) for a
+        # scalar time -- convert to km, matching this function's contract.
+        from ssapy.body import get_body
+        return np.asarray(get_body("moon").position(t_gps), dtype=float).reshape(-1)[:3] / 1000.0
+    except Exception as exc:
+        warnings.warn(
+            f"Moon ephemeris lookup failed ({exc}); using a circular "
+            "stand-in orbit instead of the real Moon position.",
+            stacklevel=2,
+        )
         phase = 2.0 * np.pi * (t_gps / 86_400.0 / 27.321582)
         return MOON_ORBIT_RADIUS_KM * np.array([
             np.cos(phase),

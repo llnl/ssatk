@@ -73,12 +73,26 @@ def _load_local_credentials():
     return getattr(module, "ST_USER", None), getattr(module, "ST_PASSWORD", None)
 
 
-_local_user, _local_password = _load_local_credentials()
-if _local_user:
-    ST_USER, ST_PASSWORD = _local_user, _local_password or ""
-else:
-    ST_USER     = os.environ.get("SPACETRACK_USER", "your_email@example.com")
-    ST_PASSWORD = os.environ.get("SPACETRACK_PASSWORD", "")
+# Credentials are resolved lazily (see _credentials() below and the
+# module __getattr__ at the end of the file) so importing this module never
+# execs tle_credentials_local.py as a side effect -- only the first actual
+# fetch attempt does.
+_CREDENTIALS = None
+
+
+def _credentials():
+    """Return the (ST_USER, ST_PASSWORD) pair, resolving it on first use."""
+    global _CREDENTIALS
+    if _CREDENTIALS is None:
+        local_user, local_password = _load_local_credentials()
+        if local_user:
+            _CREDENTIALS = (local_user, local_password or "")
+        else:
+            _CREDENTIALS = (
+                os.environ.get("SPACETRACK_USER", "your_email@example.com"),
+                os.environ.get("SPACETRACK_PASSWORD", ""),
+            )
+    return _CREDENTIALS
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 # How old a cached TLE can be before re-fetching (seconds)
@@ -177,17 +191,31 @@ def fetch_tle_celestrak(norad_id):
     No account required. Uses SSL bypass for restricted networks.
     Returns (line1, line2) or (None, None) on failure.
     """
+    # FORMAT=JSON returns OMM-in-JSON, whose fields are named like
+    # EPOCH/MEAN_MOTION, not TLE_LINE1/TLE_LINE2 (those are Space-Track's own
+    # query field names) -- so a JSON request here always came back empty.
+    # FORMAT=TLE returns the classic two-line element set as plain text.
     url = (f"https://celestrak.org/NORAD/elements/gp.php"
-           f"?CATNR={norad_id}&FORMAT=JSON")
+           f"?CATNR={norad_id}&FORMAT=TLE")
     try:
         req = urllib.request.Request(
             url,
             headers={"User-Agent": "ssapy-tle-updater/1.0"}
         )
         with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as r:
-            data = json.loads(r.read().decode())
-            if data and len(data) > 0:
-                return data[0].get("TLE_LINE1"), data[0].get("TLE_LINE2")
+            text = r.read().decode()
+        lines = [line for line in text.splitlines() if line.strip()]
+        # A successful FORMAT=TLE response is the object name line followed
+        # by the two 69-character element lines; take the last two non-blank
+        # lines and validate them as a real TLE pair before trusting them.
+        if len(lines) >= 2:
+            line1, line2 = lines[-2], lines[-1]
+            if (len(line1) == 69 and len(line2) == 69
+                    and line1.startswith("1 ") and line2.startswith("2 ")
+                    and line1[68].isdigit() and line2[68].isdigit()
+                    and _tle_checksum(line1) == int(line1[68])
+                    and _tle_checksum(line2) == int(line2[68])):
+                return line1, line2
     except Exception as e:
         print(f"  [celestrak] NORAD {norad_id} failed: {e}")
     return None, None
@@ -211,9 +239,10 @@ def fetch_tle_spacetrack(norad_id, session_cookie=None):
     try:
         # Login if no session cookie yet
         if session_cookie is None:
+            st_user, st_password = _credentials()
             login_data = urllib.parse.urlencode({
-                "identity": ST_USER,
-                "password": ST_PASSWORD
+                "identity": st_user,
+                "password": st_password
             }).encode()
             req = urllib.request.Request(
                 login_url,
@@ -255,9 +284,10 @@ def _spacetrack_login(session_cookie=None):
     """
     if session_cookie is not None:
         return session_cookie
+    st_user, st_password = _credentials()
     login_data = urllib.parse.urlencode({
-        "identity": ST_USER,
-        "password": ST_PASSWORD
+        "identity": st_user,
+        "password": st_password
     }).encode()
     req = urllib.request.Request(
         "https://www.space-track.org/ajaxauth/login",
@@ -363,7 +393,7 @@ def fetch_active_catalog(session_cookie=None, max_satellites=None, verbose=True)
     background loop) -- it's on you not to re-run --fetch-all-active
     repeatedly within the same hour.
     """
-    if ST_USER == "your_email@example.com":
+    if _credentials()[0] == "your_email@example.com":
         print("  [active-catalog] Space-Track credentials not set — see the "
               "Credentials section at the top of this file.")
         return [], session_cookie
@@ -635,15 +665,16 @@ def fetch_by_name(search_term, max_results=10,
     """
     import urllib.parse
 
-    if ST_USER == "your_email@example.com":
+    if _credentials()[0] == "your_email@example.com":
         print("  [search] Space-Track credentials not set.")
         return [], session_cookie
 
     # Login if needed
     if session_cookie is None:
+        st_user, st_password = _credentials()
         login_data = urllib.parse.urlencode({
-            "identity": ST_USER,
-            "password": ST_PASSWORD
+            "identity": st_user,
+            "password": st_password
         }).encode()
         req = urllib.request.Request(
             "https://www.space-track.org/ajaxauth/login",
@@ -847,7 +878,7 @@ def update_satellites_auto(satellites, use_spacetrack=True, use_celestrak=True,
 
         # Try Space-Track
         line1, line2 = None, None
-        if use_spacetrack and ST_USER != "your_email@example.com":
+        if use_spacetrack and _credentials()[0] != "your_email@example.com":
             line1, line2, session_cookie = fetch_tle_spacetrack(
                 norad_id, session_cookie)
             if line1:
@@ -892,7 +923,34 @@ def update_satellites_auto(satellites, use_spacetrack=True, use_celestrak=True,
 
     return satellites
 
-SATELLITES_JSON = _data_file("ssapy_satellites.json")
+# SATELLITES_JSON is resolved lazily (see _satellites_json_path() and the
+# module __getattr__ at the end of the file): the eager form here called
+# _data_file() -> datapath() -> mkdir at import time, so `import ssatk.io`
+# created an output directory as a side effect even when nothing was saved.
+_SATELLITES_JSON = None
+
+
+def _satellites_json_path():
+    """Resolve the default satellites JSON store path on first use."""
+    global _SATELLITES_JSON
+    if _SATELLITES_JSON is None:
+        _SATELLITES_JSON = _data_file("ssapy_satellites.json")
+    return _SATELLITES_JSON
+
+
+def __getattr__(name):
+    """Resolve a few attributes lazily on first access instead of at import.
+
+    Keeps `from ssatk.io.tle_updater import SATELLITES_JSON` (and ST_USER /
+    ST_PASSWORD) working for existing callers without exec'ing
+    tle_credentials_local.py or creating the output directory just because
+    the module was imported.
+    """
+    if name == "SATELLITES_JSON":
+        return _satellites_json_path()
+    if name in ("ST_USER", "ST_PASSWORD"):
+        return _credentials()[0 if name == "ST_USER" else 1]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1060,7 +1118,7 @@ def load_satellites(filepath=None):
     silently failing to match), then falls back to importing SATELLITES
     from coverage_analysis.py for backward compatibility, then an empty list.
     """
-    json_path = filepath or SATELLITES_JSON
+    json_path = filepath or _satellites_json_path()
     if os.path.exists(json_path):
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
@@ -1100,7 +1158,7 @@ def save_satellites(satellites, json_path=None, py_filepath=None):
     to diff/version-control, for a list nobody's going to hand-edit anyway.
     The JSON store has no such issue and remains complete regardless.
     """
-    json_path = json_path or SATELLITES_JSON
+    json_path = json_path or _satellites_json_path()
     os.makedirs(os.path.dirname(json_path), exist_ok=True)
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(satellites, f, indent=2)

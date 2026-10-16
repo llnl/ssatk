@@ -1530,19 +1530,20 @@ def _body_at_state(body, mass=None, wheel_momentum=None, tank_name=None):
 def _body_at_mass(body, mass, tank_name=None):
     if body is None or mass is None or not _supports_body_mass_update(body):
         return body
-    try:
-        if tank_name is None:
-            return body.with_current_mass(float(mass))
-        matches = [tank for tank in body.tanks if tank.name == tank_name]
-        if len(matches) != 1:
-            raise ValueError(f"expected exactly one tank named {tank_name!r}.")
-        tank = matches[0]
-        consumed = body.current_mass - float(mass)
-        return body.with_tank_propellant_mass(tank_name, max(0.0, tank.propellant_mass - consumed))
-    except ValueError as exc:
-        if "below dry mass" in str(exc):
+    if tank_name is None:
+        # with_current_mass raises below a hard floor (tolerance matches its
+        # own check); treat that the same way propellant_empty_event's mass
+        # floor does -- clamp to fully depleted -- instead of parsing its
+        # exception text, which is fragile to message wording.
+        if float(mass) < body.dry_mass_total - 1e-9:
             return body.with_propellant_mass(0.0)
-        raise
+        return body.with_current_mass(float(mass))
+    matches = [tank for tank in body.tanks if tank.name == tank_name]
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one tank named {tank_name!r}.")
+    tank = matches[0]
+    consumed = body.current_mass - float(mass)
+    return body.with_tank_propellant_mass(tank_name, max(0.0, tank.propellant_mass - consumed))
 
 
 def _supports_body_mass_update(body) -> bool:

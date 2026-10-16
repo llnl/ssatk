@@ -876,8 +876,8 @@ def _validate_6dof_point_mass(trajectory) -> Validation:
         vz=float(trajectory.v[0, 2]),
     )
     simulation.integrator = "ias15"
-    for time in trajectory.t:
-        simulation.integrate(float(time - trajectory.t[0]), exact_finish_time=1)
+    for sample_t in trajectory.t:
+        simulation.integrate(float(sample_t - trajectory.t[0]), exact_finish_time=1)
     particle = simulation.particles[1]
     reference_r = np.array([particle.x, particle.y, particle.z])
     reference_v = np.array([particle.vx, particle.vy, particle.vz])

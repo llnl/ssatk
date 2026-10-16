@@ -413,13 +413,17 @@ class OrbitalState:
             accels.append(AccelThirdBody(_get_body("sun")))
 
         # ── non-gravitational ─────────────────────────────────────────────
+        # AccelDrag/AccelSolRad take **defaultkw and read it as CD/CR
+        # (uppercase) plus area/mass -- see ssapy_wrappers/sat_kwargs.py and
+        # ssapy_props.py, which call them the same way. ssapy.AccelSRP does
+        # not exist; the SRP model is ssapy.accel.AccelSolRad.
         if cfg.non_grav in ("drag", "both"):
             accels.append(ssapy.AccelDrag(
-                cd=cfg.cd, area=cfg.area_m2, mass=cfg.mass_kg,
+                CD=cfg.cd, area=cfg.area_m2, mass=cfg.mass_kg,
             ))
         if cfg.non_grav in ("srp", "both"):
-            accels.append(ssapy.AccelSRP(
-                cr=cfg.cr, area=cfg.area_m2, mass=cfg.mass_kg,
+            accels.append(ssapy.AccelSolRad(
+                CR=cfg.cr, area=cfg.area_m2, mass=cfg.mass_kg,
             ))
 
         # ── integrator ───────────────────────────────────────────────────
@@ -436,20 +440,37 @@ class OrbitalState:
             dt = min(60.0, self.period_s / 360)
             return ssapy.propagator.RK4Propagator(accel_obj, h=dt), accels
         else:  # rk78
-            return ssapy.propagator.RK78Propagator(accel_obj), accels
+            # RK78Propagator requires a step size h (no default) -- without
+            # it the constructor call raised TypeError, which propagate()'s
+            # broad except then silently turned into an analytic fallback.
+            dt = min(60.0, self.period_s / 360)
+            return ssapy.propagator.RK78Propagator(accel_obj, h=dt), accels
 
     # ── analytic Keplerian propagation (no SSAPy) ────────────────────────────
-    def _propagate_analytic(self, times_s: np.ndarray) -> Trajectory:
+    def _propagate_analytic(
+        self, times_s: np.ndarray, stop_event: threading.Event | None = None,
+    ) -> Trajectory:
         """Pure-numpy two-body propagation using universal variables."""
         r0, v0 = self.to_rv()
         r0 *= 1e3; v0 *= 1e3  # work in metres
         mu = MU * 1e9
 
-        rs, vs = [], []
+        # Loop-invariant: mean motion and the initial mean anomaly do not
+        # depend on dt, so compute them once. M0 must include self.e --
+        # _nu_to_M(nu, e=0.0) silently treated every orbit as circular,
+        # starting the propagation at the wrong anomaly for e > 0.
+        n   = np.sqrt(mu / (self.a_km * 1e3)**3)
+        M0  = self._nu_to_M(np.radians(self.nu_deg), self.e)
+
+        rs, vs, ts = [], [], []
         for dt in times_s:
+            # stop_event is checked between samples so a caller can abort a
+            # long propagation and still get back the partial trajectory
+            # computed so far, rather than this loop running unconditionally
+            # to completion regardless of the event.
+            if stop_event is not None and stop_event.is_set():
+                break
             # Kepler's equation via eccentric anomaly
-            n   = np.sqrt(mu / (self.a_km * 1e3)**3)
-            M0  = self._nu_to_M(np.radians(self.nu_deg))
             M   = M0 + n * dt
             E   = self._solve_kepler(M, self.e)
             nu  = 2 * np.arctan2(
@@ -460,12 +481,14 @@ class OrbitalState:
             old_nu = self.nu_deg
             self.nu_deg = np.degrees(nu)
             r, v = self.to_rv()
-            rs.append(r); vs.append(v)
+            rs.append(r); vs.append(v); ts.append(dt)
             self.nu_deg = old_nu
 
+        r_arr = np.array(rs) if rs else np.zeros((0, 3))
+        v_arr = np.array(vs) if vs else np.zeros((0, 3))
         return Trajectory(
-            r=np.array(rs), v=np.array(vs),
-            t=self._epoch_gps() + times_s,
+            r=r_arr, v=v_arr,
+            t=self._epoch_gps() + np.array(ts, dtype=float),
         )
 
     @staticmethod
@@ -540,12 +563,32 @@ class OrbitalState:
             try:
                 orbit = self.to_ssapy()
                 prop, accels = self._build_propagator()
-                t_arr  = t0 + times
-                r_m, v_m = ssapy.rv(orbit, t_arr, propagator=prop)
-                # SSAPy returns metres — convert to km
-                r_km = r_m / 1e3
-                v_km = v_m / 1e3
-                traj = Trajectory(r=r_km, v=v_km, t=t_arr)
+                if stop_event is None:
+                    t_arr  = t0 + times
+                    r_m, v_m = ssapy.rv(orbit, t_arr, propagator=prop)
+                    # SSAPy returns metres — convert to km
+                    traj = Trajectory(r=r_m / 1e3, v=v_m / 1e3, t=t_arr)
+                else:
+                    # stop_event was previously accepted but never read, so
+                    # it could never actually abort a run. ssapy.rv has no
+                    # cancellation hook of its own, so propagate in slices
+                    # and check the event between them, returning whatever
+                    # has been computed so far if it gets set.
+                    chunk = max(1, len(times) // 50)
+                    r_parts, v_parts, t_parts = [], [], []
+                    for start in range(0, len(times), chunk):
+                        if stop_event.is_set():
+                            break
+                        t_slice = t0 + times[start:start + chunk]
+                        r_m, v_m = ssapy.rv(orbit, t_slice, propagator=prop)
+                        r_parts.append(r_m / 1e3)
+                        v_parts.append(v_m / 1e3)
+                        t_parts.append(t_slice)
+                    if r_parts:
+                        traj = Trajectory(r=np.concatenate(r_parts), v=np.concatenate(v_parts),
+                                           t=np.concatenate(t_parts))
+                    else:
+                        traj = Trajectory(r=np.zeros((0, 3)), v=np.zeros((0, 3)), t=np.zeros(0))
                 if callback:
                     callback(traj)
                 return traj
@@ -553,7 +596,7 @@ class OrbitalState:
                 warnings.warn(f"SSAPy propagation failed: {ex} — using analytic fallback")
 
         # ── analytic fallback ─────────────────────────────────────────────
-        traj = self._propagate_analytic(times)
+        traj = self._propagate_analytic(times, stop_event=stop_event)
         if callback:
             callback(traj)
         return traj

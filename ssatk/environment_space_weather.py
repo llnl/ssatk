@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import warnings
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from functools import lru_cache
@@ -97,6 +98,14 @@ class SpaceWeatherTable:
         try:
             previous = self.at(gps - 86_400.0, allow_predicted=allow_predicted)
         except ValueError:
+            # Prior day out of the table range (e.g. the table's first day):
+            # fall back to the current day's F10.7 rather than fail, but this
+            # is less accurate than the prior-day value pymsis expects.
+            warnings.warn(
+                "SpaceWeatherTable.msis_inputs: no record for the prior day; "
+                "using the current day's F10.7 as a fallback.",
+                stacklevel=2,
+            )
             previous = current
 
         ap_values = []

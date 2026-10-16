@@ -305,6 +305,49 @@ def read_oem(source) -> ReferenceCase:
     )
 
 
+def _hermite_interpolate(times, positions, velocities, sample_t):
+    """Vectorized cubic Hermite interpolation using the actual velocities.
+
+    Mirrors ssatk.ssa.conjunction._hermite_state's per-segment math but over
+    an array of sample times at once. Using velocity-matched Hermite instead
+    of linear interpolation removes most of the discretization error between
+    differently-sampled representations of the same trajectory.
+    """
+    sample_t = np.asarray(sample_t, dtype=float)
+    if times.size < 2:
+        position = np.broadcast_to(positions[0], (sample_t.size, 3)).copy()
+        velocity = np.broadcast_to(velocities[0], (sample_t.size, 3)).copy()
+        return position, velocity
+    index = np.clip(np.searchsorted(times, sample_t, side="right") - 1, 0, times.size - 2)
+    left_t, right_t = times[index], times[index + 1]
+    h = (right_t - left_t)[:, None]
+    s = ((sample_t - left_t) / h[:, 0])
+    # Snap samples within ~1 microsecond of a node to that node exactly.
+    # Two-part Julian-date round-trips leave picosecond-level timing noise
+    # (see test_reference_case's own ~1e-11 s tolerance); away from s=0/1
+    # the velocity-weighted Hermite terms scale that noise by velocity*h,
+    # which otherwise turns an exact-epoch comparison into spurious meters
+    # of "residual". A microsecond is far below any real sample spacing.
+    snap_tol = 1.0e-6
+    s = np.where(np.abs(sample_t - left_t) <= snap_tol, 0.0, s)
+    s = np.where(np.abs(sample_t - right_t) <= snap_tol, 1.0, s)
+    s = s[:, None]
+    p0, p1 = positions[index], positions[index + 1]
+    v0, v1 = velocities[index], velocities[index + 1]
+    h00 = 2.0 * s**3 - 3.0 * s**2 + 1.0
+    h10 = s**3 - 2.0 * s**2 + s
+    h01 = -2.0 * s**3 + 3.0 * s**2
+    h11 = s**3 - s**2
+    position = h00 * p0 + h10 * h * v0 + h01 * p1 + h11 * h * v1
+    velocity = (
+        ((6.0 * s**2 - 6.0 * s) / h) * p0
+        + (3.0 * s**2 - 4.0 * s + 1.0) * v0
+        + ((-6.0 * s**2 + 6.0 * s) / h) * p1
+        + (3.0 * s**2 - 2.0 * s) * v1
+    )
+    return position, velocity
+
+
 def compare_reference_case(trajectory, reference, *, time_tolerance=1e-9):
     """Compare a trajectory with reference states at the reference epochs."""
     actual_t, actual_r, actual_v = _trajectory_arrays(trajectory)
@@ -329,8 +372,7 @@ def compare_reference_case(trajectory, reference, *, time_tolerance=1e-9):
     if reference_t[0] < actual_t[0] - time_tolerance or reference_t[-1] > actual_t[-1] + time_tolerance:
         raise ValueError("reference epochs must overlap the trajectory time span.")
     sample_t = np.clip(reference_t, actual_t[0], actual_t[-1])
-    positions = np.array([np.interp(sample_t, actual_t, actual_r[:, i]) for i in range(3)]).T
-    velocities = np.array([np.interp(sample_t, actual_t, actual_v[:, i]) for i in range(3)]).T
+    positions, velocities = _hermite_interpolate(actual_t, actual_r, actual_v, sample_t)
     position_residual = np.linalg.norm(positions - reference_r, axis=1)
     velocity_residual = np.linalg.norm(velocities - reference_v, axis=1)
     return {

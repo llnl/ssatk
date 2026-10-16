@@ -39,6 +39,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,geomagnetics,atmosphere,propulsion]" "${{ matrix.numpy }}"
 
+      - name: Check Ruff syntax gate
+        if: matrix.python-version == '3.13'
+        run: python -m ruff check --select E9,F63,F7,F82 .
+
       - name: Validate JavaScript plot assets
         run: |
           node --check ssatk/plots/satellite_viewer_scene.js

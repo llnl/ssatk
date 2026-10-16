@@ -8,6 +8,7 @@ Public API:
 
 import os
 import pickle
+import tempfile
 import datetime as _dt
 from typing import Any, Mapping, Optional, Set, Union
 
@@ -56,6 +57,11 @@ def save_dict_to_hdf5(
           to avoid the "thousands of groups" explosion that occurs when storing
           large lists element-by-element.
     """
+
+    # h5py raises "Compression method must be specified" if compression_opts
+    # is non-None while compression is None; normalize once so every
+    # create_dataset call below can pass this through safely.
+    _compression_opts = None if compression is None else compression_opts
 
     def _store_string_with_type(
         h5group: h5py.Group,
@@ -108,7 +114,7 @@ def save_dict_to_hdf5(
                             key,
                             data=arr,
                             compression=compression,
-                            compression_opts=compression_opts,
+                            compression_opts=_compression_opts,
                         )
                     return
             except (ValueError, TypeError):
@@ -159,14 +165,39 @@ def save_dict_to_hdf5(
         elif isinstance(value, np.ndarray):
             if key in h5group:
                 del h5group[key]
-            if value.shape == ():
-                h5group.create_dataset(key, data=value)
+            if value.dtype.kind == 'O':
+                # Object arrays (ragged/mixed element types) have no native
+                # HDF5 equivalent; pickle the whole array and let load_dict
+                # restore it (same mechanism as the generic pickle fallback
+                # below, kept separate so the error message is specific).
+                if not pickle_objects:
+                    raise TypeError(
+                        f"Unsupported type for key '{key}': numpy array with dtype={value.dtype!r}. "
+                        f"Enable pickle_objects=True to store via pickle."
+                    )
+                pickled = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+                ds = h5group.create_dataset(
+                    key,
+                    data=np.frombuffer(pickled, dtype="uint8"),
+                )
+                ds.attrs["pickled"] = True
+                ds.attrs["python_type"] = str(type(value))
+                ds.attrs["__type__"] = "pickle"
+                return
+            store_value = value
+            if value.dtype.kind == 'U':
+                # HDF5 has no native fixed-width unicode dtype; store as
+                # variable-length UTF-8 strings instead (ds.asstr() on read
+                # already handles vlen string datasets generically).
+                store_value = value.astype(h5py.string_dtype(encoding="utf-8"))
+            if store_value.shape == ():
+                h5group.create_dataset(key, data=store_value)
             else:
                 h5group.create_dataset(
                     key,
-                    data=value,
+                    data=store_value,
                     compression=compression,
-                    compression_opts=compression_opts,
+                    compression_opts=_compression_opts,
                 )
 
         # numeric scalars
@@ -217,11 +248,32 @@ def save_dict_to_hdf5(
     if parent:
         os.makedirs(parent, exist_ok=True)
 
-    with h5py.File(filename, mode) as f:
-        for k, v in data.items():
-            if not isinstance(k, str):
-                raise TypeError(f"HDF5 requires string keys; got key={k!r}")
-            _write_item(f, k, v)
+    if mode == "w":
+        # h5py.File(filename, "w") truncates immediately, so a conversion
+        # failure partway through (e.g. an unsupported value) destroyed any
+        # pre-existing file. Build the new file next to it and only replace
+        # the target once writing succeeds.
+        fd, tmp_path = tempfile.mkstemp(dir=parent or ".", suffix=".h5.tmp")
+        os.close(fd)
+        try:
+            with h5py.File(tmp_path, "w") as f:
+                for k, v in data.items():
+                    if not isinstance(k, str):
+                        raise TypeError(f"HDF5 requires string keys; got key={k!r}")
+                    _write_item(f, k, v)
+            os.replace(tmp_path, filename)
+        except BaseException:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+    else:
+        with h5py.File(filename, mode) as f:
+            for k, v in data.items():
+                if not isinstance(k, str):
+                    raise TypeError(f"HDF5 requires string keys; got key={k!r}")
+                _write_item(f, k, v)
 
 
 # ---------- LOAD ----------

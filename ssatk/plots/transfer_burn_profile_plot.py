@@ -44,9 +44,6 @@ def transfer_burn_profile_plot(result, title=None, save_path=None, **save_kwargs
         t0 = _burn_get(burns[0], "t_start", _burn_get(burns[0], "t"))
         t1 = _burn_get(burns[-1], "t_end", _burn_get(burns[-1], "t"))
 
-    import matplotlib
-    if should_save:
-        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     fig, (ax1, ax2) = plt.subplots(

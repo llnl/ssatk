@@ -16,7 +16,8 @@ def guess_csv_delimiter(
         delimiters (Sequence[str] | None): Candidate delimiters to test.
 
     Returns:
-        str: The detected delimiter or an error message if unable to detect.
+        str: The detected delimiter, or ',' if the file has no detectable
+            delimiter (e.g. a single-column file with no separator).
     """
     if delimiters is None:
         delimiters = (',', ';', '\t', '|', ' ')
@@ -27,4 +28,4 @@ def guess_csv_delimiter(
             dialect = csv.Sniffer().sniff(sample, delimiters=delimiters)
             return dialect.delimiter
         except csv.Error:
-            return "Could not determine delimiter"
+            return ","

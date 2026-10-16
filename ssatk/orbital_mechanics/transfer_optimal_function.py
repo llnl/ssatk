@@ -952,8 +952,8 @@ def transfer_optimal(
       resulting epoch error is absorbed by the final refinement, but for
       strongly perturbed, multi-week windows treat the porkchop as
       approximate.
-    * Both motion senses are searched automatically when the two orbits
-      counter-rotate; co-rotating geometries search prograde only.
+    * Both motion senses (+z and -z transfer angular momentum) are always
+      searched; the cheaper feasible one is kept per candidate.
     """
     if orbit1 is not None:
         if initial is not None:
@@ -1162,10 +1162,14 @@ def transfer_optimal(
         t_deps = np.linspace(*t_window, n_dep)
     tofs = np.linspace(*tof_range, n_tof)
 
-    # Both senses only if the orbits counter-rotate.
-    h1 = np.cross(np.ravel(o1.r), np.ravel(o1.v))
-    h2 = np.cross(np.ravel(o2.r), np.ravel(o2.v))
-    senses = (True,) if np.dot(h1, h2) >= 0 else (True, False)
+    # solve_lambert's prograde=True/False selects the Lambert geometry by
+    # the *transfer* conic's angular momentum sign (+z/-z), not by whether
+    # the two boundary orbits co-rotate (ssatk.orbital_mechanics
+    # .transfer_ssapy_function.solve_lambert). For an inclination > 90 deg
+    # pair, the correct short-way transfer can be the -z branch even
+    # though the orbits themselves co-rotate, so both senses must always
+    # be searched and the cheaper feasible one kept.
+    senses = (True, False)
 
     # --- boundary ephemerides (vectorized Keplerian) -------------------
     dep_r, dep_v = _ephemeris(o1, t_deps)

@@ -31,7 +31,13 @@ def read_csv(file_name: str, sep: Optional[str] = None, dtypes: Optional[Dict[st
     if skiprows is None:
         skiprows = []
 
-    if col and not isinstance(col, list):
+    # None/False/True all mean "no column filter" (read every column);
+    # anything else is a single column name or an explicit list of names.
+    # Previously True became usecols=[True] and None became usecols=[None],
+    # both of which pandas rejects.
+    if col in (None, False, True):
+        col = False
+    elif not isinstance(col, list):
         col = [col]  # Ensure col is always a list
 
     if sep is None:
@@ -321,7 +327,7 @@ def save_csv_line(file_name: str, df: DataFrame, sep: str = ',', dtypes: Optiona
     return
 
 
-_column_data = None
+_column_data_cache: Dict[tuple, np.ndarray] = {}
 
 
 def exists_in_csv(csv_file: str, column: str, number: Union[int, float, str], sep: str = ',') -> bool:
@@ -339,10 +345,13 @@ def exists_in_csv(csv_file: str, column: str, number: Union[int, float, str], se
 
     Author: Travis Yeager (yeager7@llnl.gov)
     """
-    try:
-        global _column_data
-        if _column_data is None:
-            _column_data = read_csv(csv_file, sep=sep, col=column, to_np=True)
-        return np.isin(number, _column_data)
-    except IOError:
-        return False
+    abs_path = os.path.abspath(csv_file)
+    # Cache key includes the file's mtime so a changed/re-read file (or a
+    # different file/column/sep) doesn't silently reuse another query's
+    # cached column -- the previous single shared global answered every
+    # later call from whichever file was read first.
+    mtime = os.path.getmtime(abs_path)
+    cache_key = (abs_path, column, sep, mtime)
+    if cache_key not in _column_data_cache:
+        _column_data_cache[cache_key] = read_csv(csv_file, sep=sep, col=column, to_np=True)
+    return bool(np.isin(number, _column_data_cache[cache_key]))

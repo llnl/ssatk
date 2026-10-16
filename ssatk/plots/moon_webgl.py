@@ -1240,7 +1240,7 @@ def _orbit_times(orbit, t, n_steps=360, n_orbits=1.0):
             .reshape(-1, 3)
             .shape[0]
         )
-    except (TypeError, ValueError):
+    except (AttributeError, TypeError, ValueError):
         n_positions = 1
     if orbit_t.size == n_positions and n_positions > 1:
         return orbit_t

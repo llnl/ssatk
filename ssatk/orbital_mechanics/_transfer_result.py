@@ -40,6 +40,15 @@ def circular_state(radius, *, t=0.0, mu=EARTH_MU, plane="xy", prograde=True):
     return transfer_state(r=r, v=v, t=t, label="circular_radius", mu=mu)
 
 
+def _is_state_vector(value):
+    if isinstance(value, Orbit) or np.isscalar(value):
+        return False
+    try:
+        return np.asarray(value, dtype=float).reshape(3).shape == (3,)
+    except (TypeError, ValueError):
+        return False
+
+
 def transfer_state(*, state=None, r=None, v=None, t=None, label=None, mu=EARTH_MU):
     """Normalize an Orbit, mapping, tuple, radius, or explicit r/v/t into a state dict."""
     orbit = None
@@ -57,6 +66,12 @@ def transfer_state(*, state=None, r=None, v=None, t=None, label=None, mu=EARTH_M
             orbit = state.get("orbit", orbit)
         elif np.isscalar(state):
             return circular_state(state, t=0.0 if t is None else t, mu=mu)
+        elif _is_state_vector(state):
+            # A bare length-3 vector is a position with no velocity/time
+            # supplied; infer the circular velocity below rather than
+            # unpacking it as a (r, v) or (r, v, t) tuple, which silently
+            # misassigns its scalar components to r/v/t.
+            r = state if r is None else r
         else:
             values = tuple(state)
             if len(values) == 3:
@@ -81,15 +96,6 @@ def transfer_state(*, state=None, r=None, v=None, t=None, label=None, mu=EARTH_M
     v = as_vector(v, "v")
     t = as_time(t, default=0.0)
     return {"label": label, "r": r, "v": v, "t": t, "orbit": orbit}
-
-
-def _is_state_vector(value):
-    if isinstance(value, Orbit) or np.isscalar(value):
-        return False
-    try:
-        return np.asarray(value, dtype=float).reshape(3).shape == (3,)
-    except (TypeError, ValueError):
-        return False
 
 
 def transfer_boundary_states(

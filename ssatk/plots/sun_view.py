@@ -68,6 +68,38 @@ R_EARTH_KM = EARTH_RADIUS / 1000.0
 R_MOON_KM  = MOON_RADIUS / 1000.0
 R_SUN_KM   = SUN_RADIUS / 1000.0
 
+# ssatk.plots flattens every public module-level name into one namespace
+# (see ssatk._namespace). Two of this module's names collided there with a
+# different intended provider, and neither has an existing test or demo
+# importing it via the flattened ssatk.plots.* path (both are always
+# imported from this submodule directly), so excluding them here changes no
+# current behaviour:
+#   - R_MOON_KM here is MOON_RADIUS (ssapy's constant, ~1738.1 km) in km,
+#     while moon_render.py / eclipse_space_view_plotly.py / moon_webgl.py
+#     all use ssatk.constants.MOON_MEAN_RADIUS_KM (1737.4 km) -- a genuine
+#     value mismatch, not just a naming collision.
+#   - auto_sun_radius here and in sun_mpl.py are independent, differently-
+#     scaled helpers (Plotly vs matplotlib scenes) with no single correct
+#     "intended" provider.
+__all__ = [
+    "AU_KM",
+    "EARTH_RADIUS",
+    "EarthShadingLayer",
+    "MOON_RADIUS",
+    "MoonShadingLayer",
+    "R_EARTH_KM",
+    "R_SUN_KM",
+    "SUN_RADIUS",
+    "SunLayer",
+    "VISUAL_DIST_KM_CISLUNAR",
+    "VISUAL_DIST_KM_LEO",
+    "VISUAL_SUN_RADIUS_KM",
+    "auto_sun_position",
+    "jd_from_datetime",
+    "starfield_trace",
+    "sun_position_eci",
+]
+
 # AU_KM comes from ssatk.constants so every plot uses the same
 # physical distance scale.
 
@@ -606,6 +638,11 @@ class MoonShadingLayer:
         time=None, low_spec=None,
     ):
         self.time, self.low_spec = time, is_low_spec(low_spec)
+        # body_rotation() treats a bare numeric time as GPS seconds, but this
+        # module's convention (see sun_position_eci above) is that a bare
+        # float is a Julian Date (UTC).
+        if self.time is not None and not isinstance(self.time, Time):
+            self.time = Time(float(self.time), format="jd", scale="utc")
         self.moon_center = np.asarray(moon_center, dtype=float)
         sun_from_moon = np.asarray(sun_pos_eci, dtype=float) - self.moon_center
         norm = np.linalg.norm(sun_from_moon)
@@ -658,11 +695,26 @@ def _load_star_catalog(mag_limit: float = 6.5):
     if _STAR_CACHE is not None and _STAR_CACHE.get("mag_limit") == mag_limit:
         return _STAR_CACHE
 
+    # Prefer the split ssa-data-* packages (and $SSAPY_DATA / sibling-checkout
+    # overrides) that starfield.find_data_file resolves -- the _HYG_PATHS
+    # list below only ever matched a catalog dropped by hand at one of three
+    # fixed locations, so a normal package install always fell through to
+    # the random placeholder sky.
+    from .starfield import find_data_file
     csv_path = None
-    for p in _HYG_PATHS:
-        if os.path.exists(p):
-            csv_path = p
+    for name in ("bright_stars_mag9.csv", "bright_stars.csv"):
+        try:
+            found = find_data_file(name)
+        except NameError:
+            found = None
+        if found is not None:
+            csv_path = str(found)
             break
+    if csv_path is None:
+        for p in _HYG_PATHS:
+            if os.path.exists(p):
+                csv_path = p
+                break
     if csv_path is None:
         return None
 

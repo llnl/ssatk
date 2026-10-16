@@ -5,10 +5,11 @@ anything, and read [skills.md](skills.md) before writing code that uses the
 package.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) is authoritative on licensing, layout and
-merge requirements, and all of it applies here. This file adds what the tree
-does not show: which rules are machine-enforced, which are not, and the mistakes
-this codebase invites. It grants no authority beyond the permissions of the
-person doing the work.
+merge requirements, and all of it applies here except where this file sets a
+narrower testing rule (see "Tests cover finalized functionality" below). This
+file adds what the tree does not show: which rules are machine-enforced, which
+are not, and the mistakes this codebase invites. It grants no authority beyond
+the permissions of the person doing the work.
 
 ## Commits, comments and notes
 
@@ -33,11 +34,16 @@ person doing the work.
   tag or release unless a maintainer asks for that specific operation.
 - **Keep each change to one concern.** No drive-by reformatting, import
   reordering, mass lint fixes or unrelated renames.
-- **Tests compare against a reference.** Each test checks a computed value
-  against a closed form, an independent implementation, a published value, a
-  conservation law or a finite-difference derivative, with a stated tolerance
-  and unit (`docs/testing_policy.md`). Do not add tests that only run code,
-  raise coverage, or check imports, rendering or argument validation.
+- **Tests cover finalized functionality.** Add a test only for behavior the
+  repository relies on and that is settled, not for every change. A bug fix or
+  refactor does not need a new test of its own: verify it with the existing
+  suite plus a one-off check, and state what you ran in the commit message.
+- **Tests compare against a reference.** Each test that is added checks a
+  computed value against a closed form, an independent implementation, a
+  published value, a conservation law or a finite-difference derivative, with a
+  stated tolerance and unit (`docs/testing_policy.md`). Do not add tests that
+  only run code, raise coverage, or check imports, rendering or argument
+  validation.
 - **Never weaken a check to make a change pass.** Do not delete, skip or
   `xfail` a test, loosen a tolerance, relax
   `scripts/check_repository_policy.py`, or add lint suppressions to get green.

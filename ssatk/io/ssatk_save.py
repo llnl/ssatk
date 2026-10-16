@@ -275,6 +275,7 @@ def _save_hdf5(
     metadata: Mapping[str, Any] | None,
 ) -> None:
     is_mapping = isinstance(data, Mapping)
+    clear_default_key = False
     if key is None and is_mapping:
         _validate_mapping_keys(data)
         if path.exists() and not overwrite:
@@ -287,6 +288,11 @@ def _save_hdf5(
             mode = "w"
         payload = dict(data)
         default_key = None
+        # A mapping write adds/keeps named top-level keys, so any earlier
+        # "the whole file is one default value" marker from a prior
+        # non-mapping save no longer applies -- leaving it would make
+        # ssatk_read silently ignore every key written here.
+        clear_default_key = True
     else:
         parts = _hdf5_key_parts(key, default="data")
         if _hdf5_key_exists(path, parts):
@@ -305,12 +311,14 @@ def _save_hdf5(
         compression=compression,
         compression_opts=None if compression is None else compression_opts,
     )
-    if metadata or default_key:
+    if metadata or default_key or clear_default_key:
         import h5py
 
         with h5py.File(path, "a") as handle:
             if default_key:
                 handle.attrs["__ssatk_default_key__"] = default_key
+            elif clear_default_key and "__ssatk_default_key__" in handle.attrs:
+                del handle.attrs["__ssatk_default_key__"]
             if metadata:
                 for name, value in metadata.items():
                     handle.attrs[str(name)] = value
@@ -332,8 +340,14 @@ def _load_hdf5(path: Path, *, key: str | None) -> Any:
 
     with h5py.File(path, "r") as handle:
         default_key = handle.attrs.get("__ssatk_default_key__")
+        top_level_keys = set(handle.keys())
+    # Only honor the default-key marker when it still describes the whole
+    # file (a single top-level key matching it); otherwise a mapping written
+    # after the marker was set would be read back as just that one value.
     if default_key:
-        return _load_hdf5(path, key=str(default_key))
+        top_of_default = str(default_key).split("/", 1)[0]
+        if top_level_keys == {top_of_default}:
+            return _load_hdf5(path, key=str(default_key))
     loaded = load_dict_from_hdf5(str(path))
     if set(loaded) == {"data"}:
         return loaded["data"]

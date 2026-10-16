@@ -108,6 +108,11 @@ def ellipse_from_rv(r, v, num=500, f_span=None, t0=None):
     vels = (Q @ np.vstack((vx_pf, vy_pf, vz_pf))).T
 
     # ---------- timing ------------------------------------------------------
+    # The sample grid's first point (periapsis for an ellipse, f=-f_cap for a
+    # parabola/hyperbola) is not generally the input (r, v) state at true
+    # anomaly ta0, so t0 -- the input state's epoch -- must be offset by the
+    # time from the first sample to ta0 before adding t_rel (which is zeroed
+    # at the first sample).
     t_rel = np.zeros_like(f)
     period = None
     eta = None
@@ -119,17 +124,27 @@ def ellipse_from_rv(r, v, num=500, f_span=None, t0=None):
         n_mean = np.sqrt(mu / (a ** 3))
         t_rel = (M - M[0]) / n_mean
         period = 2.0 * np.pi / n_mean
+        E0 = 2.0 * np.arctan2(np.tan(ta0 / 2.0), np.sqrt((1.0 + e) / (1.0 - e))) % (2.0 * np.pi)
+        M0 = E0 - e * np.sin(E0)
+        dt_first_to_input = (M0 - M[0]) / n_mean
     elif abs(e - 1.0) <= tol:
         D = np.tan(f / 2.0)
         # Barker's equation: t = (1/2) sqrt(p^3 / mu) (D + D^3 / 3)
-        t_rel = 0.5 * (p ** 1.5 / np.sqrt(mu)) * (D + D ** 3 / 3.0)
-        t_rel -= t_rel[0]
+        t_rel_raw = 0.5 * (p ** 1.5 / np.sqrt(mu)) * (D + D ** 3 / 3.0)
+        t_rel = t_rel_raw - t_rel_raw[0]
+        D0 = np.tan(ta0 / 2.0)
+        t_val0 = 0.5 * (p ** 1.5 / np.sqrt(mu)) * (D0 + D0 ** 3 / 3.0)
+        dt_first_to_input = t_val0 - t_rel_raw[0]
     else:
         sinhH = np.sqrt((e - 1.0) / (e + 1.0)) * np.tan(f / 2.0)
         H = np.arcsinh(sinhH)
         M_h = e * np.sinh(H) - H
         n_h = np.sqrt(mu / (-a) ** 3)
         t_rel = (M_h - M_h[0]) / n_h
+        sinhH0 = np.sqrt((e - 1.0) / (e + 1.0)) * np.tan(ta0 / 2.0)
+        H0 = np.arcsinh(sinhH0)
+        M_h0 = e * np.sinh(H0) - H0
+        dt_first_to_input = (M_h0 - M_h[0]) / n_h
 
     # ---------- extras ------------------------------------------------------
     rp = a * (1.0 - e) if e < 1.0 - tol else p / 2.0
@@ -151,7 +166,7 @@ def ellipse_from_rv(r, v, num=500, f_span=None, t0=None):
         "r": pts,
         "v": vels,
         "t_rel": t_rel,
-        "t_abs": (np.asarray(t0) + t_rel) if t0 is not None else None,
+        "t_abs": (np.asarray(t0) - dt_first_to_input + t_rel) if t0 is not None else None,
 
         # elements
         "a": a, "e": e, "i": i_rad,

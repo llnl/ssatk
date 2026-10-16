@@ -52,6 +52,25 @@ except ImportError:
     except ImportError:
         _vertex_normals = None
 
+# propagate_eci here is a module-local helper for this file's own demo/
+# self-test use; eclipse_brightness_plot.py's identically-named function is
+# the toolkit's canonical one (eclipse_space_view_plotly.py imports it from
+# there). ssatk.plots flattens every public module-level name into one
+# namespace (see ssatk._namespace), so without this, this module (sorting
+# alphabetically after eclipse_brightness_plot) would silently shadow the
+# canonical function at ssatk.plots.propagate_eci.
+__all__ = [
+    "AU_KM",
+    "BODY_COLORS",
+    "EARTH_MU_KM3_S2",
+    "EARTH_RADIUS_KM",
+    "MU_EARTH_KM3S2",
+    "RE_KM",
+    "R_SUN_KM",
+    "SUN_NOMINAL_RADIUS_KM",
+    "plot_globe_orbit_daynight_plotly",
+]
+
 MU_EARTH_KM3S2 = EARTH_MU_KM3_S2
 RE_KM = EARTH_RADIUS_KM
 

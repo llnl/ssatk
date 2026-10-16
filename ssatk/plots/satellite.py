@@ -96,14 +96,20 @@ class BurnEvent:
         return dv_t*T + dv_n*N + dv_w*W
 
     def burn_duration_s(self) -> float:
-        """Estimated finite-burn duration using rocket equation."""
+        """Estimated finite-burn duration using the rocket equation."""
         if self.mode == "impulsive":
             return 0.0
         ve = self.isp_s * G0 / 1000  # km/s
         mass_final = self.mass_kg * np.exp(-self.dv_mag_km_s / ve)
-        dm = self.mass_kg - mass_final
-        thrust_km_s2 = self.thrust_N / (self.mass_kg * 1000)  # km/s²
-        return float(self.dv_mag_km_s / thrust_km_s2) if thrust_km_s2 > 0 else 0.0
+        dm = self.mass_kg - mass_final  # propellant mass expended, kg
+        if self.thrust_N <= 0:
+            return 0.0
+        # Duration = propellant mass / mass flow rate, where mass flow rate
+        # = thrust / exhaust velocity (both in SI): dm [kg] * ve [m/s] /
+        # thrust_N [N] = seconds. The previous dv/(F/m0) form used only the
+        # initial-mass thrust acceleration and never used dm, overstating
+        # duration for any non-trivial mass change.
+        return float(dm * (ve * 1000.0) / self.thrust_N)
 
 
 # ─── Satellite3D ─────────────────────────────────────────────────────────────

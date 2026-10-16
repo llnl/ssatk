@@ -63,6 +63,22 @@ from .scene_primitives import (
     sun_position_and_radius,
 )
 
+# sensor_fov_plot.py, earth_sun_plot.py and solar_view_plot.py each define
+# their own unrelated build_figure()/DEFAULT_CFG -- ssatk.plots flattens
+# every public module-level name into one namespace (see ssatk._namespace),
+# so without this, whichever of the three sorted last alphabetically would
+# silently shadow the other two at ssatk.plots.build_figure. Every test and
+# demo already imports these from the specific submodule, so omitting them
+# here does not change any existing import.
+__all__ = [
+    "EARTH_MEAN_RADIUS_KM",
+    "MOON_RADIUS_KM",
+    "MU_M3S2",
+    "add_sensor_fov_to_figure",
+    "plot_sensor_fov",
+    "propagate_orbit",
+]
+
 # ---------------------------------------------------------------------------
 # SSAPy imports (confirmed working API from checkpoint)
 # ---------------------------------------------------------------------------

@@ -26,13 +26,10 @@ The `slow` marker is registered in tests/conftest.py.
 from __future__ import annotations
 
 import math
-import warnings
 from datetime import datetime
 
 import numpy as np
 import pytest
-
-warnings.filterwarnings("ignore")
 
 # Package imports. These were bare flat imports (`import magfield_plot_3d`),
 # which only resolved when the interpreter happened to be started from inside

@@ -19,7 +19,6 @@ UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") 
 def print_population_summary(out, *, top_k=8):
     pop = out["population"]
     meta = out["meta"]
-    per = pop["per_orbit"]
     M = int(meta["M"])
     mode = str(meta.get("mode", "population"))
     baseline = str(meta.get("baseline", "nominal"))

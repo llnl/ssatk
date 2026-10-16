@@ -169,7 +169,7 @@ def gallery_title(name: str, title: str) -> str:
     if stem in overrides:
         return overrides[stem]
     words = stem.removeprefix("demo_").split("_")
-    acronyms = {"ssapy": "SSATK", "ssatk": "SSATK", "gcrf": "GCRF", "ntw": "NTW", "itrf": "ITRF",
+    acronyms = {"ssapy": "SSAPy", "ssatk": "SSATK", "gcrf": "GCRF", "ntw": "NTW", "itrf": "ITRF",
                 "hdf5": "HDF5", "api": "API", "nbody": "N-body", "rv": "state vectors",
                 "orekit": "Orekit", "artemis": "ARTEMIS", "lambertian": "Lambertian",
                 "moon": "Moon", "van": "Van", "allen": "Allen"}

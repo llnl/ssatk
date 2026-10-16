@@ -34,6 +34,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from pathlib import Path
 from typing import Callable, Optional
@@ -130,10 +131,14 @@ class BasePlot3D:
 
     # ── figure init ───────────────────────────────────────────────────────────
     def _setup_figure(self):
-        if self.dark:
-            plt.style.use("dark_background")
-        self._fig = plt.figure(figsize=self._figsize, facecolor=_BG_COLOR)
-        self._ax  = self._fig.add_subplot(111, projection="3d")
+        # Use a style context instead of plt.style.use(), which mutates
+        # matplotlib's global rcParams for every figure created afterwards
+        # in the process, not just this one. Facecolors are already passed
+        # explicitly below, so the context only needs to last through
+        # figure/axes creation.
+        with plt.style.context("dark_background") if self.dark else contextlib.nullcontext():
+            self._fig = plt.figure(figsize=self._figsize, facecolor=_BG_COLOR)
+            self._ax  = self._fig.add_subplot(111, projection="3d")
         self._style_axes()
 
     def _style_axes(self):
@@ -226,7 +231,10 @@ class BasePlot3D:
     # ── frame transform of trajectory ─────────────────────────────────────────
     def _transform_traj(self, traj: Trajectory) -> np.ndarray:
         tf = FrameTransform(self.frame)
-        return tf.transform_trajectory(traj.r, traj.v, traj.t)
+        # LVLH/RTN/NTW need a single fixed reference state (the trajectory's
+        # own first sample) or every row projects onto its own frame and
+        # degenerates to [|r|, 0, 0] -- see FrameTransform.transform_trajectory.
+        return tf.transform_trajectory(traj.r, traj.v, traj.t, r_ref=traj.r[0], v_ref=traj.v[0])
 
     # ── osculating ellipse (instant, no propagation) ─────────────────────────
     def draw_osculating(self, color: str = _ORBIT_COLOR, linewidth: float = 1.5):
@@ -235,10 +243,14 @@ class BasePlot3D:
         tf  = FrameTransform(self.frame)
         r0, v0 = self.state.to_rv()
         # For LVLH/NTW we transform each point; ECI/ECF need different approach
+        # r_ref/v_ref fix the frame at the current state so the ellipse shows
+        # real relative shape, not each point self-projected to [|r|, 0, 0].
         pts_t = tf.transform_trajectory(
             pts,
             np.tile(v0, (len(pts), 1)),   # velocity constant (approx)
             np.full(len(pts), self.state._epoch_gps()),
+            r_ref=r0,
+            v_ref=v0,
         )
         if self._orbit_line:
             try:
@@ -530,7 +542,9 @@ class PlotlyScene:
 
     def _transform_traj(self, traj: Trajectory) -> np.ndarray:
         tf = FrameTransform(self.frame)
-        return tf.transform_trajectory(traj.r, traj.v, traj.t)
+        # See BasePlot3D._transform_traj: fix LVLH/RTN/NTW to the trajectory's
+        # first sample instead of degenerating each row to [|r|, 0, 0].
+        return tf.transform_trajectory(traj.r, traj.v, traj.t, r_ref=traj.r[0], v_ref=traj.v[0])
 
     # ── build figure ──────────────────────────────────────────────────────────
     def build(

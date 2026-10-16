@@ -1,5 +1,6 @@
 import json
 import inspect
+import os
 import numpy as np
 from ssatk._paths import ensure_file_parent
 from datetime import datetime
@@ -116,10 +117,13 @@ def save_workspace(filename='workspace.json', exclude=None):
                     'meta': dict(value.meta) if value.meta else {}
                 }
             elif HAS_ASTROPY and isinstance(value, Time):
+                # jd1/jd2 round-trip exactly; isot at the default precision
+                # (ms) does not, which loses sub-millisecond epoch accuracy.
                 workspace[name] = {
                     '__type__': 'astropy.Time',
-                    'value': value.isot,
-                    'format': 'isot',
+                    'jd1': value.jd1,
+                    'jd2': value.jd2,
+                    'format': 'jd',
                     'scale': value.scale
                 }
             elif HAS_ASTROPY and isinstance(value, SkyCoord):
@@ -161,10 +165,15 @@ def save_workspace(filename='workspace.json', exclude=None):
         'variables': workspace
     }
     
-    # Save to file
+    # Save to file. Serialize to a string first so a bad value raises before
+    # anything on disk is touched, then atomically replace the target so a
+    # failure (or a crash mid-write) never leaves a truncated/invalid file
+    # where a good previous save used to be.
+    text = json.dumps(result, indent=2)
     path = ensure_file_parent(filename)
-    with path.open('w', encoding='utf-8') as f:
-        json.dump(result, f, indent=2)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
     
     print(f"✓ Workspace saved to '{filename}'")
     print(f"  - Saved {len(workspace)} variables")
@@ -234,7 +243,11 @@ def load_workspace(filename='workspace.json', into_globals=True):
                 loaded_vars[name] = u.Quantity(value['value'], unit=value['unit'])
             elif type_name == 'astropy.Time' and HAS_ASTROPY:
                 from astropy.time import Time
-                loaded_vars[name] = Time(value['value'], format=value['format'], scale=value['scale'])
+                if 'jd1' in value and 'jd2' in value:
+                    loaded_vars[name] = Time(value['jd1'], value['jd2'], format='jd', scale=value['scale'])
+                else:
+                    # Older files saved only an isot string (ms precision).
+                    loaded_vars[name] = Time(value['value'], format=value['format'], scale=value['scale'])
             elif type_name == 'astropy.SkyCoord' and HAS_ASTROPY:
                 from astropy.coordinates import SkyCoord
                 loaded_vars[name] = SkyCoord(

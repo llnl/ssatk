@@ -1,5 +1,7 @@
 """Thrust profiles and packaged thrust curves against closed forms and certified impulses."""
 
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -66,5 +68,9 @@ def test_tabulated_curve_total_impulse_is_exact_for_piecewise_linear_thrust():
 def test_packaged_motor_curves_deliver_their_certified_total_impulse(simfile_id, certified_impulse_ns):
     # R3: NAR-certified total impulse as listed on ThrustCurve.org. The packaged
     # RockSim curves integrate to within 1 %.
+    # Skip only when the optional package is absent: with it installed, a
+    # missing curve file is a packaging regression that must fail.
+    if importlib.util.find_spec("ssa_data_propulsion") is None:
+        pytest.skip("ssa-data-propulsion is not installed")
     curve = load_packaged_thrust_curve(simfile_id, collection="thrustcurve_org_pd")
     assert curve.total_impulse == pytest.approx(certified_impulse_ns, rel=0.01, abs=0)

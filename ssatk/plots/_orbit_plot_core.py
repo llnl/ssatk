@@ -20,6 +20,7 @@ from .globe_plot import globe_plot as _globe_plot
 from .groundtrack_plot import groundtrack_plot as _groundtrack_plot
 from .plotutils import figsave as _figsave
 from .plotutils import valid_orbits as _valid_orbits
+from .plotutils import _is_orbit_like
 
 
 _COORDINATE_VIEWS = ("xy", "xz", "yz", "3d")
@@ -68,6 +69,15 @@ def _orbit_plot_core(
 
     special_plot_kwargs = dict(special_plot_kwargs or {})
     input_times = t
+    # _valid_orbits fabricates a GPS=0 placeholder Time when r is a plain
+    # position array with no t -- that must not reach the special views as
+    # if it were a real epoch. An SSAPy-like Orbit input, though, gets real
+    # epochs sampled internally (from its own period/epoch) even when the
+    # caller passed no explicit t, so it needs to be distinguished here,
+    # before r is overwritten by the normalised track list below.
+    input_is_orbit_like = _is_orbit_like(r) or (
+        isinstance(r, (list, tuple)) and bool(r) and all(_is_orbit_like(item) for item in r)
+    )
     r, t = _valid_orbits(r, t)
 
     if "w" in c:
@@ -163,13 +173,18 @@ def _orbit_plot_core(
         _set_orbit_limits(axes, bounds)
         _style_orbit_axes([axes[view] for view in coordinate_views], plotcolor, textcolor)
 
-    _plot_special_views(axes, views, r, t if input_times is not None else None, title, c, special_plot_kwargs, frame)
+    # Pass the normalised t (with real epochs) whenever it carries one --
+    # either the caller gave explicit times, or r was Orbit-like and
+    # _valid_orbits sampled real epochs from it above. Otherwise t is only
+    # the GPS=0 placeholder, which special views must not receive as real.
+    times_for_special_views = t if (input_times is not None or input_is_orbit_like) else None
+    _plot_special_views(axes, views, r, times_for_special_views, title, c, special_plot_kwargs, frame)
 
     if save_path:
         _figsave(fig, save_path)
     if show:
         _plt.show()
-    _plt.close()
+    _plt.close(fig)
     return fig, [axes[view] for view in views]
 
 

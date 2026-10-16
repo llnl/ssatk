@@ -473,6 +473,7 @@ def _read_texture_binary(filename, kind):
     except Exception:
         pass
 
+    print(f"  no {filename!r} texture available -- using placeholder", flush=True)
     return _placeholder_texture(kind)
 
 

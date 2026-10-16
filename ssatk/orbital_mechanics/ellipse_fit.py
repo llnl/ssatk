@@ -519,6 +519,10 @@ def ellipse_fit(
     except Exception as ex:
         kepler_ok = False
         kepler_error = ex
+        warnings.warn(
+            f"ellipse_fit: Kepler sampling failed ({ex!r}); falling back to "
+            "the polygon/angle-integral sampling, which is less accurate "
+            "for high eccentricity or long arcs.", stacklevel=2)
 
     # ───────────────────────── fallback: previous method ──────────────────
     if not kepler_ok:
@@ -788,7 +792,8 @@ def ellipse_fit(
         ax_speed.legend()
 
         plt.tight_layout()
-        plt.show()
+        if plot:
+            plt.show()
         if save_path:
             figsave(fig, save_path)
 
@@ -825,6 +830,7 @@ def ellipse_fit(
         "plane_basis": (u_hat, v_hat, w_hat),
         "rot_dir": int(rot_dir),
         "mu": mu_m3_s2,                       # [m^3/s^2]
+        "sampling": "kepler" if kepler_ok else "polygon",
     }
 
     return result

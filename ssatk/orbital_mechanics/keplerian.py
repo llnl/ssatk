@@ -776,70 +776,27 @@ def calculate_orbital_elements(r_, v_, mu_barycenter=EARTH_MU):
     rarr = nby3shape(r_)
     varr = nby3shape(v_)
 
-    aarr = []
-    earr = []
-    incarr = []
-    true_longitudearr = []
-    argument_of_periapsisarr = []
-    longitude_of_ascending_nodearr = []
-    true_anomalyarr = []
-    hmagarr = []
-
-    for r, v in zip(rarr, varr):
-        r = np.array(r)
-        v = np.array(v)
-
-        rmag = np.sqrt(r.dot(r))
-        vmag = np.sqrt(v.dot(v))
-
-        h = np.cross(r, v)
-        hmag = np.sqrt(h.dot(h))
-        n = np.cross(np.array([0, 0, 1]), h)
-
-        a = 1 / ((2 / rmag) - (vmag**2) / mu_)
-
-        evector = np.cross(v, h) / (mu_) - r / rmag
-        e = np.sqrt(evector.dot(evector))
-
-        inc = np.arccos(h[2] / hmag)
-
-        if np.dot(r, v) > 0:
-            true_anomaly_val = np.arccos(np.dot(evector, r) / (e * rmag))
-        else:
-            true_anomaly_val = (2 * np.pi - np.arccos(np.dot(evector, r) / (e * rmag)))
-
-        if evector[2] >= 0:
-            argument_of_periapsis = np.arccos(
-                np.dot(n, evector) / (e * np.sqrt(n.dot(n))))
-        else:
-            argument_of_periapsis = (2 * np.pi - np.arccos(np.dot(n, evector) / (e * np.sqrt(n.dot(n)))))
-
-        if n[1] >= 0:
-            longitude_of_ascending_node = np.arccos(n[0] / np.sqrt(n.dot(n)))
-        else:
-            longitude_of_ascending_node = (2 * np.pi - np.arccos(n[0] / np.sqrt(n.dot(n))))
-
-        true_longitude_val = (true_anomaly_val + argument_of_periapsis +
-                              longitude_of_ascending_node)
-
-        aarr.append(a)
-        earr.append(e)
-        incarr.append(inc)
-        true_longitudearr.append(true_longitude_val)
-        argument_of_periapsisarr.append(argument_of_periapsis)
-        longitude_of_ascending_nodearr.append(longitude_of_ascending_node)
-        true_anomalyarr.append(true_anomaly_val)
-        hmagarr.append(hmag)
+    # Delegate to state_to_kepler, which clips its arccos arguments and
+    # special-cases circular/equatorial orbits (undefined pa/raan/node);
+    # the arccos branches below are unguarded and return NaN for exactly
+    # those states (e.g. a circular or equatorial orbit).
+    a, e, inc, pa, raan, ta = state_to_kepler(rarr, varr, mu=mu_)
+    a, e, inc, pa, raan, ta = (
+        np.atleast_1d(a), np.atleast_1d(e), np.atleast_1d(inc),
+        np.atleast_1d(pa), np.atleast_1d(raan), np.atleast_1d(ta),
+    )
+    true_longitude_val = ta + pa + raan
+    hmag = np.linalg.norm(np.cross(rarr, varr), axis=1)
 
     return {
-        'a': np.array(aarr),
-        'e': np.array(earr),
-        'i': np.array(incarr),
-        'tl': np.array(true_longitudearr),
-        'pa': np.array(argument_of_periapsisarr),
-        'raan': np.array(longitude_of_ascending_nodearr),
-        'ta': np.array(true_anomalyarr),
-        'L': np.array(hmagarr)
+        'a': a,
+        'e': e,
+        'i': inc,
+        'tl': true_longitude_val,
+        'pa': pa,
+        'raan': raan,
+        'ta': ta,
+        'L': hmag,
     }
 
 
