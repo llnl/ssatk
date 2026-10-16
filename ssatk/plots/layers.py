@@ -195,13 +195,16 @@ def _cone_mesh3d(apex, direction, half_angle_deg, length_km,
 
 
 def _footprint_on_earth(apex_km, direction, half_angle_deg, n_pts=300):
-    """Intersect the FOV cone rim with Earth's sphere (R=6 371 km).
+    """Intersect the FOV cone rim with Earth's sphere (R=RE_KM km).
 
     Returns (xs, ys, zs) arrays in km for the footprint circle, or None
     if the cone edge does not reach Earth (e.g. anti-nadir pointing).
     """
     import math as _m
-    R_E  = 6_371.0
+    # Match the scene's Earth mesh radius (RE_KM = EARTH_RADIUS_KM =
+    # 6378.137 km). The old hard-coded mean radius (6371.0 km) intersected a
+    # smaller sphere, drawing the footprint ~7 km inside the opaque Earth.
+    R_E  = RE_KM
     apex = np.asarray(apex_km, dtype=float)
     d    = np.asarray(direction, dtype=float); d /= np.linalg.norm(d)
     u, v = _orthonormal_basis(d)
@@ -223,7 +226,11 @@ def _footprint_on_earth(apex_km, direction, half_angle_deg, n_pts=300):
         t  = t1 if t1 > 1e-3 else (t2 if t2 > 1e-3 else None)
         if t is None:
             return None
-        pt = apex + t * ray
+        # Lift the surface point slightly outward so it renders on top of,
+        # rather than z-fighting with, the opaque Earth mesh -- the same
+        # small radial lift used by the sibling traces in sensor_fov_plot.py
+        # (_target_marker, _surface_track_trace).
+        pt = (apex + t * ray) * 1.004
         xs.append(pt[0]); ys.append(pt[1]); zs.append(pt[2])
     return np.array(xs), np.array(ys), np.array(zs)
 
