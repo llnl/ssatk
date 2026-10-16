@@ -23,9 +23,9 @@ def proper_motion(x: np.ndarray, y: np.ndarray, z: np.ndarray, vx: np.ndarray, v
 
     Returns:
     float or np.ndarray: The total proper motion in arcseconds per second for either input
-        unit (a scalar for scalar inputs, or an array vectorized along the sample axis of
-        array-like inputs), NaN where the object is at the Earth's position, or None for an
-        unrecognized input_unit.
+    unit (a scalar for scalar inputs, or an array vectorized along the sample axis of
+    array-like inputs), NaN where the object is at the Earth's position, or None for an
+    unrecognized input_unit.
 
     Author: Travis Yeager (yaeger7@llnl.gov)
     """

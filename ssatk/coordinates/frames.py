@@ -214,12 +214,13 @@ class FrameTransform:
         v_eci : (3,) km/s  — required for LVLH / RTN / NTW
         t_gps : GPS seconds — required for ECF (overrides self.t_gps)
         r_ref, v_ref : (3,) km, km/s, optional
-            Reference ECI state (e.g. a chief spacecraft) whose LVLH/RTN/NTW
-            frame ``r_eci`` is expressed relative to, as ``M(r_ref, v_ref) @
-            (r_eci - r_ref)``. Omit both to express the point in the frame it
-            defines for itself (legacy behaviour): since R_hat = r/|r| and
-            S_hat, W_hat are both orthogonal to r, that is always
-            [|r|, 0, 0] and carries no relative-motion information.
+
+        ``r_ref``/``v_ref`` give a reference ECI state (e.g. a chief
+        spacecraft) whose LVLH/RTN/NTW frame ``r_eci`` is expressed relative
+        to, as ``M(r_ref, v_ref) @ (r_eci - r_ref)``. Omit both to express the
+        point in the frame it defines for itself (legacy behaviour): since
+        R_hat = r/``|r|`` and S_hat, W_hat are both orthogonal to r, that is
+        always ``[|r|, 0, 0]`` and carries no relative-motion information.
         """
         r = np.asarray(r_eci, dtype=float)
         v = np.asarray(v_eci, dtype=float) if v_eci is not None else None
@@ -303,8 +304,8 @@ class FrameTransform:
             frame for every row: ``M(r_ref, v_ref) @ (r_eci[i] - r_ref)``.
             Omit both to keep the legacy per-row behaviour, where row ``i``
             is projected onto the frame built from its own ``(r[i], v[i])``.
-            Because R_hat = r/|r| and S_hat, W_hat are both orthogonal to r,
-            that per-row projection is always [|r[i]|, 0, 0] regardless of
+            Because R_hat = r/``|r|`` and S_hat, W_hat are both orthogonal to r,
+            that per-row projection is always ``[|r[i]|, 0, 0]`` regardless of
             the trajectory's actual shape -- pass r_ref/v_ref (for example
             ``r_eci[0], v_eci[0]``) to see real relative motion.
 
@@ -369,7 +370,7 @@ class FrameTransform:
         For LVLH/RTN/NTW this fixes the frame to the trajectory's own first
         sample (``transform_trajectory``'s ``r_ref``/``v_ref``) instead of
         re-deriving it from every row, so the result is the trajectory's
-        actual relative motion rather than the degenerate [|r|, 0, 0] a
+        actual relative motion rather than the degenerate ``[|r|, 0, 0]`` a
         per-row frame gives for every sample (see ``transform_trajectory``).
         """
         r = np.asarray(r_eci, dtype=float)
