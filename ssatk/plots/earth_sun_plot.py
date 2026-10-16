@@ -56,6 +56,15 @@ from ssatk.plots.solar_view_plot import (
 from ssatk.plots._solar_scene import SolarFigure, add_sky, scale_caption
 from astropy.time import Time
 
+# earth_sun_plot.py, sensor_fov_plot.py and solar_view_plot.py each define
+# their own unrelated build_figure()/DEFAULT_CFG -- ssatk.plots flattens
+# every public module-level name into one namespace (see ssatk._namespace),
+# so without this, whichever of the three sorted last alphabetically would
+# silently shadow the other two at ssatk.plots.build_figure. Every test and
+# demo already imports these from the specific submodule, so omitting them
+# here does not change any existing import.
+__all__ = ["build_static_figure"]
+
 _EARTH = _PLANETS["Earth"]
 _YEAR_DAYS = 365.25 * math.sqrt(_EARTH["a"] ** 3)   # ≈ 365.256 days
 _SIDEREAL_MONTH_DAYS = 27.321661

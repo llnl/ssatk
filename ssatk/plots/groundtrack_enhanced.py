@@ -73,6 +73,24 @@ from .plotutils import (
 RE_KM = EARTH_RADIUS_KM
 R_SUN_KM = SUN_RADIUS_KM
 
+# gcrf_to_itrf / compute_eclipse are local helpers reimplementing what
+# coverage_analysis.py's identically-named, independently tested functions
+# already do. ssatk.plots flattens every public module-level name into one
+# namespace (see ssatk._namespace), so without this, this module (sorting
+# alphabetically after coverage_analysis) would silently shadow the tested
+# versions at ssatk.plots.gcrf_to_itrf / ssatk.plots.compute_eclipse. Every
+# test imports both from their specific submodule already.
+__all__ = [
+    "EARTH_MU_KM3_S2",
+    "EARTH_RADIUS_KM",
+    "RE_KM",
+    "R_SUN_KM",
+    "SUN_RADIUS_KM",
+    "ecef_to_geodetic",
+    "plot_enhanced_groundtrack",
+    "subsolar_point",
+]
+
 # ── Optional real-toolkit imports (all soft — each falls back cleanly) ──────
 from ssatk.coordinates.frames import eci_to_ecf_matrix as _tk_eci_to_ecf_matrix
 

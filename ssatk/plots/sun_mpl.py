@@ -34,6 +34,22 @@ from __future__ import annotations
 
 import numpy as np
 
+# auto_sun_radius here and in sun_view.py are independent, differently-scaled
+# helpers (matplotlib vs Plotly scenes; see each module's own tests) with no
+# single correct "intended" provider. ssatk.plots flattens every public
+# module-level name into one namespace (see ssatk._namespace), which would
+# otherwise silently expose only one of the two, arbitrarily, at
+# ssatk.plots.auto_sun_radius. Both existing tests import it from the
+# specific submodule already.
+__all__ = [
+    "apply_shading",
+    "auto_sun_distance",
+    "draw_sun",
+    "get_sun_position",
+    "shade_texture",
+    "sun_direction_in_frame",
+]
+
 # ---------------------------------------------------------------------------
 # Sun ephemeris
 # ---------------------------------------------------------------------------

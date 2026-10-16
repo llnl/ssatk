@@ -68,6 +68,38 @@ R_EARTH_KM = EARTH_RADIUS / 1000.0
 R_MOON_KM  = MOON_RADIUS / 1000.0
 R_SUN_KM   = SUN_RADIUS / 1000.0
 
+# ssatk.plots flattens every public module-level name into one namespace
+# (see ssatk._namespace). Two of this module's names collided there with a
+# different intended provider, and neither has an existing test or demo
+# importing it via the flattened ssatk.plots.* path (both are always
+# imported from this submodule directly), so excluding them here changes no
+# current behaviour:
+#   - R_MOON_KM here is MOON_RADIUS (ssapy's constant, ~1738.1 km) in km,
+#     while moon_render.py / eclipse_space_view_plotly.py / moon_webgl.py
+#     all use ssatk.constants.MOON_MEAN_RADIUS_KM (1737.4 km) -- a genuine
+#     value mismatch, not just a naming collision.
+#   - auto_sun_radius here and in sun_mpl.py are independent, differently-
+#     scaled helpers (Plotly vs matplotlib scenes) with no single correct
+#     "intended" provider.
+__all__ = [
+    "AU_KM",
+    "EARTH_RADIUS",
+    "EarthShadingLayer",
+    "MOON_RADIUS",
+    "MoonShadingLayer",
+    "R_EARTH_KM",
+    "R_SUN_KM",
+    "SUN_RADIUS",
+    "SunLayer",
+    "VISUAL_DIST_KM_CISLUNAR",
+    "VISUAL_DIST_KM_LEO",
+    "VISUAL_SUN_RADIUS_KM",
+    "auto_sun_position",
+    "jd_from_datetime",
+    "starfield_trace",
+    "sun_position_eci",
+]
+
 # AU_KM comes from ssatk.constants so every plot uses the same
 # physical distance scale.
 

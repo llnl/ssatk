@@ -40,6 +40,15 @@ from ssatk.plots.solar_bodies import (
 )
 from ssatk.plots._solar_scene import SolarFigure, add_sky, body_position_au, scale_caption
 
+# solar_view_plot.py, earth_sun_plot.py and sensor_fov_plot.py each define
+# their own unrelated build_figure()/DEFAULT_CFG -- ssatk.plots flattens
+# every public module-level name into one namespace (see ssatk._namespace),
+# so without this, whichever of the three sorted last alphabetically would
+# silently shadow the other two at ssatk.plots.build_figure. Every test and
+# demo already imports these from the specific submodule, so omitting them
+# here does not change any existing import.
+__all__ = []
+
 # Always define these locally — importing toolkit_gui.py here is unsafe:
 # it's a Streamlit *app* script, not a library, and merely importing it
 # executes its entire top-level code (page config, CSS, sidebar, all 8
