@@ -103,9 +103,13 @@ def _decode_special_struct(struct):
     if encoded_type == "astropy_time":
         isot = struct.get("#text", "")
         scale = attrs.get("scale", "utc")
+        jd1 = attrs.get("jd1")
+        jd2 = attrs.get("jd2")
         if Time is not None:
             try:
-                return Time(isot, scale=scale)
+                if jd1 is not None and jd2 is not None:
+                    return Time(float(jd1), float(jd2), format="jd", scale=scale)
+                return Time(isot, scale=scale)  # older files: isot-only
             except ValueError:
                 return isot
         return isot  # astropy not available: return text
@@ -205,7 +209,17 @@ def save_xml(filename, data, root_tag="root", pretty=True, xml_declaration=True,
         if isinstance(obj, datetime):
             return {"@attrs": {"type": "datetime"}, "#text": obj.isoformat()}
         if Time is not None and isinstance(obj, Time):
-            return {"@attrs": {"type": "astropy_time", "scale": obj.scale}, "#text": obj.isot}
+            # #text keeps isot for readability; jd1/jd2 attrs make the
+            # round-trip lossless (isot alone is truncated to ms precision).
+            return {
+                "@attrs": {
+                    "type": "astropy_time",
+                    "scale": obj.scale,
+                    "jd1": float(obj.jd1),
+                    "jd2": float(obj.jd2),
+                },
+                "#text": obj.isot,
+            }
         if isinstance(obj, set):
             return {"@attrs": {"type": "set"}, "item": list(obj)}
         if isinstance(obj, tuple):

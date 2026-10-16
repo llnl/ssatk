@@ -23,9 +23,12 @@ def save_json(filename: str, data) -> None:
         if isinstance(obj, datetime):
             return {"__type__": "datetime", "data": obj.isoformat()}
         if isinstance(obj, Time):
+            # jd1/jd2 round-trip exactly; .isot alone is truncated to
+            # millisecond precision (ms-level epochs lose sub-ms accuracy).
             return {
                 "__type__": "astropy_time",
-                "data": obj.isot,
+                "jd1": obj.jd1,
+                "jd2": obj.jd2,
                 "scale": obj.scale,
             }
         if isinstance(obj, set):
@@ -57,7 +60,9 @@ def load_json(filename: str):
         if obj_type == "datetime":
             return datetime.fromisoformat(obj["data"])
         if obj_type == "astropy_time":
-            return Time(obj["data"], scale=obj["scale"])
+            if "jd1" in obj and "jd2" in obj:
+                return Time(obj["jd1"], obj["jd2"], format="jd", scale=obj["scale"])
+            return Time(obj["data"], scale=obj["scale"])  # older files: isot-only
         if obj_type == "bytes":
             return bytes(obj["data"])
         if obj_type == "set":
