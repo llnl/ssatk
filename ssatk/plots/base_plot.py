@@ -34,6 +34,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from pathlib import Path
 from typing import Callable, Optional
@@ -130,10 +131,14 @@ class BasePlot3D:
 
     # ── figure init ───────────────────────────────────────────────────────────
     def _setup_figure(self):
-        if self.dark:
-            plt.style.use("dark_background")
-        self._fig = plt.figure(figsize=self._figsize, facecolor=_BG_COLOR)
-        self._ax  = self._fig.add_subplot(111, projection="3d")
+        # Use a style context instead of plt.style.use(), which mutates
+        # matplotlib's global rcParams for every figure created afterwards
+        # in the process, not just this one. Facecolors are already passed
+        # explicitly below, so the context only needs to last through
+        # figure/axes creation.
+        with plt.style.context("dark_background") if self.dark else contextlib.nullcontext():
+            self._fig = plt.figure(figsize=self._figsize, facecolor=_BG_COLOR)
+            self._ax  = self._fig.add_subplot(111, projection="3d")
         self._style_axes()
 
     def _style_axes(self):
