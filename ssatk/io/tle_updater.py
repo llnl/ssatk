@@ -177,17 +177,31 @@ def fetch_tle_celestrak(norad_id):
     No account required. Uses SSL bypass for restricted networks.
     Returns (line1, line2) or (None, None) on failure.
     """
+    # FORMAT=JSON returns OMM-in-JSON, whose fields are named like
+    # EPOCH/MEAN_MOTION, not TLE_LINE1/TLE_LINE2 (those are Space-Track's own
+    # query field names) -- so a JSON request here always came back empty.
+    # FORMAT=TLE returns the classic two-line element set as plain text.
     url = (f"https://celestrak.org/NORAD/elements/gp.php"
-           f"?CATNR={norad_id}&FORMAT=JSON")
+           f"?CATNR={norad_id}&FORMAT=TLE")
     try:
         req = urllib.request.Request(
             url,
             headers={"User-Agent": "ssapy-tle-updater/1.0"}
         )
         with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as r:
-            data = json.loads(r.read().decode())
-            if data and len(data) > 0:
-                return data[0].get("TLE_LINE1"), data[0].get("TLE_LINE2")
+            text = r.read().decode()
+        lines = [line for line in text.splitlines() if line.strip()]
+        # A successful FORMAT=TLE response is the object name line followed
+        # by the two 69-character element lines; take the last two non-blank
+        # lines and validate them as a real TLE pair before trusting them.
+        if len(lines) >= 2:
+            line1, line2 = lines[-2], lines[-1]
+            if (len(line1) == 69 and len(line2) == 69
+                    and line1.startswith("1 ") and line2.startswith("2 ")
+                    and line1[68].isdigit() and line2[68].isdigit()
+                    and _tle_checksum(line1) == int(line1[68])
+                    and _tle_checksum(line2) == int(line2[68])):
+                return line1, line2
     except Exception as e:
         print(f"  [celestrak] NORAD {norad_id} failed: {e}")
     return None, None
