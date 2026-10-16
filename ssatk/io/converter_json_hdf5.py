@@ -102,6 +102,22 @@ def _write_json_node(h, name, obj):
     d.attrs["kind"] = np.bytes_("json_blob")
     return d
 
+def _write_json_root(h, obj):
+    """
+    Write a JSON value at the file root (h5py groups cannot be created with
+    an empty name). A dict's children are written directly into the root, as
+    a dict normally would be into any other group; anything else still needs
+    a placeholder name to carry its "kind" tag, so it goes under "__root__".
+    """
+    if isinstance(obj, dict):
+        h.attrs["kind"] = np.bytes_("dict")
+        for k, v in obj.items():
+            child = _percent_encode_name(k)
+            _write_json_node(h, child, v)
+        return
+    _write_json_node(h, "__root__", obj)
+
+
 def json_to_hdf5(json_obj, h5_path, root="/"):
     """
     Write a JSON-serializable object to HDF5 file at h5_path.
@@ -110,7 +126,11 @@ def json_to_hdf5(json_obj, h5_path, root="/"):
     with h5py.File(h5_path, "w") as f:
         f.attrs["format"] = np.bytes_("json-hdf5")
         f.attrs["name_encoding"] = np.bytes_("percent-utf8")
-        _write_json_node(f, root.strip("/"), json_obj)
+        node_name = root.strip("/")
+        if node_name:
+            _write_json_node(f, node_name, json_obj)
+        else:
+            _write_json_root(f, json_obj)
 
 def json_file_to_hdf5(json_path, h5_path, root="/"):
     with open(json_path, "r", encoding="utf-8") as fp:
@@ -206,6 +226,15 @@ def hdf5_to_json(h5_path, root="/"):
     """
     with h5py.File(h5_path, "r") as f:
         node_name = root.strip("/")
+        if not node_name:
+            # Written directly at the file root by _write_json_root: a dict's
+            # children live at the top level (kind="dict" on the file itself),
+            # anything else was stashed under the "__root__" placeholder name.
+            if "kind" in f.attrs:
+                return _read_json_node(f)
+            if "__root__" in f:
+                return _read_json_node(f["__root__"])
+            return _read_json_node(f)
         if node_name in f:
             return _read_json_node(f[node_name])
         # If root is top-level and not present, accept the only top-level object
