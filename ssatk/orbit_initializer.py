@@ -31,7 +31,10 @@ class OrbitInitialize:
         moon = get_body("moon")
 
         unit_vector_moon = moon.position(t) / np.linalg.norm(moon.position(t))
-        moon_v = (moon.position(t.gps) - moon.position(t.gps - 1)) / 1
+        # Central difference (matches Lunar_L4 below): a one-sided backward
+        # difference has O(h) error against the Moon's centripetal
+        # acceleration, versus O(h^2) here.
+        moon_v = (moon.position(t.gps + 1) - moon.position(t.gps - 1)) / 2.0
         unit_vector_moon_velocity = moon_v / np.linalg.norm(moon_v)
 
         r = (np.linalg.norm(moon.position(t)) - delta_r) * unit_vector_moon
