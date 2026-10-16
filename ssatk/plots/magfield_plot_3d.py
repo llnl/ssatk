@@ -1186,52 +1186,6 @@ def plot_magfield_3d(
     return fig, None
 
 
-# -- Entry point -------------------------------------------------------------
-if __name__ == "__main__":
-    output_dir = Path(os.environ.get("OUTPUT_DIR", str(output_root() / "figures")))
-    cfg = {}
-    gui_cfg_path = os.environ.get("GUI_CONFIG", "")
-    if gui_cfg_path and Path(gui_cfg_path).exists():
-        try:
-            _ns: dict = {}
-            exec(compile(Path(gui_cfg_path).read_text(), gui_cfg_path, "exec"), {}, _ns)
-            cfg = _ns
-            print(f"[magfield_plot_3d] Loaded GUI_CONFIG from {gui_cfg_path}")
-        except Exception as e:
-            print(f"[magfield_plot_3d] Warning: could not parse GUI_CONFIG ({e}); using defaults.")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    epoch = cfg.get("epoch")
-    if isinstance(epoch, str):
-        try:
-            from datetime import datetime as _dt
-            _d = _dt.strptime(epoch[:19], "%Y-%m-%d %H:%M:%S")
-            epoch = _d.year + (_d.timetuple().tm_yday - 1) / 365.25
-        except Exception:
-            epoch = 2025.0
-    elif not isinstance(epoch, (int, float)):
-        epoch = 2025.0
-
-    # Any key in the GUI config that names a real parameter is forwarded.
-    # Previously only ten keys were read, so most of the model controls
-    # (external_field, kp, projection, magnetopause, solar-wind drivers,
-    # pitch angle, figure size ...) could not be reached from the GUI at all.
-    import inspect as _inspect
-    _params = _inspect.signature(plot_magfield_3d).parameters
-    kwargs = {k: v for k, v in cfg.items()
-              if k in _params and not k.startswith("_") and k != "epoch"}
-    kwargs.setdefault("save_path", str(output_dir / "magfield_plot_3d"))
-    kwargs.setdefault("show", False)
-    unknown = sorted(k for k in cfg
-                     if k not in _params and k != "epoch"
-                     and not k.startswith("_") and not callable(cfg[k]))
-    if unknown:
-        print(f"[magfield_plot_3d] ignoring unknown config keys: {unknown}")
-
-    fig, _ = plot_magfield_3d(epoch=epoch, **kwargs)
-    print(f"[magfield_plot_3d] Saved -> {output_dir / 'magfield_plot_3d.html'}")
-
 # ---------------------------------------------------------------------------
 # Command-line entry point
 # ---------------------------------------------------------------------------
@@ -1326,9 +1280,58 @@ def main(argv=None):
     return 0
 
 
-# NOTE: no `if __name__ == "__main__"` here for main(). This module already has
-# one further up that the GUI relies on -- it reads $GUI_CONFIG and renders --
-# and a second block would run main() straight after it on every script
-# invocation. The CLI is reached through the console-script entry point
-# declared in pyproject.toml (ssatk-magnetosphere = ...:main), which calls
-# main() directly and needs no __main__ block.
+# Entry point -- this used to live right after plot_magfield_3d() and ran the
+# GUI_CONFIG path unconditionally, so `python -m ssatk.plots.magfield_plot_3d
+# --help` (or any other argv) ignored its arguments and tried to render a
+# figure instead of printing argparse help. It has to live down here, after
+# main() is defined, since it now calls main() for the non-GUI case. The
+# console-script entry point declared in pyproject.toml
+# (ssatk-magnetosphere = ...:main) still calls main() directly and does not
+# go through this block at all.
+if __name__ == "__main__":
+    gui_cfg_path = os.environ.get("GUI_CONFIG", "")
+    if not gui_cfg_path:
+        _sys.exit(main())
+
+    output_dir = Path(os.environ.get("OUTPUT_DIR", str(output_root() / "figures")))
+    cfg = {}
+    if Path(gui_cfg_path).exists():
+        try:
+            _ns: dict = {}
+            exec(compile(Path(gui_cfg_path).read_text(), gui_cfg_path, "exec"), {}, _ns)
+            cfg = _ns
+            print(f"[magfield_plot_3d] Loaded GUI_CONFIG from {gui_cfg_path}")
+        except Exception as e:
+            print(f"[magfield_plot_3d] Warning: could not parse GUI_CONFIG ({e}); using defaults.")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    epoch = cfg.get("epoch")
+    if isinstance(epoch, str):
+        try:
+            from datetime import datetime as _dt
+            _d = _dt.strptime(epoch[:19], "%Y-%m-%d %H:%M:%S")
+            epoch = _d.year + (_d.timetuple().tm_yday - 1) / 365.25
+        except Exception:
+            epoch = 2025.0
+    elif not isinstance(epoch, (int, float)):
+        epoch = 2025.0
+
+    # Any key in the GUI config that names a real parameter is forwarded.
+    # Previously only ten keys were read, so most of the model controls
+    # (external_field, kp, projection, magnetopause, solar-wind drivers,
+    # pitch angle, figure size ...) could not be reached from the GUI at all.
+    import inspect as _inspect
+    _params = _inspect.signature(plot_magfield_3d).parameters
+    kwargs = {k: v for k, v in cfg.items()
+              if k in _params and not k.startswith("_") and k != "epoch"}
+    kwargs.setdefault("save_path", str(output_dir / "magfield_plot_3d"))
+    kwargs.setdefault("show", False)
+    unknown = sorted(k for k in cfg
+                     if k not in _params and k != "epoch"
+                     and not k.startswith("_") and not callable(cfg[k]))
+    if unknown:
+        print(f"[magfield_plot_3d] ignoring unknown config keys: {unknown}")
+
+    fig, _ = plot_magfield_3d(epoch=epoch, **kwargs)
+    print(f"[magfield_plot_3d] Saved -> {output_dir / 'magfield_plot_3d.html'}")
