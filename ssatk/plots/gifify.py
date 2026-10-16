@@ -267,7 +267,11 @@ def gifify(
         if verbose:
             print(f"Saving frames to temp dir: {tmpdir}")
 
-        with imageio.get_writer(save_path, mode="I", duration=1.0 / fps, loop=loop) as writer:
+        # imageio 2.37's Pillow GIF plugin expects `duration` in milliseconds,
+        # not seconds (see write_gifs.py, which documents and handles this
+        # the same way) -- passing fps-derived seconds here produced 0 ms
+        # per-frame delays.
+        with imageio.get_writer(save_path, mode="I", duration=1000.0 / fps, loop=loop) as writer:
             for frame_idx, (i0, i1) in enumerate(spans):
                 plt.close("all")
                 args_s, kwargs_s = _apply_slice(i0, i1)
