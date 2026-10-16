@@ -32,8 +32,6 @@ def suppress_stdout():
             sys.stdout = old_stdout
 
 
-warnings.filterwarnings("ignore")
-
 
 def pd_flatten(data: list, factor: float = 1.0) -> list:
     """
