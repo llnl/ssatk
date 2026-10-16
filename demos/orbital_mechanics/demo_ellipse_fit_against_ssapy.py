@@ -104,10 +104,8 @@ def main(make_figures=None, fast=None, verbose=None):
 
     if N_native > 1:
         t_grid = np.linspace(0.0, T_flight, N_native, dtype=float)
-        dt_s = T_flight / float(N_native - 1)
     else:
         t_grid = np.array([0.0], dtype=float)
-        dt_s = 0.0
 
     r_efit = resample_cartesian(t_rel, r_arc, t_grid)
     epochs = Time(Time("2025-01-01", scale="utc").gps + t_grid, format="gps")
