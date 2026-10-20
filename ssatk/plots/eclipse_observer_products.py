@@ -352,8 +352,6 @@ def generate_solar_observer_products(
 
         ax_ray = fig.add_subplot(grid[1, :])
         draw_ray_diagram(ax_ray, bundle)
-        ax_ray.set_title("How the Moon's shadow reaches Earth\nFinite-Sun light paths at local maximum",
-                         color="white", fontsize=9.4, pad=5, fontweight="semibold")
 
         ax_earth = fig.add_subplot(grid[2, 0:4]); ax_sky = fig.add_subplot(grid[2, 4:8])
         local_spec = grid[2, 8:19].subgridspec(2, 1, height_ratios=[0.77, 0.23], hspace=0.045)

@@ -888,5 +888,3 @@ def build_solar_local_event(
         "local_max_jd": solar_local_contacts(lat_deg, lon_east_deg, height_km).get("MAX", SOLAR_2024.greatest_jd),
     })
     return replace(event, metadata=metadata)
-
-

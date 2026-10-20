@@ -397,5 +397,3 @@ def _build_scene_geometry(event: ReferenceEvent) -> SceneGeometry:
         earth_peak_local_km=earth_peak,
         moon_peak_local_km=moon_peak,
     )
-
-

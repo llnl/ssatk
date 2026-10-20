@@ -127,5 +127,3 @@ def equal_unit_aspect(ranges: Sequence[Sequence[float]]) -> dict[str, float]:
     scale = float(np.max(spans))
     ratios = np.maximum(spans / scale, 1.0e-6)
     return {"x": float(ratios[0]), "y": float(ratios[1]), "z": float(ratios[2])}
-
-

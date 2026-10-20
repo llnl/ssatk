@@ -243,5 +243,3 @@ def build_public_animation(
         frame_labels=labels,
         phase_labels=phases,
     )
-
-

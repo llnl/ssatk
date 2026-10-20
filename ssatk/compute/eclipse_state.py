@@ -186,7 +186,10 @@ def resample_event(event: ReferenceEvent, jd_utc: Sequence[float]) -> ReferenceE
                  for value in values]
     sun = np.asarray([item[0] for item in positions])
     moon = np.asarray([item[1] for item in positions])
-    visible, separation = center_visibility_and_separation(event.mode, sun, moon)
+    visible, separation = (
+        solar_visibility_and_separation(values, sun, moon) if event.mode == "solar"
+        else center_visibility_and_separation("lunar", sun, moon)
+    )
     return replace(event, jd=values, sun_km=sun, moon_km=moon,
                    center_visibility=np.asarray(visible), separation_deg=np.asarray(separation))
 
@@ -236,6 +239,27 @@ def _observer_visibility(
     sun_ang = math.asin(np.clip(R_SUN_KM/ds, 0.0, 1.0))
     visible = float(angular_circle_visible_fraction(moon_ang, sun_ang, separation))
     return visible, math.degrees(separation)
+
+
+def solar_visibility_and_separation(times, sun_km, moon_km, *, observer_itrf_km=None):
+    """Visible solar fraction and Sun-Moon separation seen from the ground.
+
+    A fixed observer is used when ``observer_itrf_km`` is given; otherwise each
+    state is seen from the point where the shadow axis meets the WGS-84
+    surface, or from Earth's center while the axis misses Earth.
+    """
+    visible, separation = [], []
+    for value, sun_i, moon_i in zip(np.asarray(times, dtype=float), sun_km, moon_km):
+        if observer_itrf_km is not None:
+            observer_gcrf = itrf_to_gcrf_km(observer_itrf_km, float(value))
+        else:
+            moon_itrf, sun_itrf = gcrf_to_itrf_km(np.asarray([moon_i, sun_i]), float(value))
+            hit_itrf = shadow_axis_surface_point(moon_itrf, sun_itrf, target_axes_km=(RE_KM, RE_KM, RP_KM))
+            observer_gcrf = np.zeros(3) if hit_itrf is None else itrf_to_gcrf_km(hit_itrf, float(value))
+        vis, sep = _observer_visibility(np.asarray(observer_gcrf), moon_i, sun_i)
+        visible.append(vis)
+        separation.append(sep)
+    return np.asarray(visible), np.asarray(separation)
 
 
 def build_event(
@@ -333,22 +357,9 @@ def build_event(
             observer_site.longitude_east_deg if observer_site is not None else SOLAR_GREATEST_SITE_LON_EAST_DEG,
             observer_site.elevation_km if observer_site is not None else 0.0,
         )
-        visible: list[float] = []
-        separation: list[float] = []
-        for value, sun_i, moon_i in zip(times, sun, moon):
-            if local_solar:
-                observer_gcrf = itrf_to_gcrf_km(observer_itrf, float(value))
-            else:
-                # Global events report the view from the shadow-axis ground point.
-                moon_itrf, sun_itrf = gcrf_to_itrf_km(np.asarray([moon_i, sun_i]), float(value))
-                hit_itrf = shadow_axis_surface_point(
-                    moon_itrf, sun_itrf, target_axes_km=(RE_KM, RE_KM, RP_KM),
-                )
-                observer_gcrf = np.zeros(3) if hit_itrf is None else itrf_to_gcrf_km(hit_itrf, float(value))
-            vis, sep = _observer_visibility(np.asarray(observer_gcrf), moon_i, sun_i)
-            visible.append(vis)
-            separation.append(sep)
-        visible_arr, separation_arr = np.asarray(visible), np.asarray(separation)
+        visible_arr, separation_arr = solar_visibility_and_separation(
+            times, sun, moon, observer_itrf_km=observer_itrf if local_solar else None,
+        )
     else:
         visible_arr, separation_arr = center_visibility_and_separation("lunar", sun, moon)
 

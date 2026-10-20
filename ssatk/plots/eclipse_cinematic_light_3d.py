@@ -859,5 +859,3 @@ def generate_cinematic_view(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(_page_html(payload), encoding="utf-8")
     return str(out)
-
-

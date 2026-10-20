@@ -296,5 +296,3 @@ class FrameRenderer:
         rgb = np.asarray(canvas.buffer_rgba())[..., :3].copy()
         plt.close(fig)
         return rgb
-
-

@@ -1561,7 +1561,6 @@ footer {{ padding:18px 26px 28px; color:var(--muted); border-top:1px solid var(-
 <span class="badge">WGS-84 Earth</span>
 <span class="badge">finite solar photosphere</span>
 <span class="badge">explicit backend provenance</span>
-<span class="badge">SSAPy / SSATK ready — selected backend shown below</span>
 </div>
 </header>
 <nav>
@@ -1599,5 +1598,3 @@ buttons.forEach(btn=>btn.addEventListener('click',()=>{{
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")
     return str(output)
-
-

@@ -64,9 +64,9 @@ def _angular_geometry(event: ReferenceEvent, index: int) -> tuple[float, float, 
         sun_vec, occ_vec = sun, moon
         sun_radius = math.asin(np.clip(R_SUN_KM / np.linalg.norm(sun_vec), -1.0, 1.0))
         occ_radius = math.asin(np.clip(R_MOON_MEAN_KM / np.linalg.norm(occ_vec), -1.0, 1.0))
-        separation = math.acos(np.clip(
-            np.dot(sun_vec, occ_vec) / (np.linalg.norm(sun_vec) * np.linalg.norm(occ_vec)), -1.0, 1.0
-        ))
+        # The event's separation is seen from the ground point under the
+        # shadow axis, which is what its visible fraction refers to.
+        separation = math.radians(float(event.separation_deg[index]))
         return sun_radius, occ_radius, separation, "Moon"
     sun_vec, occ_vec = sun - moon, -moon
     sun_radius = math.asin(np.clip(R_SUN_KM / np.linalg.norm(sun_vec), -1.0, 1.0))

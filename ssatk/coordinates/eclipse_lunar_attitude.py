@@ -141,5 +141,3 @@ def moon_attitude_for_event(event, jd_utc: float) -> LunarAttitude:
             time_argument="UTC JD -> Astropy GPS seconds -> SSAPy MoonOrientation",
         )
     return iau_moon_attitude(float(jd_utc))
-
-

@@ -84,5 +84,3 @@ def ellipsoid_surface_in_direction(direction, axes_km=EARTH_AXES_KM):
     d = np.asarray(direction, dtype=float)
     norm = np.sqrt(np.sum((d / np.asarray(axes_km, dtype=float)) ** 2, axis=-1, keepdims=True))
     return d / np.maximum(norm, np.finfo(float).eps)
-
-

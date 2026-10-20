@@ -19,6 +19,7 @@ import numpy as np
 
 from ssatk.compute.eclipse_core import shadow_cone
 from ssatk.compute.eclipse_runtime import resolve_backend, ssapy_ephemeris_positions_km
+from ssatk.compute.eclipse_state import solar_visibility_and_separation
 from ssatk.compute.eclipse_reference_events import (
     LUNAR_DANJON_FACTOR,
     RE_KM,
@@ -423,9 +424,13 @@ def build_discovered_event(record: DiscoveredEclipse, *, n_frames: int = 121) ->
     times = _contact_aware_times(record, n_frames)
     selection = resolve_backend("ssapy")
     moon, sun = ssapy_ephemeris_positions_km(times)
-    visible, separation = center_visibility_and_separation(record.mode, sun, moon)
+    visible, separation = (
+        solar_visibility_and_separation(times, sun, moon) if record.mode == "solar"
+        else center_visibility_and_separation("lunar", sun, moon)
+    )
     metadata = {
         "dynamic_event": True,
+        "requested_minimum_state_count": int(n_frames),
         "event_search_record": record.to_dict(),
         "event_search_backend": record.discovery_backend,
         "state_source": selection.selected,

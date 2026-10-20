@@ -460,5 +460,3 @@ def contact_aware_observer_jd(
     for value in exact:
         keep &= np.abs(base - value) > 0.05 / 86400.0
     return np.sort(np.unique(np.concatenate([base[keep], exact])))
-
-
