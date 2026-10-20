@@ -165,6 +165,7 @@ def test_render_previews_report_and_run_all(tmp_path, monkeypatch):
     assert "<img" in module.render_file_preview("figures/demo.gif")
     assert "video" in module.render_file_preview("figures/demo.mp4")
     assert "video" in module.render_file_preview("figures/demo.webm")
+    assert "iframe" in module.render_file_preview("figures/demo.html")
     assert "File output" in module.render_file_preview("logs/demo.txt")
     assert "File output" in module.render_file_preview("data/demo.bin")
 

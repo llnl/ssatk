@@ -11,6 +11,9 @@ go.Surface), matching the real 3D sphere approach used in the toolkit's
 own layers.py (EarthLayer / SunLayer), not flat markers.
 """
 from __future__ import annotations
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 import numpy as np
 import plotly.graph_objects as go
 
@@ -39,6 +42,17 @@ except ImportError:
     except ImportError:
         illumination_fraction = None
         R_SUN_KM = SUN_NOMINAL_RADIUS_KM
+
+try:
+    from ssapy_toolkit.compute.eclipse_brightness import (
+        irradiance_fraction,
+        itrf_to_gcrf_km,
+        RP_EARTH_KM,
+    )
+except ImportError:
+    irradiance_fraction = None
+    itrf_to_gcrf_km = None
+    RP_EARTH_KM = 6_356.752314245
 
 try:
     from .moon_render import _vertex_normals
@@ -91,6 +105,13 @@ def sun_direction_eci(t_s, epoch_jd=2_460_500.0):
     obliquity so callers using equatorial ``ECI`` coordinates do not silently
     get a zero-declination Sun except near the equinoxes.
     """
+    try:
+        from ssapy_toolkit.compute.eclipse_brightness import sun_direction_eci as shared_sun_direction
+    except ImportError:
+        shared_sun_direction = None
+    if shared_sun_direction is not None:
+        return shared_sun_direction(np.asarray(t_s, dtype=float), epoch_jd=epoch_jd)
+
     jd = epoch_jd + np.asarray(t_s, dtype=float) / 86400.0
     n_days = jd - 2_451_545.0
     L = np.radians((280.460 + 0.9856474*n_days) % 360)
@@ -107,7 +128,7 @@ def sun_direction_eci(t_s, epoch_jd=2_460_500.0):
 _earth_texture_cache = None
 
 
-def _load_real_earth_texture(n_lat, n_lon):
+def _load_real_earth_texture(n_lat, n_lon, texture_path=None, *, return_source=False):
     """
     Real Earth texture, same source and loading pattern as the toolkit's
     own layers.py EarthLayer / globe_plot.py (ssapy.utils.find_file +
@@ -115,19 +136,21 @@ def _load_real_earth_texture(n_lat, n_lon):
     Returns an (n_lat, n_lon, 3) uint8 array, or None if unavailable.
     """
     global _earth_texture_cache
-    if _earth_texture_cache is not None and _earth_texture_cache.shape[:2] == (n_lat, n_lon):
-        return _earth_texture_cache
+    if texture_path is None and _earth_texture_cache is not None and _earth_texture_cache.shape[:2] == (n_lat, n_lon):
+        return (_earth_texture_cache, "cached Earth texture") if return_source else _earth_texture_cache
     try:
         from ssapy.utils import find_file
         from PIL import Image
-        img = Image.open(find_file("earth", ext=".png")).convert("RGB")
+        path = Path(texture_path).expanduser() if texture_path else Path(find_file("earth", ext=".png"))
+        img = Image.open(path).convert("RGB")
         img = img.resize((n_lon, n_lat), Image.LANCZOS)
         _earth_texture_cache = np.array(img)
-        return _earth_texture_cache
+        result = (_earth_texture_cache, str(path)) if return_source else _earth_texture_cache
+        return result
     except Exception as ex:
         print(f"[globe_orbit_daynight_plotly] Real Earth texture not found "
               f"({ex}) — using procedural continents instead.")
-        return None
+        return (None, "procedural fallback") if return_source else None
 
 
 def _smooth(field, sigma=1.0):
@@ -290,7 +313,7 @@ def _procedural_continents(n_lat, n_lon, seed=7):
     return (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
 
 
-def _earth_atmosphere_trace(center=(0.0, 0.0, 0.0), radius_scale=1.0):
+def _earth_atmosphere_trace_legacy(center=(0.0, 0.0, 0.0), radius_scale=1.0):
     """
     Thin translucent blue glow just outside Earth's surface — real photos
     from space always show this (Rayleigh-scattered sunlight in the upper
@@ -314,7 +337,7 @@ def _earth_atmosphere_trace(center=(0.0, 0.0, 0.0), radius_scale=1.0):
     )
 
 
-def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
+def _earth_mesh_legacy(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
                 shadow_body_center_km=None, shadow_body_radius_km=None, rotation_deg=0.0,
                 show_city_lights=False, night_lift_strength=0.0):
     """Real 3D sphere mesh, real Earth texture where available (falls back
@@ -607,6 +630,272 @@ def _sun_sphere_traces(pos, radius_km, seed=11):
             hoverinfo="skip", showlegend=False, name="Sun glow",
         ))
     return traces
+
+
+def _normalize(vector, *, name="vector"):
+    value = np.asarray(vector, dtype=float)
+    norm = np.linalg.norm(value)
+    if not np.isfinite(norm) or norm <= 0.0:
+        raise ValueError(f"{name} must be finite and non-zero")
+    return value / norm
+
+
+def _smoothstep(edge0, edge1, value):
+    t = np.clip((np.asarray(value, dtype=float) - edge0) / (edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _srgb_to_linear(rgb):
+    value = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
+    return np.where(value <= 0.04045, value / 12.92, ((value + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(rgb):
+    value = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
+    return np.where(value <= 0.0031308, 12.92 * value, 1.055 * value ** (1.0 / 2.4) - 0.055)
+
+
+def _itrf_to_gcrf_rotation(time_jd=None, rotation_deg=0.0):
+    if time_jd is not None and itrf_to_gcrf_km is not None:
+        try:
+            basis = np.asarray(itrf_to_gcrf_km(np.eye(3), float(time_jd)), dtype=float).reshape(3, 3)
+            u, _, vt = np.linalg.svd(basis)
+            rotation = u @ vt
+            if np.linalg.det(rotation) < 0:
+                u[:, -1] *= -1
+                rotation = u @ vt
+            return rotation
+        except Exception:
+            pass
+    angle = float(rotation_deg)
+    if time_jd is not None:
+        days = float(time_jd) - 2_451_545.0
+        angle = 280.46061837 + 360.98564736629 * days
+    angle = np.radians(angle % 360.0)
+    c, s = np.cos(angle), np.sin(angle)
+    return np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]])
+
+
+@lru_cache(maxsize=32)
+def _wgs84_vertices_cached(n_lat, n_lon, altitude_km):
+    n_lat, n_lon = int(n_lat), int(n_lon)
+    if n_lat < 4 or n_lon < 8:
+        raise ValueError("Earth mesh resolution must be at least 4 x 8")
+    if n_lat % 2 == 0:
+        n_lat += 1
+    lat_rows = np.linspace(90.0, -90.0, n_lat)
+    ring_lat = lat_rows[1:-1]
+    lon = np.linspace(-180.0, 180.0, n_lon, endpoint=False)
+    Lon, Lat = np.meshgrid(lon, ring_lat)
+    phi, lam = np.radians(Lat), np.radians(Lon)
+    h = float(altitude_km)
+    a, b = RE_KM, RP_EARTH_KM
+    e2 = 1.0 - (b / a) ** 2
+    sin_phi, cos_phi = np.sin(phi), np.cos(phi)
+    prime = a / np.sqrt(1.0 - e2 * sin_phi ** 2)
+    x = (prime + h) * cos_phi * np.cos(lam)
+    y = (prime + h) * cos_phi * np.sin(lam)
+    z = (prime * (1.0 - e2) + h) * sin_phi
+    vertices = np.vstack([
+        np.stack([x, y, z], axis=-1).reshape(-1, 3),
+        [0.0, 0.0, b + h], [0.0, 0.0, -(b + h)],
+    ])
+    normals = np.vstack([
+        np.stack([cos_phi * np.cos(lam), cos_phi * np.sin(lam), sin_phi], axis=-1).reshape(-1, 3),
+        [0.0, 0.0, 1.0], [0.0, 0.0, -1.0],
+    ])
+    rows = n_lat - 2
+    columns = np.arange(n_lon, dtype=np.int32)
+    next_columns = (columns + 1) % n_lon
+    faces = []
+    for row in range(rows - 1):
+        top, bottom = row * n_lon, (row + 1) * n_lon
+        faces.extend((
+            np.column_stack([top + columns, bottom + columns, bottom + next_columns]),
+            np.column_stack([top + columns, bottom + next_columns, top + next_columns]),
+        ))
+    north = rows * n_lon
+    south = north + 1
+    faces.extend((
+        np.column_stack([np.full(n_lon, north), next_columns, columns]),
+        np.column_stack([np.full(n_lon, south), (rows - 1) * n_lon + columns,
+                         (rows - 1) * n_lon + next_columns]),
+    ))
+    faces = np.vstack(faces).astype(np.int32)
+    p0, p1, p2 = vertices[faces[:, 0]], vertices[faces[:, 1]], vertices[faces[:, 2]]
+    flip = np.einsum("ij,ij->i", np.cross(p1 - p0, p2 - p0), (p0 + p1 + p2) / 3.0) < 0
+    faces[flip, 1], faces[flip, 2] = faces[flip, 2].copy(), faces[flip, 1].copy()
+    lat_v = np.concatenate([Lat.ravel(), [90.0, -90.0]])
+    lon_v = np.concatenate([Lon.ravel(), [0.0, 0.0]])
+    return vertices, normals, faces, lat_rows, lat_v, lon_v
+
+
+def _wgs84_vertices(n_lat, n_lon, *, altitude_km=0.0):
+    return _wgs84_vertices_cached(int(n_lat), int(n_lon), float(altitude_km))
+
+
+@dataclass
+class EarthSurfaceData:
+    display_vertices: np.ndarray
+    physical_vertices_gcrf_km: np.ndarray
+    normals_gcrf: np.ndarray
+    faces: np.ndarray
+    base_rgb_srgb: np.ndarray
+    shaded_rgb_srgb: np.ndarray
+    eclipse_visibility: np.ndarray
+    rotation_rows: np.ndarray
+
+
+def _earth_surface_data(
+    sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
+    shadow_body_center_km=None, shadow_body_radius_km=None, rotation_deg=0.0,
+    time_jd=None, sun_position_km=None, physical_center_km=(0.0, 0.0, 0.0),
+    night_floor=0.05, show_city_lights=False, texture_path=None, exposure=1.0,
+    view_hat=None, specular_strength=0.42,
+):
+    sun_hat = _normalize(sun_hat, name="sun_hat")
+    physical_center = np.asarray(physical_center_km, dtype=float).reshape(3)
+    if sun_position_km is None:
+        sun_absolute = physical_center + sun_hat * AU_KM
+    else:
+        sun_absolute = np.asarray(sun_position_km, dtype=float).reshape(3)
+        sun_hat = _normalize(sun_absolute - physical_center, name="Sun relative position")
+    vertices, body_normals, faces, lat_rows, _, _ = _wgs84_vertices(n_lat, n_lon)
+    rotation = _itrf_to_gcrf_rotation(time_jd, rotation_deg)
+    local = vertices @ rotation
+    normals = body_normals @ rotation
+    physical = physical_center + local
+    display = np.asarray(center, dtype=float).reshape(3) + local * float(radius_scale)
+    texture = (_load_real_earth_texture(len(lat_rows), int(n_lon)) if texture_path is None
+               else _load_real_earth_texture(len(lat_rows), int(n_lon), texture_path))
+    if texture is None:
+        texture = _procedural_continents(len(lat_rows), int(n_lon))
+    base = np.vstack([
+        texture[1:-1].reshape(-1, 3),
+        texture[0].mean(axis=0, keepdims=True),
+        texture[-1].mean(axis=0, keepdims=True),
+    ]).astype(float) / 255.0
+    direct = np.clip(normals @ sun_hat, 0.0, 1.0)
+    visibility = np.ones(len(display), dtype=float)
+    if shadow_body_center_km is not None and shadow_body_radius_km is not None and irradiance_fraction is not None:
+        shadow_center = np.asarray(shadow_body_center_km, dtype=float).reshape(3)
+        visibility = np.asarray(irradiance_fraction(
+            physical - shadow_center,
+            R_body_km=float(shadow_body_radius_km),
+            R_sun_km=R_SUN_KM,
+            sun_position_km=np.broadcast_to(sun_absolute - shadow_center, physical.shape),
+        ), dtype=float).reshape(-1)
+        visibility = np.clip(visibility, 0.0, 1.0)
+    illumination = float(np.clip(night_floor, 0.0, 0.08)) + direct * visibility
+    shaded = _linear_to_srgb(np.clip(_srgb_to_linear(base) * illumination[:, None] * float(exposure), 0.0, 1.0))
+    return EarthSurfaceData(display, physical, normals, faces, base, shaded, visibility, rotation)
+
+
+def _rgb_strings(rgb, alpha=None):
+    values = np.rint(np.clip(np.asarray(rgb), 0.0, 1.0) * 255.0).astype(np.uint8)
+    if alpha is None:
+        return [f"rgb({r},{g},{b})" for r, g, b in values]
+    return [f"rgba({r},{g},{b},{float(a):.4f})" for (r, g, b), a in zip(values, alpha)]
+
+
+def _earth_mesh(
+    sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
+    shadow_body_center_km=None, shadow_body_radius_km=None, rotation_deg=0.0,
+    time_jd=None, sun_position_km=None, physical_center_km=(0.0, 0.0, 0.0),
+    night_floor=0.05, show_city_lights=False, night_lift_strength=0.0,
+    texture_path=None, exposure=1.0,
+    view_hat=None, specular_strength=0.42,
+):
+    data = _earth_surface_data(
+        sun_hat, n_lat=n_lat, n_lon=n_lon, radius_scale=radius_scale, center=center,
+        shadow_body_center_km=shadow_body_center_km, shadow_body_radius_km=shadow_body_radius_km,
+        rotation_deg=rotation_deg, time_jd=time_jd, sun_position_km=sun_position_km,
+        physical_center_km=physical_center_km,
+        night_floor=max(float(night_floor), 0.08 * float(night_lift_strength)),
+        show_city_lights=show_city_lights, texture_path=texture_path, exposure=exposure,
+        view_hat=view_hat, specular_strength=specular_strength,
+    )
+    return go.Mesh3d(
+        x=data.display_vertices[:, 0], y=data.display_vertices[:, 1], z=data.display_vertices[:, 2],
+        i=data.faces[:, 0], j=data.faces[:, 1], k=data.faces[:, 2],
+        vertexcolor=_rgb_strings(data.shaded_rgb_srgb), flatshading=False,
+        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
+        name="Earth", hoverinfo="skip", showlegend=False,
+    )
+
+
+def _earth_atmosphere_trace(
+    center=(0.0, 0.0, 0.0), radius_scale=1.0, *, sun_hat=(1.0, 0.0, 0.0),
+    view_hat=None, time_jd=None, rotation_deg=0.0, n_lat=54, n_lon=108,
+    altitude_km=105.0, max_alpha=0.34,
+):
+    vertices, normals, faces, _, _, _ = _wgs84_vertices(n_lat, n_lon, altitude_km=altitude_km)
+    rotation = _itrf_to_gcrf_rotation(time_jd, rotation_deg)
+    vertices = np.asarray(center, dtype=float).reshape(3) + (vertices @ rotation) * float(radius_scale)
+    normals = normals @ rotation
+    sun_hat = _normalize(sun_hat, name="sun_hat")
+    view_hat = _normalize(view_hat if view_hat is not None else sun_hat, name="view_hat")
+    limb = np.clip(1.0 - np.abs(normals @ view_hat), 0.0, 1.0) ** 2.2
+    day = 0.20 + 0.80 * np.sqrt(np.clip(normals @ sun_hat, 0.0, 1.0))
+    alpha = np.clip(float(max_alpha) * limb * day, 0.0, 0.8)
+    return go.Mesh3d(
+        x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
+        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+        vertexcolor=_rgb_strings(np.tile([0.24, 0.56, 1.0], (len(vertices), 1)), alpha),
+        opacity=0.999, flatshading=False, hoverinfo="skip", showlegend=False, name="Atmosphere",
+    )
+
+
+def _earth_eclipse_shadow_trace(
+    sun_hat, shadow_body_center_km, shadow_body_radius_km, *, sun_position_km=None,
+    physical_center_km=(0.0, 0.0, 0.0), center=(0.0, 0.0, 0.0), radius_scale=1.0,
+    time_jd=None, rotation_deg=0.0, patch_center_gcrf_km=None, resolution=241,
+    half_angle_deg=35.0, nudge=1.0007, night_floor=0.003,
+):
+    if irradiance_fraction is None:
+        raise RuntimeError("Finite-disc eclipse physics is unavailable")
+    physical_center = np.asarray(physical_center_km, dtype=float).reshape(3)
+    shadow_center = np.asarray(shadow_body_center_km, dtype=float).reshape(3)
+    sun_absolute = (physical_center + _normalize(sun_hat) * AU_KM if sun_position_km is None
+                    else np.asarray(sun_position_km, dtype=float).reshape(3))
+    direction = (_normalize(np.asarray(patch_center_gcrf_km).reshape(3) - physical_center)
+                 if patch_center_gcrf_km is not None
+                 else _normalize(shadow_center - sun_absolute))
+    ref = np.array([0.0, 0.0, 1.0]) if abs(direction[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    u = _normalize(np.cross(ref, direction))
+    v = np.cross(direction, u)
+    size = max(25, min(int(resolution), 181))
+    q = np.linspace(-np.tan(np.radians(float(half_angle_deg))), np.tan(np.radians(float(half_angle_deg))), size)
+    qx, qy = np.meshgrid(q, q)
+    directions = direction + qx[..., None] * u + qy[..., None] * v
+    directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
+    axes = np.array([RE_KM, RE_KM, RP_EARTH_KM])
+    local = directions / np.sqrt(np.sum((directions / axes) ** 2, axis=-1))[..., None]
+    rotation = _itrf_to_gcrf_rotation(time_jd, rotation_deg)
+    local_gcrf = local.reshape(-1, 3) @ rotation
+    physical = physical_center + local_gcrf
+    visibility = np.asarray(irradiance_fraction(
+        physical - shadow_center, R_body_km=float(shadow_body_radius_km), R_sun_km=R_SUN_KM,
+        sun_position_km=np.broadcast_to(sun_absolute - shadow_center, physical.shape),
+    ), dtype=float).reshape(-1)
+    normals = (local / (axes * axes)).reshape(-1, 3)
+    normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+    normals = normals @ rotation
+    direct = np.clip(normals @ _normalize(sun_absolute - physical_center), 0.0, 1.0)
+    base = float(np.clip(night_floor, 0.0, 0.08)) + direct
+    shadow = float(np.clip(night_floor, 0.0, 0.08)) + direct * visibility
+    alpha = np.clip(1.0 - np.sqrt(shadow / np.maximum(base, 1e-12)), 0.0, 0.995)
+    display = np.asarray(center, dtype=float).reshape(3) + local_gcrf * float(radius_scale) * float(nudge)
+    ids = np.arange(size * size, dtype=np.int32).reshape(size, size)
+    a, b, c, d = ids[:-1, :-1].ravel(), ids[1:, :-1].ravel(), ids[1:, 1:].ravel(), ids[:-1, 1:].ravel()
+    black = np.zeros((len(display), 3))
+    return go.Mesh3d(
+        x=display[:, 0], y=display[:, 1], z=display[:, 2],
+        i=np.concatenate([a, a]), j=np.concatenate([c, d]), k=np.concatenate([b, c]),
+        vertexcolor=_rgb_strings(black, alpha), opacity=0.999, flatshading=False,
+        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), hoverinfo="skip", showlegend=False,
+        name="Finite-disc eclipse shadow",
+    )
 
 
 def plot_globe_orbit_daynight_plotly(a_km=None, e=None, inc_deg=None, raan_deg=0.0, argp_deg=0.0,

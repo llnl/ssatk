@@ -6,35 +6,12 @@ globe_orbit_daynight_plotly.py's future lunar-orbit views, moon_plot_3d.py,
 etc). Split out on its own so there's exactly one Moon renderer in the
 toolkit instead of a slightly-different copy in every file that draws one.
 
-What actually changes visual quality vs. the old _moon_mesh_plotly():
-
-1. REAL TEXTURE FIRST, same pattern as globe_orbit_daynight_plotly's
-   _load_real_earth_texture: try ssapy.utils.find_file("moon", ext=".png")
-   before falling back to anything procedural. This is the single biggest
-   quality jump when a real asset is present — no amount of procedural
-   crater-painting matches an actual lunar photomosaic.
-
-2. REAL PER-VERTEX DIFFUSE LIGHTING, not flat ambient=1/diffuse=0 over a
-   painted albedo. The old version made craters *look* like paint swatches
-   because only color changed, never brightness-by-surface-angle. This
-   computes an actual outward normal at every vertex (from the displaced,
-   bumpy sphere, via finite differences across the lat/lon grid — not the
-   undisplaced sphere normal, so the bumps themselves cast the shading)
-   and shades each point by max(0, normal . sun_hat). That's what makes
-   craters read as 3D relief with a lit rim and a shadowed bowl, the way
-   every real Moon photo looks, instead of a flat texture.
-
-3. MARIA vs HIGHLANDS, not just "some albedo dips". The real Moon's most
-   recognizable feature from Earth is the dark basaltic maria (Sea of
-   Tranquility etc.) against brighter cratered highlands — large-scale
-   low-frequency blobs, distinct from the small high-frequency craters.
-   Previously there was only one texture scale (craters), so the disk
-   read as uniformly grey rather than having the familiar patchy look.
-
-4. Same real per-vertex Earth-shadow eclipse shading as before for lunar
-   mode (illumination_fraction evaluated at each vertex's true physical
-   position), just layered on top of the new base shading multiplicatively
-   instead of being the only source of brightness variation.
+The renderer keeps physical and display geometry separate.  Callers provide
+SSAPy/Toolkit body-to-GCRF attitude and ephemeris positions; eclipse visibility
+comes from the Toolkit finite-Sun irradiance model.  Display color uses the
+SSAPy lunar texture when available, linear-light processing, and a
+Lommel-Seeliger/Lambert regolith model.  Optional relief changes only display
+geometry, never the physical surface used for eclipse calculations.
 
 Usage
 -----
@@ -45,26 +22,17 @@ Usage
                                    real_center_km=moon_r_km, mode="lunar"))
 """
 from __future__ import annotations
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 import numpy as np
 import plotly.graph_objects as go
 
+from ssapy_toolkit.compute.eclipse_brightness import irradiance_fraction
 from ssapy_toolkit.constants import AU_KM, EARTH_RADIUS_KM, MOON_MEAN_RADIUS_KM, SUN_NOMINAL_RADIUS_KM
 
-try:
-    from .scene_primitives import stabilize_sphere_poles
-except ImportError:
-    from scene_primitives import stabilize_sphere_poles
-
-try:
-    from .eclipse_brightness_plot import illumination_fraction, R_SUN_KM, AU_KM
-except ImportError:
-    try:
-        from eclipse_brightness_plot import illumination_fraction, R_SUN_KM, AU_KM
-    except ImportError:
-        illumination_fraction = None
-        R_SUN_KM = SUN_NOMINAL_RADIUS_KM
-
 R_MOON_KM = MOON_MEAN_RADIUS_KM
+R_SUN_KM = SUN_NOMINAL_RADIUS_KM
 
 _moon_texture_cache = None
 
@@ -88,7 +56,7 @@ def _display_lunar_albedo(rgb):
     return np.repeat(albedo[..., None], 3, axis=-1) * np.array([1.0, 0.985, 0.955])
 
 
-def _load_real_moon_texture(n_lat, n_lon):
+def _load_real_moon_texture(n_lat, n_lon, texture_path=None):
     """
     Real lunar photomosaic, same discovery pattern as the Earth texture in
     globe_orbit_daynight_plotly.py: ssapy.utils.find_file + PIL. This is
@@ -96,12 +64,13 @@ def _load_real_moon_texture(n_lat, n_lon):
     machine — this is that check, applied to the Moon instead of Earth.
     """
     global _moon_texture_cache
-    if _moon_texture_cache is not None and _moon_texture_cache.shape[:2] == (n_lat, n_lon):
+    if texture_path is None and _moon_texture_cache is not None and _moon_texture_cache.shape[:2] == (n_lat, n_lon):
         return _moon_texture_cache
     try:
         from ssapy.utils import find_file
         from PIL import Image
-        img = Image.open(find_file("moon", ext=".png")).convert("RGB")
+        path = Path(texture_path).expanduser() if texture_path else Path(find_file("moon", ext=".png"))
+        img = Image.open(path).convert("RGB")
         img = img.resize((n_lon, n_lat), Image.LANCZOS)
         _moon_texture_cache = np.array(img)
         print("[moon_render] Moon base: real ssapy texture found")
@@ -235,108 +204,208 @@ def _vertex_normals(X, Y, Z, center=None):
     return nx, ny, nz
 
 
-def moon_mesh_plotly(center, radius, sun_hat=None, seed=3,
-                     real_center_km=None, mode="lunar",
-                     eclipse_tint=True, n_lat=180, n_lon=360):
-    """
-    Real-texture-first, properly-lit Moon mesh.
+@lru_cache(maxsize=32)
+def _moon_unit_mesh_cached(n_lat, n_lon):
+    n_lat, n_lon = int(n_lat), int(n_lon)
+    if n_lat < 5 or n_lon < 8:
+        raise ValueError("Moon mesh resolution must be at least 5 x 8")
+    if n_lat % 2 == 0:
+        n_lat += 1
+    lat_rows = np.linspace(90.0, -90.0, n_lat)
+    ring_lat = lat_rows[1:-1]
+    lon = np.linspace(-180.0, 180.0, n_lon, endpoint=False)
+    Lon, Lat = np.meshgrid(lon, ring_lat)
+    phi, lam = np.radians(Lat), np.radians(Lon)
+    directions = np.vstack([
+        np.stack([np.cos(phi) * np.cos(lam), np.cos(phi) * np.sin(lam), np.sin(phi)], axis=-1).reshape(-1, 3),
+        [0.0, 0.0, 1.0], [0.0, 0.0, -1.0],
+    ])
+    columns = np.arange(n_lon, dtype=np.int32)
+    next_columns = (columns + 1) % n_lon
+    rows = n_lat - 2
+    faces = []
+    for row in range(rows - 1):
+        top, bottom = row * n_lon, (row + 1) * n_lon
+        faces.extend((
+            np.column_stack([top + columns, bottom + columns, bottom + next_columns]),
+            np.column_stack([top + columns, bottom + next_columns, top + next_columns]),
+        ))
+    north, south = rows * n_lon, rows * n_lon + 1
+    faces.extend((
+        np.column_stack([np.full(n_lon, north), next_columns, columns]),
+        np.column_stack([np.full(n_lon, south), (rows - 1) * n_lon + columns,
+                         (rows - 1) * n_lon + next_columns]),
+    ))
+    faces = np.vstack(faces).astype(np.int32)
+    p0, p1, p2 = directions[faces[:, 0]], directions[faces[:, 1]], directions[faces[:, 2]]
+    flip = np.einsum("ij,ij->i", np.cross(p1 - p0, p2 - p0), (p0 + p1 + p2) / 3.0) < 0
+    faces[flip, 1], faces[flip, 2] = faces[flip, 2].copy(), faces[flip, 1].copy()
+    lat_v = np.concatenate([Lat.ravel(), [90.0, -90.0]])
+    lon_v = np.concatenate([Lon.ravel(), [0.0, 0.0]])
+    return directions, faces, lat_rows, lat_v, lon_v
 
-    center, radius : display-space sphere placement (km, display units —
-                      same size_boost convention as the rest of the toolkit)
-    sun_hat         : unit vector toward the Sun, for real diffuse shading
-                      and (mode="lunar") the Earth-shadow eclipse check
-    real_center_km  : TRUE physical Moon-center position relative to Earth
-                      (only needed for mode="lunar" eclipse shading)
-    mode            : "lunar" (Moon may be in Earth's shadow) or "solar"
-                      (Moon is just normally sunlit; it's Earth being
-                      shadowed elsewhere in the scene)
-    eclipse_tint    : apply the warm/red multiplicative bias during deep
-                      shadow (mode="lunar" only) — set False if the caller
-                      wants to apply its own tint instead
-    """
-    lat = np.linspace(90, -90, n_lat)
-    lon = np.linspace(-180, 180, n_lon, endpoint=False)
-    Lon, Lat = np.meshgrid(lon, lat)
-    latr, lonr = np.radians(Lat), np.radians(Lon)
-    nx0, ny0, nz0 = np.cos(latr) * np.cos(lonr), np.cos(latr) * np.sin(lonr), np.sin(latr)
 
-    tex = _load_real_moon_texture(n_lat, n_lon)
-    if tex is not None:
-        tex = np.roll(tex, n_lon // 2, axis=1)  # same antimeridian fix as Earth
-        base_rgb = _display_lunar_albedo(tex)
-        # Still add a light procedural relief for lighting, even with a
-        # real texture — real texture gives *color*, but most Moon photo
-        # textures are pre-shaded/flat-lit, so without geometric bumps the
-        # sphere would look like a printed ball, not a rocky one.
-        relief = _procedural_moon_relief(Lat, Lon, seed=seed) * 0.5
-    else:
-        base_rgb = None
-        relief = _procedural_moon_relief(Lat, Lon, seed=seed)
+def _moon_unit_mesh(n_lat, n_lon):
+    return _moon_unit_mesh_cached(int(n_lat), int(n_lon))
 
-    R_disp = stabilize_sphere_poles(radius * (1 + relief * 0.009))
-    X = center[0] + R_disp * nx0
-    Y = center[1] + R_disp * ny0
-    Z = center[2] + R_disp * nz0
-    nxr, nyr, nzr = _vertex_normals(X, Y, Z, center=center)
 
-    if base_rgb is None:
+@dataclass
+class MoonSurfaceData:
+    display_vertices: np.ndarray
+    physical_vertices_gcrf_km: np.ndarray
+    normals_gcrf: np.ndarray
+    faces: np.ndarray
+    base_rgb_srgb: np.ndarray
+    shaded_rgb_srgb: np.ndarray
+    eclipse_visibility: np.ndarray
+    body_axes: np.ndarray
+    used_relief: bool
+
+
+def _srgb_to_linear(rgb):
+    value = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
+    return np.where(value <= 0.04045, value / 12.92, ((value + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(rgb):
+    value = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
+    return np.where(value <= 0.0031308, 12.92 * value, 1.055 * value ** (1.0 / 2.4) - 0.055)
+
+
+def _mesh_vertex_normals(vertices, faces):
+    triangles = np.asarray(vertices, dtype=float)[np.asarray(faces, dtype=np.int32)]
+    face_normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    normals = np.zeros_like(vertices, dtype=float)
+    for column in range(3):
+        np.add.at(normals, faces[:, column], face_normals)
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-15)
+    normals[np.einsum("ij,ij->i", normals, vertices) < 0.0] *= -1.0
+    return normals
+
+
+def _moon_surface_data(
+    center, radius, sun_hat=None, seed=3, real_center_km=None, mode="lunar",
+    eclipse_tint=True, n_lat=181, n_lon=360, real_sun_position_km=None,
+    relief_exaggeration=0.0, ambient_floor=0.008, texture_path=None,
+    view_hat=None, exposure=1.08, eclipse_occluder_radius_km=EARTH_RADIUS_KM,
+    body_to_gcrf=None,
+):
+    directions, faces, lat_rows, _, _ = _moon_unit_mesh(n_lat, n_lon)
+    n_lat_effective, n_lon = len(lat_rows), int(n_lon)
+    center = np.asarray(center, dtype=float).reshape(3)
+    physical_center = np.zeros(3) if real_center_km is None else np.asarray(real_center_km, dtype=float).reshape(3)
+    radius = float(radius)
+    if radius <= 0 or not np.isfinite(radius):
+        raise ValueError("radius must be finite and positive")
+    orientation = np.eye(3) if body_to_gcrf is None else np.asarray(body_to_gcrf, dtype=float).reshape(3, 3)
+    if (not np.all(np.isfinite(orientation))
+            or not np.allclose(orientation.T @ orientation, np.eye(3), atol=1e-8)
+            or not np.isclose(np.linalg.det(orientation), 1.0, atol=1e-8)):
+        raise ValueError("body_to_gcrf must be a proper rotation matrix")
+    texture = _load_real_moon_texture(n_lat_effective, n_lon, texture_path)
+    if texture is None:
+        Lon, Lat = np.meshgrid(np.linspace(-180.0, 180.0, n_lon, endpoint=False), lat_rows)
         albedo = _procedural_moon_albedo(Lat, Lon, seed=seed)
-        base_rgb = np.repeat(albedo[..., None], 3, axis=-1) * np.array([1.0, 0.98, 0.94])
-
-    # Real per-vertex diffuse lighting from the bumpy normals — this is
-    # what makes craters look sculpted instead of painted. Ambient floor
-    # so the unlit portion of a gibbous/crescent Moon isn't pure black.
-    if sun_hat is not None:
-        diffuse = np.clip(nxr * sun_hat[0] + nyr * sun_hat[1] + nzr * sun_hat[2], 0, 1)
-        shading = np.clip(0.14 + 0.86 * diffuse ** 0.80, 0.14, 1.0)
-        # Opposition effect: real regolith backscatters extra strongly
-        # right where the viewer, Sun, and surface point are nearly
-        # aligned (why a full Moon looks noticeably brighter overall
-        # than the diffuse-only model predicts, not just "more lit
-        # area"). Approximated with the same fixed view-ish reference
-        # used for the Sun's limb darkening elsewhere in the toolkit —
-        # imperfect (doesn't track the actual camera), but keeps the lit
-        # face from looking flat and grey the way a pure Lambertian
-        # sphere does.
-        opp = np.clip(diffuse - 0.92, 0, 1) / 0.08
-        shading = np.clip(shading + 0.18 * opp, 0.14, 1.15)
+        base = np.vstack([
+            np.repeat(albedo[1:-1, :, None], 3, axis=2).reshape(-1, 3),
+            np.repeat(albedo[0].mean()[None, None], 3, axis=2).reshape(1, 3),
+            np.repeat(albedo[-1].mean()[None, None], 3, axis=2).reshape(1, 3),
+        ]) * np.array([1.0, 0.98, 0.94])
     else:
-        shading = np.ones_like(Lat)
+        display_texture = _display_lunar_albedo(np.asarray(texture))
+        base = display_texture[1:-1].reshape(-1, 3)
+        base = np.vstack([
+            base,
+            display_texture[0].mean(axis=0, keepdims=True),
+            display_texture[-1].mean(axis=0, keepdims=True),
+        ])
+    relief = float(relief_exaggeration)
+    display_dirs = directions.copy()
+    used_relief = bool(relief)
+    if used_relief:
+        Lon, Lat = np.meshgrid(np.linspace(-180.0, 180.0, n_lon, endpoint=False), lat_rows)
+        field = _procedural_moon_relief(Lat, Lon, seed=seed)
+        relief_rows = np.concatenate([field[1:-1].reshape(-1), [field[0].mean(), field[-1].mean()]])
+        display_dirs *= (1.0 + relief * relief_rows[:, None])
+    local_normals = _mesh_vertex_normals(display_dirs, faces) if used_relief else directions
+    world_directions = directions @ orientation.T
+    world_display_directions = display_dirs @ orientation.T
+    normals = local_normals @ orientation.T
+    display_vertices = center + radius * world_display_directions
+    physical_vertices = physical_center + R_MOON_KM * world_directions
+    if real_sun_position_km is not None:
+        sun_position = np.asarray(real_sun_position_km, dtype=float).reshape(3)
+        light_hat = (sun_position - physical_center) / np.linalg.norm(sun_position - physical_center)
+    elif sun_hat is not None:
+        light_hat = np.asarray(sun_hat, dtype=float).reshape(3)
+        light_hat /= np.linalg.norm(light_hat)
+        sun_position = physical_center + light_hat * AU_KM
+    else:
+        light_hat = None
+        sun_position = None
+    if view_hat is None:
+        view_hat = -physical_center if np.linalg.norm(physical_center) > 0.0 else light_hat
+    if view_hat is None:
+        view_hat = np.array([1.0, 0.0, 0.0])
+    view_hat = np.asarray(view_hat, dtype=float).reshape(3)
+    view_hat /= np.linalg.norm(view_hat)
+    direct = np.zeros(len(normals), dtype=float)
+    if light_hat is not None:
+        mu0 = np.clip(normals @ light_hat, 0.0, 1.0)
+        mu = np.clip(normals @ view_hat, 0.0, 1.0)
+        lommel_seeliger = np.divide(2.0 * mu0, mu0 + mu, out=np.zeros_like(mu0), where=(mu0 + mu) > 1e-12)
+        direct = np.clip(0.78 * lommel_seeliger + 0.22 * mu0, 0.0, 1.18)
+        phase = np.arccos(np.clip(np.dot(light_hat, view_hat), -1.0, 1.0))
+        direct *= 1.0 + 0.14 * np.exp(-(phase / np.radians(5.0)) ** 2)
+    visibility = np.ones(len(normals), dtype=float)
+    if mode == "lunar" and real_center_km is not None and sun_position is not None:
+        visibility = np.asarray(irradiance_fraction(
+            physical_vertices, R_body_km=float(eclipse_occluder_radius_km),
+            R_sun_km=R_SUN_KM, sun_position_km=np.broadcast_to(sun_position, physical_vertices.shape),
+        ), dtype=float).reshape(-1)
+        visibility = np.clip(visibility, 0.0, 1.0)
+    floor = float(np.clip(ambient_floor, 0.0, 0.08))
+    linear = _srgb_to_linear(base) * float(np.clip(exposure, 0.1, 4.0))
+    linear *= floor + (1.0 - floor) * direct[:, None] * visibility[:, None]
+    if eclipse_tint and mode == "lunar":
+        mix = np.clip((0.35 - visibility) / 0.35, 0.0, 1.0)[:, None]
+        linear += _srgb_to_linear(base) * mix * np.array([0.12, 0.018, 0.004])
+    shaded = _linear_to_srgb(np.clip(linear, 0.0, 1.0))
+    return MoonSurfaceData(
+        display_vertices=display_vertices, physical_vertices_gcrf_km=physical_vertices,
+        normals_gcrf=normals, faces=faces, base_rgb_srgb=base,
+        shaded_rgb_srgb=shaded, eclipse_visibility=visibility,
+        body_axes=orientation, used_relief=used_relief,
+    )
 
-    rgb = np.clip(base_rgb * shading[..., None], 0, 1)
 
-    if mode == "lunar" and real_center_km is not None and sun_hat is not None \
-            and illumination_fraction is not None:
-        real_surface = np.stack([nx0, ny0, nz0], axis=-1) * R_MOON_KM
-        real_positions = real_center_km[None, None, :] + real_surface
-        flat_pos = real_positions.reshape(-1, 3)
-        flat_sun = np.tile(sun_hat, (flat_pos.shape[0], 1))
-        illum = illumination_fraction(flat_pos, flat_sun, R_body_km=EARTH_RADIUS_KM,
-                                      R_sun_km=R_SUN_KM, D_km=AU_KM).reshape(Lat.shape)
-        floor = 0.12
-        eclipse_brightness = np.clip(floor + (1 - floor) * illum, floor, 1.0)
-        rgb = rgb * eclipse_brightness[..., None]
-        if eclipse_tint:
-            red_mix = np.clip((0.35 - illum) / 0.35, 0, 1) ** 1.5
-            warm = np.array([1.15, 0.55, 0.42])
-            tint = (1 - red_mix[..., None]) + warm[None, None, :] * red_mix[..., None]
-            rgb = np.clip(rgb * tint, 0, 1)
+def moon_mesh_plotly(
+    center, radius, sun_hat=None, seed=3, real_center_km=None, mode="lunar",
+    eclipse_tint=True, n_lat=181, n_lon=360, real_sun_position_km=None,
+    relief_exaggeration=0.0, ambient_floor=0.008, texture_path=None,
+    view_hat=None, exposure=1.08, eclipse_occluder_radius_km=EARTH_RADIUS_KM,
+    body_to_gcrf=None,
+):
+    """Return a high-resolution Moon mesh with physical attitude and eclipse shading.
 
-    rgb = stabilize_sphere_poles(rgb)
-
-    vertexcolor = [f"rgb({int(rgb[r, c, 0]*255)},{int(rgb[r, c, 1]*255)},{int(rgb[r, c, 2]*255)})"
-                  for r in range(n_lat) for c in range(n_lon)]
-
-    ii, jj, kk = [], [], []
-    for r in range(n_lat - 1):
-        for c in range(n_lon):
-            cn = (c + 1) % n_lon
-            v0 = r * n_lon + c; v1 = r * n_lon + cn; v2 = (r + 1) * n_lon + c; v3 = (r + 1) * n_lon + cn
-            ii += [v0, v1]; jj += [v1, v3]; kk += [v2, v2]
-
+    ``body_to_gcrf`` rotates the body-fixed texture and geometry.  Optional
+    relief affects display geometry only; eclipse calculations retain the
+    spherical physical Moon at ``R_MOON_KM``.
+    """
+    data = _moon_surface_data(
+        center, radius, sun_hat=sun_hat, seed=seed, real_center_km=real_center_km,
+        mode=mode, eclipse_tint=eclipse_tint, n_lat=n_lat, n_lon=n_lon,
+        real_sun_position_km=real_sun_position_km, relief_exaggeration=relief_exaggeration,
+        ambient_floor=ambient_floor, texture_path=texture_path, view_hat=view_hat,
+        exposure=exposure, eclipse_occluder_radius_km=eclipse_occluder_radius_km,
+        body_to_gcrf=body_to_gcrf,
+    )
     return go.Mesh3d(
-        x=X.ravel(), y=Y.ravel(), z=Z.ravel(), i=ii, j=jj, k=kk,
-        vertexcolor=vertexcolor, flatshading=False,
-        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0, fresnel=0.0),
+        x=data.display_vertices[:, 0], y=data.display_vertices[:, 1], z=data.display_vertices[:, 2],
+        i=data.faces[:, 0], j=data.faces[:, 1], k=data.faces[:, 2],
+        vertexcolor=[
+            f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+            for r, g, b in data.shaded_rgb_srgb
+        ], flatshading=False, lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
         name="Moon", hoverinfo="skip", showlegend=False,
     )

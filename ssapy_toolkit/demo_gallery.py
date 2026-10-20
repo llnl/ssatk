@@ -16,7 +16,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from ssapy_toolkit.plots.figpath import figpath
+from ssapy_toolkit._paths import output_root
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 TEXT_EXTS = {".txt", ".md", ".json", ".csv", ".log", ".pdf", ".mp4", ".html"}
@@ -52,8 +52,7 @@ NOISE_REGEXES = [re.compile(p) for p in NOISE_PATTERNS]
 
 
 def get_figsave_root() -> Path:
-    probe = Path(figpath("probe.tmp")).expanduser().resolve()
-    return probe.parent
+    return (output_root() / "figures").resolve()
 
 
 FIGSAVE_ROOT = get_figsave_root()
@@ -173,7 +172,7 @@ def changed_files(before: dict[Path, float], after: dict[Path, float], slack: fl
 
 
 def relpath_for_report(target: Path, report_root: Path) -> str:
-    return os.path.relpath(str(target), str(report_root))
+    return Path(os.path.relpath(str(target), str(report_root))).as_posix()
 
 
 def _filter_console_text(text: str, max_lines: int = 120) -> str:
@@ -466,6 +465,16 @@ def render_file_preview(file_rel: str) -> str:
             f'<source src="{path}" type="video/webm">'
             f'</video>'
             f'<div class="caption">{html.escape(file_rel)}</div>'
+            f'</div>'
+        )
+
+    if ext == ".html":
+        return (
+            f'<div class="asset">'
+            f'<iframe src="{path}" title="{name}" loading="lazy" '
+            f'style="width:100%; height:360px; border:0; border-radius:8px;" '
+            f'allow="fullscreen"></iframe>'
+            f'<div class="caption"><a href="{path}" target="_blank">{html.escape(file_rel)}</a></div>'
             f'</div>'
         )
 

@@ -71,9 +71,23 @@ def propagate_eci(a_km, e, inc_deg, raan_deg, argp_deg, nu0_deg,
 
 
 def sun_direction_eci(t_s, epoch_jd=2_460_500.0):
-    """Low-precision (~0.01 deg) solar ecliptic-longitude approximation,
-    rotated into ECI/GCRF equatorial axes. This is good enough for finding
-    demo eclipse geometry, not a JPL-ephemeris replacement."""
+    """Unit vector from Earth toward the Sun in GCRF equatorial axes.
+
+    Delegates to the shared ephemeris-backed model when importable. The
+    fallback below is a low-precision (~0.01 deg) ecliptic-longitude
+    approximation referred to the MEAN EQUINOX OF DATE, not to J2000, so it
+    differs from GCRF by accumulated precession -- about 0.34 deg in 2024,
+    growing by roughly 0.014 deg per year. Schematic geometry only.
+    """
+    try:
+        from ssapy_toolkit.compute.eclipse_brightness import (
+            sun_direction_eci as _shared_sun_direction,
+        )
+    except ImportError:
+        _shared_sun_direction = None
+    if _shared_sun_direction is not None:
+        return _shared_sun_direction(np.asarray(t_s, dtype=float), epoch_jd=epoch_jd)
+
     jd = epoch_jd + np.asarray(t_s, dtype=float) / 86400.0
     n_days = jd - 2_451_545.0
     L = np.radians((280.460 + 0.9856474*n_days) % 360)

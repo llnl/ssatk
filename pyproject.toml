@@ -118,7 +118,7 @@ packages = { find = { where = ["."], include = ["ssapy_toolkit*", "demos*"] } }
 [tool.setuptools.package-data]
 demos = ["README.md"]
 "demos.benchmarks" = ["README.md", "orekit/*.java", "orekit/*.xml"]
-"ssapy_toolkit.plots" = ["*.js"]
+"ssapy_toolkit.plots" = ["*.js", "eclipse_three_license.txt"]
 
 [tool.pytest.ini_options]
 markers = [
@@ -134,3 +134,4 @@ ssapy-demo-gallery = "ssapy_toolkit.run_all_demos:main"
 ssatk-benchmark = "ssapy_toolkit.benchmark:main"
 ssapy-magnetosphere = "ssapy_toolkit.plots.magfield_plot_3d:main"
 ssapy-bake-moon = "ssapy_toolkit.io.moon_maps:main"
+ssapy-eclipse = "ssapy_toolkit.eclipse_cli:main"

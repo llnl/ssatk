@@ -406,7 +406,8 @@ def test_earth_mesh_dark_side_has_no_latitude_band_artifact():
         match = re.match(r"rgb\((\d+),(\d+),(\d+)\)", color)
         assert match is not None
         colors.append(tuple(map(int, match.groups())))
-    colors = np.asarray(colors, dtype=float).reshape(n_lat, n_lon, 3)
+    ring_rows = (n_lat + 1 if n_lat % 2 == 0 else n_lat) - 2
+    colors = np.asarray(colors[:-2], dtype=float).reshape(ring_rows, n_lon, 3)
     brightness = colors.mean(axis=2)
 
     lon = np.linspace(-180.0, 180.0, n_lon, endpoint=False)
@@ -424,25 +425,29 @@ def test_earth_and_moon_pole_vertices_are_stable():
     from ssapy_toolkit.plots.globe_orbit_daynight_plotly import _earth_mesh
     from ssapy_toolkit.plots.moon_render import moon_mesh_plotly
 
-    def color_grid(trace, n_lat, n_lon):
-        values = []
-        for color in trace.vertexcolor:
-            match = re.match(r"rgb\((\d+),(\d+),(\d+)\)", color)
-            assert match is not None
-            values.append(tuple(map(int, match.groups())))
-        return np.asarray(values, dtype=float).reshape(n_lat, n_lon, 3)
-
     n_lat, n_lon = 18, 36
     earth = _earth_mesh([1.0, 0.0, 0.0], n_lat=n_lat, n_lon=n_lon)
     moon = moon_mesh_plotly([0.0, 0.0, 0.0], 1_000.0, sun_hat=[1.0, 0.0, 0.0], n_lat=n_lat, n_lon=n_lon)
 
-    for trace in (earth, moon):
-        colors = color_grid(trace, n_lat, n_lon)
-        assert np.std(colors[0], axis=0).max() == 0.0
-        assert np.std(colors[-1], axis=0).max() == 0.0
-        z = np.asarray(trace.z).reshape(n_lat, n_lon)
-        assert np.std(z[0]) < 1e-9
-        assert np.std(z[-1]) < 1e-9
+    effective_n_lat = n_lat + 1
+    expected_vertices = (effective_n_lat - 2) * n_lon + 2
+    assert len(earth.x) == expected_vertices
+    np.testing.assert_allclose(
+        np.column_stack([earth.x[-2:], earth.y[-2:], earth.z[-2:]]),
+        [[0.0, 0.0, 6_356.752314245], [0.0, 0.0, -6_356.752314245]], atol=1e-9,
+    )
+    assert np.count_nonzero(np.asarray(earth.i) == expected_vertices - 2) == n_lon
+    assert np.count_nonzero(np.asarray(earth.i) == expected_vertices - 1) == n_lon
+
+    # The Moon mesh has one vertex per pole, avoiding duplicate degenerate
+    # vertices while retaining a closed n_lon-triangle cap at each end.
+    assert len(moon.x) == expected_vertices
+    np.testing.assert_allclose(
+        np.column_stack([moon.x[-2:], moon.y[-2:], moon.z[-2:]]),
+        [[0.0, 0.0, 1_000.0], [0.0, 0.0, -1_000.0]], atol=1e-9,
+    )
+    assert np.count_nonzero(np.asarray(moon.i) == expected_vertices - 2) == n_lon
+    assert np.count_nonzero(np.asarray(moon.i) == expected_vertices - 1) == n_lon
 
 
 def test_earth_and_moon_meshes_close_longitude_seams():
