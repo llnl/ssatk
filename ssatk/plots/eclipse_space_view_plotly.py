@@ -979,6 +979,17 @@ def _earth_rotation_for_window_sample(window, idx):
     )
 
 
+def _starfield_epoch(window, idx):
+    """Return the observation epoch for a static eclipse star backdrop."""
+    times = window.get("times")
+    if times is not None:
+        return times[idx]
+    from astropy import units as u
+    from astropy.time import Time
+    return (Time(window.get("epoch_jd", 2_460_500.0), format="jd", scale="utc")
+            + float(window["t_s"][idx]) * u.s)
+
+
 def _window_title_prefix(mode, window):
     return window.get("event_label") or f"{mode.capitalize()} eclipse"
 
@@ -1579,26 +1590,23 @@ def _shadow_ground_point(moon_pos, sun_hat, earth_pos, earth_r_real=None):
     return moon_pos + d * t_hit
 
 
-def _starfield_trace(radius, n_stars=500, seed=7):
-    """
-    A static background starfield. Not recomputed per frame — real stars
-    are so far away that their apparent positions genuinely don't shift
-    over a multi-hour eclipse window, so keeping this fixed across every
-    frame is the physically correct choice, not a shortcut. Random
-    brightness/size per star for a natural, non-uniform look, placed just
-    inside the scene's own axis range so they're actually visible instead
-    of being clipped by the axis boundary.
-    """
-    rng = np.random.default_rng(seed)
-    vecs = rng.normal(size=(n_stars, 3))
-    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
-    pts = vecs * radius * 0.97
-    brightness = rng.uniform(0.35, 1.0, n_stars)
-    sizes = rng.uniform(1.0, 2.6, n_stars)
-    colors = [f"rgba(255,255,255,{b:.2f})" for b in brightness]
-    return go.Scatter3d(x=pts[:, 0], y=pts[:, 1], z=pts[:, 2], mode="markers",
-                        marker=dict(size=sizes, color=colors), hoverinfo="skip",
-                        showlegend=False, name="Stars")
+def _starfield_trace(radius, n_stars=500, seed=7, when=None):
+    from .starfield import starfield_traces
+    traces = starfield_traces(
+        radius * 0.97,
+        when=when,
+        frame="ecef",
+        mag_limit=6.5,
+        opacity=0.85,
+        fallback_random=False,
+    )
+    if traces:
+        return traces[0]
+    return go.Scatter3d(
+        x=[], y=[], z=[], mode="markers", hoverinfo="skip",
+        showlegend=False, name="Stars",
+    )
+
 
 
 def _lunar_or_solar_camera_eye(mode, sun_hat):
@@ -1860,7 +1868,8 @@ def plot_2024_solar_eclipse_animated(
     sun_mid = sun_hat[mid_idx]
     ref_r = float(np.linalg.norm(moon_mid))
     lim = (ref_r + max(RE_KM, R_MOON_KM) * size_boost) * 1.35
-    static_traces = [_starfield_trace(lim)] if show_stars else []
+    static_traces = ([_starfield_trace(lim, when=times[mid_idx])]
+                     if show_stars else [])
 
     def _empty_shadow_footprint():
         return [go.Mesh3d(x=[], y=[], z=[], i=[], j=[], k=[], hoverinfo="skip", showlegend=False),
@@ -2281,7 +2290,7 @@ def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
 
     ref_r_lim = np.linalg.norm(r_fine[mid])
     lim = (ref_r_lim + max(RE_KM, R_MOON_KM)*size_boost) * 1.35
-    static_traces = [_starfield_trace(lim)]
+    static_traces = [_starfield_trace(lim, when=_starfield_epoch(window, mid))]
 
     first_traces, first_illum, sun_len, *_ = _frame_traces(frame_idxs[0])
     if mode == "solar" and show_eclipse_path:
@@ -2454,7 +2463,7 @@ def plot_space_view_plotly(mode="lunar", search_days=None, save_path=None, verbo
         fig.add_trace(tr)
 
     lim = (ref_r + max(RE_KM, R_MOON_KM)*size_boost) * 1.35
-    fig.add_trace(_starfield_trace(lim))
+    fig.add_trace(_starfield_trace(lim, when=_starfield_epoch(window, mid)))
     # Close initial zoom: a small `eye` vector (short distance from origin,
     # in the scene's own normalized units) starts the camera zoomed in near
     # the Earth/Moon system rather than Plotly's usual zoomed-out default —
