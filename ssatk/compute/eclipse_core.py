@@ -1,12 +1,10 @@
 """Pure finite-source occultation geometry for SSATK.
 
 This module contains the reusable numerical kernel used by the eclipse plots.
-It has no plotting, file-system, SSATK, or SSAPy-Data dependencies.
+It has no plotting, file-system, or data-package dependencies.
 All distance arguments are unit-agnostic: every radius and position supplied to
 one call must use the same units. Angles are radians.
 
-It is intentionally kept in SSATK because this higher-level eclipse
-workflow does not change SSAPy's propagation engine.
 """
 from __future__ import annotations
 
@@ -18,8 +16,6 @@ import numpy as np
 
 ArrayLike = np.ndarray | Iterable[float] | float
 PhotometryKind = Literal["uniform", "linear", "quadratic"]
-
-CORE_PROVIDER = "ssatk.compute.eclipse_core"
 
 
 @dataclass(frozen=True)
@@ -207,7 +203,9 @@ def circle_overlap_visible_fraction(
         )
         partial_visible = 1.0 - overlap / (np.pi * b * b)
     visible = np.where(partial, partial_visible, visible)
-    return np.clip(np.where(valid_source, visible, 1.0), 0.0, 1.0)
+    # A point source is either strictly inside the occluder or fully visible.
+    point_visible = np.where(d < r1, 0.0, 1.0)
+    return np.clip(np.where(valid_source, visible, point_visible), 0.0, 1.0)
 
 
 def apparent_disk_geometry(
@@ -556,12 +554,9 @@ def sample_spherical_photosphere(
 
 # Compatibility aliases used by the existing eclipse renderer.
 _circle_overlap_fraction = circle_overlap_visible_fraction
-apparent_disk_radiometry = finite_source_irradiance
-quadrature_sample_weight = lambda mu, law=None: resolve_limb_darkening(law).intensity(mu)
 
 
 __all__ = [
-    "CORE_PROVIDER",
     "ApparentDiskGeometry",
     "LimbDarkeningLaw",
     "UNIFORM_DISC",
@@ -584,6 +579,4 @@ __all__ = [
     "shadow_cross_section",
     "orthonormal_basis",
     "sample_spherical_photosphere",
-    "apparent_disk_radiometry",
-    "quadrature_sample_weight",
 ]

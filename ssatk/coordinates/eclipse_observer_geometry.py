@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import csv
-import json
 import math
 from typing import TYPE_CHECKING
 
@@ -138,33 +137,6 @@ class ObserverConfig:
             )
         raise TypeError("observer must be ObserverConfig, mapping, ObserverConfig-like object, or None")
 
-    @classmethod
-    def from_weather_file(cls, path: str | Path, **observer_fields) -> "ObserverConfig":
-        """Create an observer with pressure/temperature/humidity provenance.
-
-        JSON accepts ``pressure_hpa``, ``temperature_c``,
-        ``relative_humidity_pct`` and optional ``wavelength_um``.  CSV uses
-        the first data row with the same headings.  Site coordinates remain
-        explicit arguments so a weather file cannot silently relocate an
-        observer.
-        """
-        source = Path(path).expanduser().resolve()
-        if source.suffix.lower() == ".json":
-            payload = json.loads(source.read_text(encoding="utf-8"))
-        else:
-            with source.open("r", newline="", encoding="utf-8-sig") as handle:
-                row = next(csv.DictReader(handle), None)
-            if row is None:
-                raise ValueError("weather CSV contains no data rows")
-            payload = row
-        data = dict(observer_fields)
-        for key, default in (("pressure_hpa", 1010.0), ("temperature_c", 10.0),
-                             ("relative_humidity_pct", 0.0), ("wavelength_um", 0.55)):
-            value = payload.get(key, default)
-            data[key] = float(value)
-        data["weather_source"] = str(payload.get("source", source))
-        return cls(**data)
-
     @property
     def effective_horizon(self) -> HorizonProfile:
         return self.horizon if self.horizon is not None else HorizonProfile.flat()
@@ -279,7 +251,8 @@ def observer_state(
         angular_circle_visible_fraction,
         itrf_surface_point,
     )
-    from ssatk.compute.eclipse_state import event_itrf_to_gcrf_km, event_positions_gcrf
+    from ssatk.compute.eclipse_runtime import itrf_to_gcrf_km
+    from ssatk.compute.eclipse_state import event_positions_gcrf
 
     if sun_gcrf_km is None or moon_gcrf_km is None:
         sun_gcrf_km, moon_gcrf_km = event_positions_gcrf(event, float(jd_utc))
@@ -290,10 +263,10 @@ def observer_state(
         config.longitude_east_deg,
         float(config.elevation_m) / 1000.0,
     )
-    observer = np.asarray(event_itrf_to_gcrf_km(event, observer_itrf, float(jd_utc)), dtype=float)
+    observer = np.asarray(itrf_to_gcrf_km(observer_itrf, float(jd_utc)), dtype=float)
     axes_itrf = np.vstack(_observer_axes_itrf(config))
     axes_gcrf = np.asarray(
-        event_itrf_to_gcrf_km(event, axes_itrf, np.full(3, float(jd_utc))),
+        itrf_to_gcrf_km(axes_itrf, np.full(3, float(jd_utc))),
         dtype=float,
     )
     up, north, east = [row / np.linalg.norm(row) for row in axes_gcrf]
@@ -489,31 +462,3 @@ def contact_aware_observer_jd(
     return np.sort(np.unique(np.concatenate([base[keep], exact])))
 
 
-def observer_phase(jd_utc: float, contacts: dict[str, float]) -> str:
-    """Human-readable phase label for total, annular, or partial local events."""
-    jd = float(jd_utc)
-    tolerance = 0.75 / 86400.0
-    ordered = sorted(contacts.items(), key=lambda item: float(item[1]))
-    for name, value in ordered:
-        if abs(jd - float(value)) <= tolerance:
-            return str(name)
-    c1, c4 = float(contacts["C1"]), float(contacts["C4"])
-    maximum = float(contacts.get("MAX", 0.5 * (c1 + c4)))
-    if jd < c1:
-        return "before C1"
-    if "C2" in contacts and "C3" in contacts:
-        c2, c3 = float(contacts["C2"]), float(contacts["C3"])
-        if jd < c2:
-            return "partial ingress"
-        if jd < maximum:
-            return "central phase - ingress"
-        if jd < c3:
-            return "central phase - egress"
-        if jd < c4:
-            return "partial egress"
-    else:
-        if jd < maximum:
-            return "partial ingress"
-        if jd < c4:
-            return "partial egress"
-    return "after C4"

@@ -10,13 +10,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Iterable
 
 import numpy as np
 
-from ssatk.compute.eclipse_brightness import gcrf_to_itrf_km, itrf_to_gcrf_km
+from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km
 from ssatk.compute.eclipse_core import ray_sphere_intersections as _core_ray_sphere_intersections
-from ssatk.compute.eclipse_state import event_gcrf_to_itrf_km, event_itrf_to_gcrf_km, event_positions_gcrf
+from ssatk.compute.eclipse_state import event_positions_gcrf
 
 from ssatk.compute.eclipse_reference_events import (
     EARTH_AXES_KM,
@@ -154,69 +153,22 @@ def _first_earth_hit(origin, direction, *, min_distance: float = 1.0e-7) -> tupl
     return distance, origin+distance*_unit(direction)
 
 
-def _first_earth_hit_gcrf(
-    origin,
-    direction,
-    jd_utc: float,
-    *,
-    min_distance: float = 1.0e-7,
-    prefer_toolkit: bool = True,
-    event=None,
-) -> tuple[float, np.ndarray] | None:
-    """First WGS-84 Earth hit for a GCRF ray at one fixed instant.
+def _first_earth_hit_gcrf(origin, direction, jd_utc: float, *, min_distance: float = 1.0e-7):
+    """First WGS-84 Earth hit for a GCRF ray at one instant, returned in GCRF.
 
-    The ray is rotated into ITRF before solving the ellipsoid intersection,
-    then the hit point is returned to GCRF.  A unit step is transformed with
-    the origin so the direction follows exactly the same frame rotation.
+    The ellipsoid is solved in ITRF. Origin and direction are rotated
+    separately: a short helper step beside a ~1 AU origin loses precision
+    after rotation, and GCRF/ITRF share the geocentre, so directions rotate
+    the same way as positions.
     """
-    origin = np.asarray(origin, dtype=float).reshape(3)
-    direction = _unit(direction, name="GCRF ray direction")
-    # Transform origin and direction independently.  A one-kilometre helper
-    # step next to a ~1-AU origin suffers cancellation after rotation and can
-    # perturb the surface intersection.  GCRF/ITRF share the geocentre, so the
-    # same rotation applies directly to the direction vector.
-    if event is not None:
-        origin_itrf = np.asarray(
-            event_gcrf_to_itrf_km(event, origin, float(jd_utc)), dtype=float,
-        )
-        direction_itrf = _unit(
-            event_gcrf_to_itrf_km(event, direction, float(jd_utc)),
-            name="ITRF ray direction",
-        )
-    else:
-        origin_itrf = np.asarray(
-            gcrf_to_itrf_km(origin, float(jd_utc), prefer_toolkit=prefer_toolkit),
-            dtype=float,
-        )
-        direction_itrf = _unit(
-            gcrf_to_itrf_km(direction, float(jd_utc), prefer_toolkit=prefer_toolkit),
-            name="ITRF ray direction",
-        )
-    # gcrf_to_itrf_km normalises a single point to (1, 3); the geometry
-    # below works in plain vectors, so flatten at the boundary.
-    origin_itrf = np.ravel(origin_itrf)
-    hit = _first_earth_hit(
-        origin_itrf, direction_itrf, min_distance=min_distance,
-    )
+    origin_itrf = np.ravel(gcrf_to_itrf_km(np.asarray(origin, dtype=float).reshape(3), float(jd_utc)))
+    direction_itrf = _unit(gcrf_to_itrf_km(_unit(direction, name="GCRF ray direction"), float(jd_utc)),
+                           name="ITRF ray direction")
+    hit = _first_earth_hit(origin_itrf, direction_itrf, min_distance=min_distance)
     if hit is None:
         return None
     distance, endpoint_itrf = hit
-    if event is not None:
-        endpoint_gcrf = np.asarray(
-            event_itrf_to_gcrf_km(event, endpoint_itrf, float(jd_utc)),
-            dtype=float,
-        )
-    else:
-        endpoint_gcrf = np.asarray(
-            itrf_to_gcrf_km(
-                endpoint_itrf,
-                float(jd_utc),
-                prefer_toolkit=prefer_toolkit,
-                prefer_astropy=True,
-            ),
-            dtype=float,
-        )
-    return float(distance), np.ravel(endpoint_gcrf)
+    return float(distance), np.ravel(itrf_to_gcrf_km(endpoint_itrf, float(jd_utc)))
 
 
 def _common_tangent_family(
@@ -492,9 +444,7 @@ def trace_gcrf_rays(
     moon_gcrf_km,
     *,
     n_azimuth: int = 12,
-    source_label: str = "LLNL SSAPy DE430",
-    prefer_toolkit: bool = True,
-    event=None,
+    source_label: str = "SSAPy DE430",
 ) -> ReferenceRayBundle:
     """Trace finite-Sun eclipse rays from explicit GCRF body centres."""
     if isinstance(kind, ReferenceDefinition):
@@ -511,16 +461,7 @@ def trace_gcrf_rays(
     earth = np.zeros(3, dtype=float)
     sun = np.asarray(sun_gcrf_km, dtype=float).reshape(3)
     moon = np.asarray(moon_gcrf_km, dtype=float).reshape(3)
-    if event is not None:
-        gcrf_to_itrf_rotation = np.asarray(
-            event_gcrf_to_itrf_km(event, np.eye(3), float(jd_utc)), dtype=float,
-        ).reshape(3, 3)
-    else:
-        gcrf_to_itrf_rotation = np.asarray(
-            gcrf_to_itrf_km(
-                np.eye(3), float(jd_utc), prefer_toolkit=prefer_toolkit,
-            ), dtype=float,
-        ).reshape(3, 3)
+    gcrf_to_itrf_rotation = np.asarray(gcrf_to_itrf_km(np.eye(3), float(jd_utc))).reshape(3, 3)
 
     if definition.mode == "solar":
         occ_center, target_center = moon, earth
@@ -530,7 +471,7 @@ def trace_gcrf_rays(
         penumbra_radius = SOLAR_PENUMBRA_OPTICAL_RADIUS_KM
         target_radius = RE_KM
         target_intersector = lambda origin, direction: _first_earth_hit_gcrf(
-            origin, direction, float(jd_utc), prefer_toolkit=prefer_toolkit, event=event,
+            origin, direction, float(jd_utc),
         )
         occ_name, target_name = "Moon", "Earth"
         central_endpoint = moon-axis*solid_radius
@@ -544,10 +485,6 @@ def trace_gcrf_rays(
             "sun_earth_distance_km": float(np.linalg.norm(sun)),
             "sun_moon_distance_km": float(np.linalg.norm(sun-moon)),
             "source": source_label,
-            "frame_transform": (
-                str(event.metadata.get("frame_backend")) if event is not None
-                else ("ssapy-toolkit" if prefer_toolkit else "Astropy")
-            ),
         }
     else:
         occ_center, target_center = earth, moon
@@ -565,8 +502,6 @@ def trace_gcrf_rays(
             axis,
             float(jd_utc),
             min_distance=0.0,
-            prefer_toolkit=prefer_toolkit,
-            event=event,
         )
         metadata = {
             "solid_earth_radius_km": RE_KM,
@@ -575,10 +510,6 @@ def trace_gcrf_rays(
             "sun_earth_distance_km": float(np.linalg.norm(sun)),
             "moon_earth_distance_km": float(np.linalg.norm(moon)),
             "source": source_label,
-            "frame_transform": (
-                str(event.metadata.get("frame_backend")) if event is not None
-                else ("ssapy-toolkit" if prefer_toolkit else "Astropy")
-            ),
         }
 
     if central_hit is None:
@@ -646,8 +577,6 @@ def trace_event_rays(
         moon,
         n_azimuth=n_azimuth,
         source_label=str(event.backend),
-        prefer_toolkit=source == "ssapy",
-        event=event,
     )
 
 

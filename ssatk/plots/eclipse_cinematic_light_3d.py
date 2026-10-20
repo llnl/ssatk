@@ -1,4 +1,4 @@
-"""V22.2 public cinematic finite-Sun eclipse renderer with SSAPy-Data assets.
+"""Cinematic WebGL finite-Sun eclipse renderer.
 
 The renderer consumes one immutable :class:`ReferenceEvent` backend from the
 state layer and never re-probes frame providers during rendering.  It emits a
@@ -20,6 +20,7 @@ connection.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 import base64
 import io
@@ -30,10 +31,12 @@ import math
 import numpy as np
 
 from ssatk.compute.eclipse_brightness import illumination_fraction, irradiance_fraction
-from ssatk.io.eclipse_asset_resolver import resolve_asset, resolve_image
-from ssatk.compute.eclipse_photometry import resolve_limb_darkening
-from ssatk.compute.eclipse_state import build_event as build_backend_event, event_gcrf_to_itrf_km, event_itrf_to_gcrf_km, event_moon_body_to_gcrf
-from ssatk.plots.eclipse_system_raytrace_3d import ASSET_DIR, _scene_coordinates
+from ssatk.compute.eclipse_photometry_lut import build_delta_lut
+from ssatk.plots._textures import earth_texture_path, moon_texture_path
+from ssatk.compute.eclipse_core import resolve_limb_darkening
+from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km
+from ssatk.compute.eclipse_state import build_event as build_backend_event, event_moon_body_to_gcrf
+from ssatk.plots.eclipse_system_raytrace_3d import _scene_coordinates
 from ssatk.coordinates.eclipse_observer_geometry import ObserverConfig, observer_state, refine_solar_contacts
 from ssatk.coordinates.eclipse_lunar_geometry import LunarLimbProfile
 from ssatk.plots.eclipse_ultra_public_3d import (
@@ -44,7 +47,6 @@ from ssatk.plots.eclipse_ultra_public_3d import (
 )
 from ssatk.plots.eclipse_ultra_public_animation import build_public_animation
 from ssatk.compute.eclipse_reference_events import (
-    EARTH_AXES_KM,
     LUNAR_2025,
     RE_KM,
     RP_KM,
@@ -56,16 +58,13 @@ from ssatk.compute.eclipse_reference_events import (
     ReferenceDefinition,
     ReferenceEvent,
     geodetic_from_itrf,
-    itrf_surface_point,
     jd_to_datetime,
 )
 from ssatk.compute.eclipse_raytrace import LUNAR_DANJON_EARTH_RADIUS_KM
 
 UNIT_KM = 1_000.0
-THREE_DIR = ASSET_DIR
-RUNTIME_JS = ASSET_DIR / "eclipse_cinematic_runtime.js"
-RENDERER_VERSION = "20.1"
-PACKAGE_VERSION = "2.2.2"
+THREE_DIR = Path(__file__).resolve().parent
+RUNTIME_JS = THREE_DIR / "eclipse_cinematic_runtime.js"
 
 # A stable Earth-centered reference is useful in the system and Earth views:
 # it gives the body scale an orbital context without pretending to be part of
@@ -131,20 +130,11 @@ _PLAYBACK_SECONDS = {
 }
 
 
-def _resolve_photometry_lut() -> tuple[dict[str, object], object, object]:
-    """Resolve the radiometric lookup table and metadata from SSAPy-Data."""
-    binary = resolve_asset("quadratic_visible_delta_lut", policy="strict-data")
-    metadata = resolve_asset("quadratic_visible_delta_lut_metadata", policy="strict-data")
-    if binary is None or metadata is None:
-        raise RuntimeError("SSAPy-Data photometry LUT assets are unavailable")
-    try:
-        payload = json.loads(Path(metadata.path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError("photometry correction LUT metadata is missing or invalid") from exc
-    expected = int(payload["width"]) * int(payload["height"])
-    if Path(binary.path).stat().st_size != expected:
-        raise RuntimeError("photometry correction LUT binary has the wrong size")
-    return payload, binary, metadata
+@lru_cache(maxsize=1)
+def _photometry_lut() -> tuple[dict[str, object], str]:
+    """Limb-darkening correction texture for the shader, built in memory (about 2 s)."""
+    encoded, metadata = build_delta_lut()
+    return metadata, base64.b64encode(encoded.tobytes(order="C")).decode("ascii")
 
 
 def _quality(name: str) -> CinematicQuality:
@@ -166,17 +156,11 @@ def _data_uri(path: Path, mime: str) -> str:
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
-def _resolved_image_uri(logical_name: str, *, max_width: int, quality: int = 90) -> tuple[str, dict[str, object]]:
-    """Resolve a PNG/JPEG from SSAPy-Data and embed an optimized derivative.
-
-    The source image remains the auditable SSAPy-Data asset.  WebP is an
-    in-memory HTML transport encoding only; no WebP file is required in either
-    the Toolkit package or SSAPy-Data repository.
-    """
+def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str, dict[str, object]]:
+    """Embed a texture as an in-memory WebP derivative of the installed PNG/JPEG."""
     from PIL import Image
 
-    resolved = resolve_image(logical_name, policy="data-first", required=True)
-    with Image.open(resolved.path) as image:
+    with Image.open(path) as image:
         image = image.convert("RGB")
         if image.width > int(max_width):
             height = max(1, round(image.height * int(max_width) / image.width))
@@ -185,16 +169,7 @@ def _resolved_image_uri(logical_name: str, *, max_width: int, quality: int = 90)
         buffer = io.BytesIO()
         image.save(buffer, format="WEBP", quality=int(quality), method=6)
     uri = "data:image/webp;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
-    provenance = {
-        "logical_name": logical_name,
-        "source": resolved.source,
-        "source_name": Path(resolved.path).name,
-        "source_sha256": resolved.sha256,
-        "source_bytes": resolved.bytes,
-        "embedded_encoding": "image/webp",
-        "embedded_bytes": len(buffer.getvalue()),
-    }
-    return uri, provenance
+    return uri, {"source_name": Path(path).name, "embedded_bytes": len(buffer.getvalue())}
 
 
 def _three_module_uri() -> str:
@@ -218,9 +193,7 @@ def _three_module_uri() -> str:
 def _rotation_rows_itrf_to_scene(state: PublicPeakState) -> np.ndarray:
     """Column-vector rotation matrix from the event-owned ITRF to scene."""
     gcrf_rows = np.asarray(
-        event_itrf_to_gcrf_km(
-            state.event,
-            np.eye(3),
+        itrf_to_gcrf_km(np.eye(3),
             np.full(3, float(state.jd_utc), dtype=float),
         ),
         dtype=float,
@@ -385,7 +358,7 @@ def _target_payload(state: PublicPeakState, photometry: str = "quadratic-visible
     }
     if state.event.mode == "solar":
         target_itrf = np.asarray(
-            event_gcrf_to_itrf_km(state.event, target_gcrf, state.jd_utc),
+            gcrf_to_itrf_km(target_gcrf, state.jd_utc),
             dtype=float,
         )
         radius = float(np.linalg.norm(target_itrf))
@@ -600,7 +573,7 @@ def build_cinematic_payload(
     animate: bool = False,
     quality: str = "ultra",
     n_frames: int | None = None,
-    backend: str = "auto",
+    backend: str = "ssapy",
     solar_scope: str = "global",
     playback_seconds: float | None = None,
     observer_config: ObserverConfig | None = None,
@@ -697,7 +670,7 @@ def build_cinematic_payload(
     if animate and playback <= 0.0:
         raise ValueError("playback_seconds must be positive for an animation")
 
-    photometry_lut, _, _ = _resolve_photometry_lut()
+    photometry_lut, _ = _photometry_lut()
 
     labels = {
         "earth": "Earth — opaque WGS-84 body",
@@ -726,8 +699,6 @@ def build_cinematic_payload(
         else:
             scope_label = "greatest-eclipse physical inspection"
     return {
-        "version": RENDERER_VERSION,
-        "package_version": PACKAGE_VERSION,
         "mode": definition.mode,
         "scope": scope,
         "scope_label": scope_label,
@@ -735,14 +706,12 @@ def build_cinematic_payload(
         "animate": bool(animate),
         "backend": selected_backend,
         "frame_backend": frame_backend,
-        "strict_backend": bool(event.metadata.get("strict_backend", False)),
         "backend_audit": audit,
         "backend_provenance": {
             "requested": str(event.metadata.get("backend_requested", backend)),
             "selected": selected_backend,
             "ephemeris": str(event.metadata.get("ephemeris_backend", event.backend)),
             "frame": frame_backend,
-            "fallback_reason": str(event.metadata.get("backend_fallback_reason", "")),
         },
         "moon_orientation_backend": str(event.metadata.get(
             "moon_orientation_backend", "NAIF IAU_MOON 2009 text-PCK fallback"
@@ -787,17 +756,11 @@ def build_cinematic_payload(
 def _page_html(payload: dict[str, object]) -> str:
     three_uri = _three_module_uri()
     runtime = RUNTIME_JS.read_text(encoding="utf-8")
-    earth_uri, earth_asset = _resolved_image_uri("earth_albedo", max_width=4096, quality=88)
-    moon_uri, moon_asset = _resolved_image_uri("moon_albedo", max_width=4096, quality=90)
+    earth_uri, earth_asset = _texture_uri(earth_texture_path(), max_width=4096, quality=88)
+    moon_uri, moon_asset = _texture_uri(moon_texture_path(), max_width=4096, quality=90)
     payload = dict(payload)
-    _, lut_binary, lut_metadata = _resolve_photometry_lut()
-    payload["data_assets"] = {
-        "earth_albedo": earth_asset,
-        "moon_albedo": moon_asset,
-        "photometry_lut": lut_binary.to_dict(portable=True),
-        "photometry_lut_metadata": lut_metadata.to_dict(portable=True),
-    }
-    photometry_lut_b64 = base64.b64encode(Path(lut_binary.path).read_bytes()).decode("ascii")
+    payload["data_assets"] = {"earth_albedo": earth_asset, "moon_albedo": moon_asset}
+    _, photometry_lut_b64 = _photometry_lut()
     payload_json = json.dumps(payload, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
     title = html.escape(str(payload["title"]))
     mode = str(payload["mode"])
@@ -814,7 +777,7 @@ def _page_html(payload: dict[str, object]) -> str:
     )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} — V22.2 physical eclipse simulation</title>
+<title>{title} — SSATK eclipse simulation</title>
 <style>
 :root{{--bg:#01030a;--panel:rgba(6,13,25,.90);--line:#31445e;--text:#eef5ff;--muted:#9aabc0;--gold:#ffe36e}}
 *{{box-sizing:border-box}}html,body{{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}}
@@ -836,7 +799,7 @@ h1{{font-size:20px;line-height:1.15;margin:0 0 5px}}.subtitle{{font-size:12.5px;
 @media(prefers-reduced-motion:reduce){{*{{scroll-behavior:auto!important}}}}
 </style></head><body>
 <div id="viewport"><canvas id="gl" aria-label="Interactive Sun Earth Moon eclipse simulation"></canvas></div>
-<div id="top"><div class="title"><h1>{title}</h1><div class="subtitle">V22.2 SSAPy-Data integration release · {scope_label} — opaque Earth and Moon, exact physical bodies, quadratic limb-darkened finite-Sun irradiance, full-disc weighted photospheric sampling, physical UTC playback, body-following north-up cameras, immutable backend provenance, and first-opaque-surface clipping. {html.escape(geometry_note)}</div><div id="status">Loading embedded textures and WebGL renderer…</div></div>
+<div id="top"><div class="title"><h1>{title}</h1><div class="subtitle">{scope_label} — opaque Earth and Moon, exact physical bodies, quadratic limb-darkened finite-Sun irradiance, full-disc weighted photospheric sampling, physical UTC playback, body-following north-up cameras, immutable backend provenance, and first-opaque-surface clipping. {html.escape(geometry_note)}</div><div id="status">Loading embedded textures and WebGL renderer…</div></div>
 <div class="panel">
 <div class="section"><h2>Camera</h2><div class="grid"><button data-camera="system">Earth–Moon system</button><button data-camera="earth">Earth north-up</button><button data-camera="moon">Moon north-up</button><button data-camera="optics">Ray geometry side</button><button data-camera="true">True Sun distance</button><button data-camera="sun">Sun photosphere</button>{local_button}</div></div>
 <div class="section"><h2>Light graphics</h2>
@@ -866,12 +829,12 @@ const PHOTOMETRY_LUT_B64="{photometry_lut_b64}";
 
 def generate_cinematic_view(
     kind: str | ReferenceDefinition | ReferenceEvent = "solar",
-    output_path: str | Path = "eclipse_cinematic_v22_2.html",
+    output_path: str | Path = "eclipse_cinematic.html",
     *,
     animate: bool = False,
     quality: str = "ultra",
     n_frames: int | None = None,
-    backend: str = "auto",
+    backend: str = "ssapy",
     solar_scope: str = "global",
     playback_seconds: float | None = None,
     observer_config: ObserverConfig | None = None,
@@ -898,60 +861,3 @@ def generate_cinematic_view(
     return str(out)
 
 
-def generate_cinematic_suite(
-    output_dir: str | Path,
-    *,
-    quality: str = "ultra",
-    peak_quality: str | None = None,
-    backend: str = "auto",
-    solar_frames: int = 121,
-    lunar_frames: int = 91,
-    include_solar_local: bool = True,
-    solar_local_frames: int | None = None,
-    reuse_existing: bool = False,
-) -> dict[str, str]:
-    """Generate the complete peak and contact-to-contact cinematic suite.
-
-    ``reuse_existing`` is an explicit resumable-build option. A product is
-    reused only when the exact V22.2 target filename already exists and is
-    non-empty; otherwise it is regenerated from the requested state and
-    quality settings. This makes interrupted release generation restartable
-    without silently accepting a differently named legacy artifact.
-    """
-    out = Path(output_dir).expanduser().resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    peak_quality = str(peak_quality or quality)
-
-    def create(path: Path, *args, **kwargs) -> str:
-        if reuse_existing and path.is_file() and path.stat().st_size > 0:
-            return str(path)
-        return generate_cinematic_view(*args, output_path=path, **kwargs)
-
-    products = {
-        "solar_peak": create(
-            out / "solar_greatest_ssapy_data_v22_2.html", "solar",
-            quality=peak_quality, backend=backend,
-        ),
-        "lunar_peak": create(
-            out / "lunar_greatest_ssapy_data_v22_2.html", "lunar",
-            quality=peak_quality, backend=backend,
-        ),
-        "solar_global_animation": create(
-            out / "solar_P1_P4_ssapy_data_v22_2.html", "solar",
-            animate=True, quality=quality, n_frames=solar_frames, backend=backend,
-            solar_scope="global",
-        ),
-        "lunar_global_animation": create(
-            out / "lunar_P1_P4_ssapy_data_v22_2.html", "lunar",
-            animate=True, quality=quality, n_frames=lunar_frames, backend=backend,
-        ),
-    }
-    if include_solar_local:
-        products["solar_local_animation"] = create(
-            out / "solar_C1_C4_ssapy_data_v22_2.html", "solar",
-            animate=True, quality=quality,
-            n_frames=(int(solar_local_frames) if solar_local_frames is not None
-                      else max(49, solar_frames * 3 // 4)),
-            backend=backend, solar_scope="local",
-        )
-    return products

@@ -25,45 +25,6 @@ from ssatk.constants import MOON_MEAN_RADIUS_KM as R_MOON_MEAN_KM
 # Lunar attitude is owned by the single provider in lunar_attitude.py.
 # This module retains the public helper names for the canonical API while
 # concentrating its own implementation on optional topographic limb profiles.
-from ssatk.coordinates.eclipse_lunar_attitude import iau_moon_attitude
-
-
-def iau_moon_orientation_angles_deg(jd_utc) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return the canonical reference lunar pole and prime-meridian angles.
-
-    This public compatibility function delegates to :mod:`lunar_attitude`,
-    which owns the UTC-to-TDB path and the NAIF/IAU 2009 series used by the
-    actual event renderer.  Keeping one implementation prevents a serialized
-    event and a direct API call from disagreeing by their time argument.
-    """
-    from ssatk.coordinates.eclipse_lunar_attitude import iau_moon_attitude
-    jd = np.asarray(jd_utc, dtype=float)
-    scalar = jd.ndim == 0
-    values = [iau_moon_attitude(float(value)) for value in jd.reshape(-1)]
-    ra = np.asarray([value.pole_ra_deg for value in values], dtype=float).reshape(jd.shape)
-    dec = np.asarray([value.pole_dec_deg for value in values], dtype=float).reshape(jd.shape)
-    pm = np.asarray([value.prime_meridian_deg for value in values], dtype=float).reshape(jd.shape)
-    if scalar:
-        return float(ra), float(dec), float(pm)
-    return ra, dec, pm
-
-
-def iau_moon_body_to_gcrf(jd_utc) -> np.ndarray:
-    """Return canonical NAIF/IAU Moon body-fixed-to-GCRF matrices."""
-    from ssatk.coordinates.eclipse_lunar_attitude import iau_moon_attitude
-    jd = np.asarray(jd_utc, dtype=float)
-    scalar = jd.ndim == 0
-    result = np.stack([
-        np.asarray(iau_moon_attitude(float(value)).body_to_gcrf, dtype=float)
-        for value in jd.reshape(-1)
-    ], axis=0)
-    return result[0] if scalar else result.reshape(jd.shape + (3, 3))
-
-
-def lunar_pole_gcrf(jd_utc) -> np.ndarray:
-    """Return the canonical lunar +Z body axis in GCRF."""
-    matrix = iau_moon_body_to_gcrf(jd_utc)
-    return np.asarray(matrix)[..., :, 2]
 
 
 @dataclass(frozen=True)

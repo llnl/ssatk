@@ -420,17 +420,17 @@ def generate_event_scientific_suite(
     output.mkdir(parents=True, exist_ok=True)
     slug = _slug(event.definition.key)
     summary = generate_event_scientific_summary(
-        event, output / f"{slug}_scientific_summary_v22_2.png", photometry=photometry
+        event, output / f"{slug}_scientific_summary.png", photometry=photometry
     )
     timeline = write_event_timeline_csv(
-        event, output / f"{slug}_timeline_v22_2.csv", photometry=photometry
+        event, output / f"{slug}_timeline.csv", photometry=photometry
     )
-    event_path = output / f"{slug}_event_state_v22_2.json"
+    event_path = output / f"{slug}_event_state.json"
     event_path.write_text(json.dumps(event_to_dict(event), indent=2, allow_nan=False) + "\n", encoding="utf-8")
     validation = validate_event(event)
-    validation_path = output / f"{slug}_validation_v22_2.json"
+    validation_path = output / f"{slug}_validation.json"
     validation_path.write_text(json.dumps(validation.to_dict(), indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    interactive_path = output / f"{slug}_{'full_animation' if animate else 'greatest'}_interactive_3d_v22_2.html"
+    interactive_path = output / f"{slug}_{'full_animation' if animate else 'greatest'}_interactive_3d.html"
     interactive = generate_cinematic_view(
         event, interactive_path, animate=bool(animate), quality=quality,
         n_frames=len(event.jd), backend=str(event.metadata.get("state_source", "reference")),
@@ -438,7 +438,6 @@ def generate_event_scientific_suite(
         playback_seconds=playback_seconds, photometry=photometry,
     )
     manifest = {
-        "$schema": "ssapy-toolkit.eclipse.scientific-suite/2.2.2",
         "event_key": event.definition.key,
         "event_title": event.definition.title,
         "requested_minimum_state_count": event.metadata.get("requested_minimum_state_count"),
@@ -460,7 +459,7 @@ def generate_event_scientific_suite(
             "validation_json": validation_path.name,
         },
     }
-    manifest_path = output / f"{slug}_scientific_suite_manifest_v22_2.json"
+    manifest_path = output / f"{slug}_scientific_suite_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     return {
         "scientific_summary_png": summary,
@@ -478,17 +477,8 @@ def generate_event_scientific_suite(
 generate_selected_scientific_suite = generate_event_scientific_suite
 
 
-def write_peak_summary(event: ReferenceEvent, output_path: str | Path, *, photometry: str = "quadratic-visible") -> str:
-    return generate_event_scientific_summary(event, output_path, photometry=photometry)
-
-
-def write_event_table(event: ReferenceEvent, output_path: str | Path, *, photometry: str = "quadratic-visible") -> str:
-    return write_event_timeline_csv(event, output_path, photometry=photometry)
-
-
 __all__ = [
     "GenericScientificFrameRenderer", "renderer_for_event",
     "generate_event_scientific_summary", "generate_event_scientific_suite",
     "generate_selected_scientific_suite", "write_event_timeline_csv",
-    "write_event_table", "write_peak_summary",
 ]

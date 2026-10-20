@@ -1,4 +1,4 @@
-// V22.2 cinematic eclipse runtime — exact opaque bodies, full-disc weighted photospheric paths, physical-UTC playback, body-following north-up cameras, capability-negotiated postprocessing, and explicit provenance. THREE, CONFIG, EARTH_TEXTURE_URI, MOON_TEXTURE_URI, and PHOTOMETRY_LUT_B64 are injected by cinematic_light_3d.py.
+// Cinematic eclipse runtime — exact opaque bodies, full-disc weighted photospheric paths, physical-UTC playback, body-following north-up cameras, capability-negotiated postprocessing, and explicit provenance. THREE, CONFIG, EARTH_TEXTURE_URI, MOON_TEXTURE_URI, and PHOTOMETRY_LUT_B64 are injected by cinematic_light_3d.py.
 
 const UNIT_KM = CONFIG.unit_km;
 const root = document.getElementById('viewport');
@@ -95,7 +95,7 @@ function decodeBase64Bytes(text) {
 }
 function makePhotometryCorrectionTexture() {
   const meta = CONFIG.photometry_lut;
-  if (!meta || !PHOTOMETRY_LUT_B64) throw new Error('Missing V19 photometry correction LUT');
+  if (!meta || !PHOTOMETRY_LUT_B64) throw new Error('Missing photometry correction LUT');
   const raw = decodeBase64Bytes(PHOTOMETRY_LUT_B64);
   const expected = Number(meta.width) * Number(meta.height);
   if (raw.length !== expected) throw new Error(`Photometry LUT byte count ${raw.length} does not match ${expected}`);

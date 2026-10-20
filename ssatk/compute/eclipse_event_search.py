@@ -1,19 +1,11 @@
-"""Provider-driven arbitrary solar and lunar eclipse discovery.
+"""Numerical solar and lunar eclipse discovery from Sun/Moon state vectors.
 
-The search layer deliberately separates *discovery* from *rendering*:
-
-* ``ssapy`` / ``ssapy-core`` use LLNL body states and the selected frame
-  provider, then solve finite-Sun contact equations numerically.
-* ``swisseph`` is an optional, search-only catalogue/validation bridge.  It is
-  never installed as a required dependency and its provenance is explicit.
-* ``catalog`` exposes only the two bundled NASA/GSFC reference events.
-* ``auto`` prefers strict SSAPy, then the optional Swiss Ephemeris bridge, then
-  the portable analytical discovery model.  The two bundled reference events
-  remain available explicitly through ``backend='catalog'``.
-
-A discovered event can be materialized as the same immutable ``ReferenceEvent``
-record consumed by the ray tracer and public renderers.  Dynamic records store
-all body states and therefore remain reproducible after serialization.
+Discovery searches minima of a finite-cone target margin and root-finds the
+external and internal contact equations. ``discover_eclipses`` uses SSAPy's
+DE430 states; ``discover_with_position_provider`` accepts any provider so other
+ephemerides can be compared against it. A discovered event materializes as
+the same ``ReferenceEvent`` the ray tracer and renderers consume, with every
+body state stored so it stays reproducible after serialization.
 """
 from __future__ import annotations
 
@@ -22,34 +14,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Protocol, Sequence
 import json
-import math
 
 import numpy as np
 
-from ssatk.compute.eclipse_brightness import AU_KM
-from ssatk.compute.eclipse_runtime import (
-    BackendUnavailableError,
-    resolve_backend,
-    ssapy_ephemeris_positions_km,
-    toolkit_gcrf_to_itrf_km,
-    astropy_gcrf_to_itrf_km,
-)
+from ssatk.compute.eclipse_core import shadow_cone
+from ssatk.compute.eclipse_runtime import resolve_backend, ssapy_ephemeris_positions_km
 from ssatk.compute.eclipse_reference_events import (
-    EARTH_AXES_KM,
-    LUNAR_2025,
+    LUNAR_DANJON_FACTOR,
     RE_KM,
-    RP_KM,
     R_MOON_MEAN_KM,
     R_SUN_KM,
-    SOLAR_2024,
     ReferenceDefinition,
     ReferenceEvent,
-    angular_circle_visible_fraction,
+    center_visibility_and_separation,
     datetime_to_jd,
     jd_to_datetime,
 )
-
-SearchBackend = str
 
 
 class PositionProvider(Protocol):
@@ -107,7 +87,7 @@ class DiscoveredEclipse:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "$schema": "ssapy-toolkit.eclipse.discovery/2.0",
+            "$schema": "ssatk.eclipse.discovery/1",
             "key": self.key,
             "mode": self.mode,
             "eclipse_type": self.eclipse_type,
@@ -185,142 +165,9 @@ def _key(mode: str, jd: float) -> str:
     return f"{mode}_{dt:%Y_%m_%d}"
 
 
-def _load_swe():
-    try:
-        import swisseph as swe
-    except Exception as exc:
-        raise BackendUnavailableError(
-            "The optional Swiss Ephemeris search bridge is unavailable. "
-            "Install pyswisseph under its applicable licence, or use backend='ssapy'."
-        ) from exc
-    return swe
-
-
-def swisseph_available() -> bool:
-    try:
-        _load_swe()
-        return True
-    except BackendUnavailableError:
-        return False
-
-
-def _swe_solar_type(swe, flags: int) -> str:
-    if flags & swe.ECL_ANNULAR_TOTAL:
-        return "hybrid"
-    if flags & swe.ECL_TOTAL:
-        return "total"
-    if flags & swe.ECL_ANNULAR:
-        return "annular"
-    return "partial"
-
-
-def _swe_lunar_type(swe, flags: int) -> str:
-    if flags & swe.ECL_TOTAL:
-        return "total"
-    if flags & swe.ECL_PARTIAL:
-        return "partial-umbral"
-    return "penumbral"
-
-
 def _nonzero_contacts(mapping: Mapping[str, float]) -> dict[str, float]:
     result = {name: float(value) for name, value in mapping.items() if float(value) > 0.0}
     return dict(sorted(result.items(), key=lambda item: item[1]))
-
-
-def _discover_swisseph(start_jd: float, end_jd: float, mode: str) -> list[DiscoveredEclipse]:
-    swe = _load_swe()
-    flags = swe.FLG_MOSEPH
-    records: list[DiscoveredEclipse] = []
-    cursor = float(start_jd) - 1.0e-6
-    while cursor <= end_jd:
-        if mode == "solar":
-            result_flags, times = swe.sol_eclipse_when_glob(
-                cursor, flags, swe.ECL_ALLTYPES_SOLAR, False
-            )
-            maximum = float(times[0])
-            if maximum > end_jd:
-                break
-            if maximum >= start_jd:
-                where_flags, geopos, attr = swe.sol_eclipse_where(maximum, flags)
-                eclipse_type = _swe_solar_type(swe, int(result_flags))
-                contacts = _nonzero_contacts({
-                    "P1": times[2], "U1": times[4], "MAX": times[0],
-                    "U4": times[5], "P4": times[3],
-                    "CENTER_BEGIN": times[6], "CENTER_END": times[7],
-                    "HYBRID_TOTAL_BEGIN": times[8], "HYBRID_TOTAL_END": times[9],
-                })
-                records.append(DiscoveredEclipse(
-                    key=_key("solar", maximum), mode="solar", eclipse_type=eclipse_type,
-                    greatest_jd_utc=maximum, contacts_jd_utc=contacts,
-                    discovery_backend=f"Swiss Ephemeris {getattr(swe, 'version', 'unknown')} / Moshier",
-                    source_label="Optional Swiss Ephemeris global-eclipse search bridge",
-                    central=bool(result_flags & swe.ECL_CENTRAL),
-                    greatest_lon_east_deg=float(geopos[0]),
-                    greatest_lat_deg=float(geopos[1]),
-                    magnitude=float(attr[8]), obscuration=float(attr[2]),
-                    shadow_width_km=abs(float(attr[3])) if eclipse_type != "partial" else None,
-                    saros_series=_optional_int(attr[9]), saros_member=_optional_int(attr[10]),
-                    metadata={
-                        "swisseph_result_flags": int(result_flags),
-                        "swisseph_where_flags": int(where_flags),
-                        "ephemeris_flag": "FLG_MOSEPH",
-                        "licensing_note": "Optional external search bridge; not redistributed or required by this package.",
-                    },
-                ))
-        else:
-            result_flags, times = swe.lun_eclipse_when(
-                cursor, flags, swe.ECL_ALLTYPES_LUNAR, False
-            )
-            maximum = float(times[0])
-            if maximum > end_jd:
-                break
-            if maximum >= start_jd:
-                _, attr = swe.lun_eclipse_how(maximum, (0.0, 0.0, 0.0), flags)
-                contacts = _nonzero_contacts({
-                    "P1": times[6], "U1": times[2], "U2": times[4],
-                    "MAX": times[0], "U3": times[5], "U4": times[3], "P4": times[7],
-                })
-                records.append(DiscoveredEclipse(
-                    key=_key("lunar", maximum), mode="lunar",
-                    eclipse_type=_swe_lunar_type(swe, int(result_flags)),
-                    greatest_jd_utc=maximum, contacts_jd_utc=contacts,
-                    discovery_backend=f"Swiss Ephemeris {getattr(swe, 'version', 'unknown')} / Moshier",
-                    source_label="Optional Swiss Ephemeris global-eclipse search bridge",
-                    central=True, magnitude=float(attr[8]),
-                    saros_series=_optional_int(attr[9]), saros_member=_optional_int(attr[10]),
-                    metadata={
-                        "umbral_magnitude": float(attr[0]),
-                        "penumbral_magnitude": float(attr[1]),
-                        "axis_offset_deg": float(attr[7]),
-                        "swisseph_result_flags": int(result_flags),
-                        "ephemeris_flag": "FLG_MOSEPH",
-                        "licensing_note": "Optional external search bridge; not redistributed or required by this package.",
-                    },
-                ))
-        cursor = maximum + 1.0
-    return records
-
-
-def _catalog_records(start_jd: float, end_jd: float, mode: str) -> list[DiscoveredEclipse]:
-    definitions = [SOLAR_2024] if mode == "solar" else [LUNAR_2025]
-    records = []
-    for definition in definitions:
-        if start_jd <= definition.greatest_jd <= end_jd:
-            records.append(DiscoveredEclipse(
-                key=definition.key,
-                mode=definition.mode,
-                eclipse_type="total",
-                greatest_jd_utc=definition.greatest_jd,
-                contacts_jd_utc=definition.contacts_jd,
-                discovery_backend="bundled NASA/GSFC reference catalogue",
-                source_label=definition.source_label,
-                central=True,
-                greatest_lat_deg=(25.2866666667 if definition.mode == "solar" else None),
-                greatest_lon_east_deg=(-104.1383333333 if definition.mode == "solar" else None),
-                magnitude=(1.0566 if definition.mode == "solar" else 1.1784),
-                metadata={"catalog_only": True},
-            ))
-    return records
 
 
 def _provider_positions(provider: PositionProvider | Callable, jd: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -341,42 +188,23 @@ def _solar_shadow_geometry(sun: np.ndarray, moon: np.ndarray) -> tuple[float, fl
     distance = float(np.linalg.norm(source_to_occ))
     direction = source_to_occ / distance
     downstream = max(0.0, -float(np.dot(moon, direction)))
-    closest = moon + downstream * direction
-    miss = float(np.linalg.norm(closest))
-    pen_slope = (R_SUN_KM + R_MOON_MEAN_KM) / math.sqrt(
-        max(distance * distance - (R_SUN_KM + R_MOON_MEAN_KM) ** 2, 1.0)
-    )
-    umb_slope = (R_SUN_KM - R_MOON_MEAN_KM) / math.sqrt(
-        max(distance * distance - (R_SUN_KM - R_MOON_MEAN_KM) ** 2, 1.0)
-    )
-    penumbra = R_MOON_MEAN_KM + downstream * pen_slope
-    umbra_signed = R_MOON_MEAN_KM - downstream * umb_slope
-    return miss, downstream, penumbra, umbra_signed
+    miss = float(np.linalg.norm(moon + downstream * direction))
+    cone = shadow_cone(R_SUN_KM, R_MOON_MEAN_KM, distance)
+    return miss, downstream, float(cone.penumbra_radius(downstream)), float(cone.umbra_radius(downstream))
 
 
 def _lunar_shadow_geometry(sun: np.ndarray, moon: np.ndarray) -> tuple[float, float, float, float]:
     distance = float(np.linalg.norm(sun))
     direction = -sun / distance
     downstream = float(np.dot(moon, direction))
-    closest = moon - downstream * direction
-    miss = float(np.linalg.norm(closest))
+    miss = float(np.linalg.norm(moon - downstream * direction))
     if downstream <= 0.0:
         # At new Moon the Moon is sunward of Earth, so Earth's anti-solar
-        # shadow cannot intersect it.  Returning negative cone radii keeps the
-        # finite-cone margin strictly positive and prevents false lunar events.
+        # shadow cannot reach it. Negative radii keep the margin positive.
         return miss, downstream, -1.0e9, -1.0e9
-    # Danjon enlargement is intentionally explicit rather than hidden in the
-    # Earth solid radius.  It is used only for lunar contact prediction.
-    earth_shadow_radius = RE_KM * 1.01
-    pen_slope = (R_SUN_KM + earth_shadow_radius) / math.sqrt(
-        max(distance * distance - (R_SUN_KM + earth_shadow_radius) ** 2, 1.0)
-    )
-    umb_slope = (R_SUN_KM - earth_shadow_radius) / math.sqrt(
-        max(distance * distance - (R_SUN_KM - earth_shadow_radius) ** 2, 1.0)
-    )
-    penumbra = earth_shadow_radius + downstream * pen_slope
-    umbra = earth_shadow_radius - downstream * umb_slope
-    return miss, downstream, penumbra, umbra
+    # The Danjon enlargement of Earth's shadow applies to lunar contacts only.
+    cone = shadow_cone(R_SUN_KM, RE_KM * LUNAR_DANJON_FACTOR, distance)
+    return miss, downstream, float(cone.penumbra_radius(downstream)), float(cone.umbra_radius(downstream))
 
 
 def _roots(function: Callable[[float], float], start: float, stop: float, *, samples: int = 721) -> list[float]:
@@ -542,139 +370,12 @@ def discover_with_position_provider(
     return unique
 
 
-
-
-def analytic_positions_gcrf_km(jd_utc: Sequence[float]) -> tuple[np.ndarray, np.ndarray]:
-    """Deterministic analytical geocentric Sun/Moon positions.
-
-    This compact osculating-element model retains the dominant lunar evection,
-    variation, annual equation, latitude, and range perturbations.  It is a
-    dependency-free discovery/preview fallback, not a JPL or SSAPy replacement.
-    Returned arrays are ``(sun, moon)`` in kilometres in a mean-equatorial
-    J2000-like frame.
-    """
-    jd = np.asarray(jd_utc, dtype=float).reshape(-1)
-    d = jd - 2451543.5
-    norm = lambda value: np.mod(value, 360.0)
-    sind = lambda value: np.sin(np.radians(value))
-    cosd = lambda value: np.cos(np.radians(value))
-
-    def solve(mean_deg, eccentricity):
-        mean = np.radians(np.asarray(mean_deg, dtype=float))
-        ecc = np.asarray(eccentricity, dtype=float)
-        estimate = mean + ecc*np.sin(mean)*(1.0 + ecc*np.cos(mean))
-        for _ in range(12):
-            delta = (estimate-ecc*np.sin(estimate)-mean)/(1.0-ecc*np.cos(estimate))
-            estimate -= delta
-            if np.max(np.abs(delta)) < 2.0e-13:
-                break
-        return estimate
-
-    sun_argp = norm(282.9404 + 4.70935e-5*d)
-    sun_ecc = 0.016709 - 1.151e-9*d
-    sun_mean = norm(356.0470 + 0.9856002585*d)
-    sun_e = solve(sun_mean, sun_ecc)
-    sun_xv = np.cos(sun_e)-sun_ecc
-    sun_yv = np.sqrt(1.0-sun_ecc*sun_ecc)*np.sin(sun_e)
-    sun_true = np.degrees(np.arctan2(sun_yv, sun_xv))
-    sun_range_au = np.hypot(sun_xv, sun_yv)
-    sun_lon = norm(sun_true+sun_argp)
-
-    node = norm(125.1228-0.0529538083*d)
-    inclination = 5.1454
-    moon_argp = norm(318.0634+0.1643573223*d)
-    moon_a_re = 60.2666
-    moon_ecc = 0.054900
-    moon_mean = norm(115.3654+13.0649929509*d)
-    moon_e = solve(moon_mean, moon_ecc)
-    xv = moon_a_re*(np.cos(moon_e)-moon_ecc)
-    yv = moon_a_re*np.sqrt(1.0-moon_ecc*moon_ecc)*np.sin(moon_e)
-    true_anomaly = np.degrees(np.arctan2(yv, xv))
-    radius_re = np.hypot(xv, yv)
-    node_r = np.radians(node)
-    inc_r = math.radians(inclination)
-    vw = np.radians(true_anomaly+moon_argp)
-    xh = radius_re*(np.cos(node_r)*np.cos(vw)-np.sin(node_r)*np.sin(vw)*math.cos(inc_r))
-    yh = radius_re*(np.sin(node_r)*np.cos(vw)+np.cos(node_r)*np.sin(vw)*math.cos(inc_r))
-    zh = radius_re*np.sin(vw)*math.sin(inc_r)
-    moon_lon = np.degrees(np.arctan2(yh, xh))
-    moon_lat = np.degrees(np.arctan2(zh, np.hypot(xh, yh)))
-
-    moon_mean_lon = norm(moon_mean+moon_argp+node)
-    sun_mean_lon = norm(sun_mean+sun_argp)
-    elongation = norm(moon_mean_lon-sun_mean_lon)
-    argument_latitude = norm(moon_mean_lon-node)
-    moon_lon += (
-        -1.274*sind(moon_mean-2.0*elongation) + 0.658*sind(2.0*elongation)
-        -0.186*sind(sun_mean) - 0.059*sind(2.0*moon_mean-2.0*elongation)
-        -0.057*sind(moon_mean-2.0*elongation+sun_mean)
-        +0.053*sind(moon_mean+2.0*elongation) + 0.046*sind(2.0*elongation-sun_mean)
-        +0.041*sind(moon_mean-sun_mean) - 0.035*sind(elongation)
-        -0.031*sind(moon_mean+sun_mean) - 0.015*sind(2.0*argument_latitude-2.0*elongation)
-        +0.011*sind(moon_mean-4.0*elongation)
-    )
-    moon_lat += (
-        -0.173*sind(argument_latitude-2.0*elongation)
-        -0.055*sind(moon_mean-argument_latitude-2.0*elongation)
-        -0.046*sind(moon_mean+argument_latitude-2.0*elongation)
-        +0.033*sind(argument_latitude+2.0*elongation)
-        +0.017*sind(2.0*moon_mean+argument_latitude)
-    )
-    radius_re += -0.58*cosd(moon_mean-2.0*elongation)-0.46*cosd(2.0*elongation)
-
-    obliquity = np.radians(23.4393-3.563e-7*d)
-    moon_lon_r = np.radians(moon_lon)
-    moon_lat_r = np.radians(moon_lat)
-    mx = radius_re*np.cos(moon_lon_r)*np.cos(moon_lat_r)
-    my_ecliptic = radius_re*np.sin(moon_lon_r)*np.cos(moon_lat_r)
-    mz_ecliptic = radius_re*np.sin(moon_lat_r)
-    my = my_ecliptic*np.cos(obliquity)-mz_ecliptic*np.sin(obliquity)
-    mz = my_ecliptic*np.sin(obliquity)+mz_ecliptic*np.cos(obliquity)
-
-    sun_lon_r = np.radians(sun_lon)
-    sx = sun_range_au*np.cos(sun_lon_r)
-    sy_ecliptic = sun_range_au*np.sin(sun_lon_r)
-    sy = sy_ecliptic*np.cos(obliquity)
-    sz = sy_ecliptic*np.sin(obliquity)
-    sun = np.column_stack([sx, sy, sz])*AU_KM
-    moon = np.column_stack([mx, my, mz])*RE_KM
-    return sun, moon
-
-
-class _AnalyticProvider:
-    name = "dependency-free truncated analytical discovery model"
-
-    def positions_gcrf_km(self, jd_utc):
-        return analytic_positions_gcrf_km(jd_utc)
-
-
-def _discover_analytic(start_jd: float, end_jd: float, mode: str) -> list[DiscoveredEclipse]:
-    return discover_with_position_provider(
-        start_jd, end_jd, mode=mode, provider=_AnalyticProvider(),
-        provider_name=_AnalyticProvider.name, coarse_step_hours=3.0,
-    )
-
 class _SsapyProvider:
-    def __init__(self, selected: str):
-        self.selected = selected
-        self.name = f"LLNL SSAPy numerical search ({selected})"
+    name = "SSAPy DE430 numerical search"
 
     def positions_gcrf_km(self, jd_utc):
         moon, sun = ssapy_ephemeris_positions_km(jd_utc)
         return sun, moon
-
-
-def _discover_ssapy(start_jd: float, end_jd: float, mode: str, backend: str) -> list[DiscoveredEclipse]:
-    selection = resolve_backend(backend)
-    if selection.selected not in {"ssapy", "ssapy-core"}:
-        raise BackendUnavailableError(
-            f"backend={backend!r} did not resolve to an executable LLNL state provider"
-        )
-    return discover_with_position_provider(
-        start_jd, end_jd, mode=mode,
-        provider=_SsapyProvider(selection.selected),
-        provider_name=f"LLNL SSAPy {selection.ephemeris_backend}",
-    )
 
 
 def discover_eclipses(
@@ -682,14 +383,8 @@ def discover_eclipses(
     end: float | str | datetime,
     *,
     kind: str = "all",
-    backend: SearchBackend = "auto",
 ) -> list[DiscoveredEclipse]:
-    """Discover all eclipses in a UTC interval.
-
-    ``backend='auto'`` prefers a healthy strict SSAPy provider, then the
-    optional Swiss Ephemeris bridge, and finally the portable analytical
-    discovery model.  The selected backend is recorded in every result.
-    """
+    """Discover all solar and/or lunar eclipses in a UTC interval with SSAPy."""
     start_jd, end_jd = _coerce_jd(start), _coerce_jd(end)
     if not start_jd < end_jd:
         raise ValueError("start must precede end")
@@ -697,47 +392,12 @@ def discover_eclipses(
     modes = ("solar", "lunar") if key == "all" else (key,)
     if any(mode not in {"solar", "lunar"} for mode in modes):
         raise ValueError("kind must be 'solar', 'lunar', or 'all'")
-    requested = str(backend).lower()
-    selected = requested
-    if requested == "auto":
-        try:
-            resolution = resolve_backend("auto")
-            selected = resolution.selected if resolution.selected in {"ssapy", "ssapy-core"} else ""
-        except Exception:
-            selected = ""
-        if not selected:
-            selected = "swisseph" if swisseph_available() else "analytic"
     records: list[DiscoveredEclipse] = []
     for mode in modes:
-        if selected in {"ssapy", "ssapy-core"}:
-            records.extend(_discover_ssapy(start_jd, end_jd, mode, selected))
-        elif selected == "swisseph":
-            records.extend(_discover_swisseph(start_jd, end_jd, mode))
-        elif selected == "analytic":
-            records.extend(_discover_analytic(start_jd, end_jd, mode))
-        elif selected in {"catalog", "reference"}:
-            records.extend(_catalog_records(start_jd, end_jd, mode))
-        else:
-            raise ValueError("search backend must be auto, ssapy, ssapy-core, swisseph, analytic, or catalog")
+        records.extend(discover_with_position_provider(
+            start_jd, end_jd, mode=mode, provider=_SsapyProvider(), provider_name=_SsapyProvider.name,
+        ))
     return sorted(records, key=lambda item: item.greatest_jd_utc)
-
-
-def swisseph_positions_gcrf_km(jd_utc: Sequence[float]) -> tuple[np.ndarray, np.ndarray]:
-    """Optional Swiss-Ephemeris geocentric J2000 equatorial positions.
-
-    This function is a catalogue/validation bridge, not a required state
-    backend.  No Swiss Ephemeris code or data are redistributed by this
-    project.
-    """
-    swe = _load_swe()
-    flags = swe.FLG_MOSEPH | swe.FLG_EQUATORIAL | swe.FLG_XYZ | swe.FLG_J2000
-    sun, moon = [], []
-    for value in np.asarray(jd_utc, dtype=float).reshape(-1):
-        sun_au, _ = swe.calc_ut(float(value), swe.SUN, flags)
-        moon_au, _ = swe.calc_ut(float(value), swe.MOON, flags)
-        sun.append(np.asarray(sun_au[:3], dtype=float) * AU_KM)
-        moon.append(np.asarray(moon_au[:3], dtype=float) * AU_KM)
-    return np.asarray(sun), np.asarray(moon)
 
 
 def _contact_aware_times(record: DiscoveredEclipse, n_frames: int) -> np.ndarray:
@@ -758,105 +418,35 @@ def _contact_aware_times(record: DiscoveredEclipse, n_frames: int) -> np.ndarray
     return np.sort(np.unique(np.concatenate([base[keep], exact])))
 
 
-def build_discovered_event(
-    record: DiscoveredEclipse,
-    *,
-    n_frames: int = 121,
-    state_backend: str = "auto",
-) -> ReferenceEvent:
-    """Materialize a discovered event as a renderer-ready immutable state."""
+def build_discovered_event(record: DiscoveredEclipse, *, n_frames: int = 121) -> ReferenceEvent:
+    """Materialize a discovered event with SSAPy states on a contact-aware timeline."""
     times = _contact_aware_times(record, n_frames)
-    requested = str(state_backend).lower()
-    selected = requested
-    if requested == "auto":
-        if record.discovery_backend.lower().startswith("llnl ssapy"):
-            selected = "ssapy"
-        elif "analytical" in record.discovery_backend.lower():
-            selected = "analytic"
-        elif swisseph_available():
-            selected = "swisseph"
-        else:
-            selected = "analytic"
-    if selected in {"ssapy", "ssapy-core"}:
-        resolution = resolve_backend(selected)
-        if resolution.selected not in {"ssapy", "ssapy-core"}:
-            raise BackendUnavailableError(f"strict state backend {selected!r} is unavailable")
-        moon, sun = ssapy_ephemeris_positions_km(times)
-        state_source = resolution.selected
-        frame_backend = resolution.frame_backend
-        backend_label = resolution.ephemeris_backend
-        strict = True
-        fallback = ""
-    elif selected == "swisseph":
-        sun, moon = swisseph_positions_gcrf_km(times)
-        swe = _load_swe()
-        state_source = "swisseph"
-        frame_backend = "deterministic GMST/WGS-84 reference transform"
-        backend_label = f"Swiss Ephemeris {getattr(swe, 'version', 'unknown')} Moshier J2000"
-        strict = True
-        fallback = ""
-    elif selected == "analytic":
-        sun, moon = analytic_positions_gcrf_km(times)
-        state_source = "analytic-discovery"
-        frame_backend = "deterministic GMST/WGS-84 reference transform"
-        backend_label = "truncated analytical Sun/Moon discovery model"
-        strict = False
-        fallback = "portable dependency-free preview; not a JPL/SSAPy ephemeris"
-    else:
-        raise ValueError("state_backend must be auto, ssapy, ssapy-core, swisseph, or analytic")
-
-    visible, separation = [], []
-    if record.mode == "solar":
-        for sun_i, moon_i in zip(sun, moon):
-            ds, dm = float(np.linalg.norm(sun_i)), float(np.linalg.norm(moon_i))
-            sep = math.acos(np.clip(np.dot(sun_i / ds, moon_i / dm), -1.0, 1.0))
-            visible.append(float(angular_circle_visible_fraction(
-                math.asin(R_MOON_MEAN_KM / dm), math.asin(R_SUN_KM / ds), sep
-            )))
-            separation.append(math.degrees(sep))
-    else:
-        for sun_i, moon_i in zip(sun, moon):
-            to_earth = -moon_i
-            to_sun = sun_i - moon_i
-            de, ds = float(np.linalg.norm(to_earth)), float(np.linalg.norm(to_sun))
-            sep = math.acos(np.clip(np.dot(to_earth / de, to_sun / ds), -1.0, 1.0))
-            visible.append(float(angular_circle_visible_fraction(
-                math.asin(RE_KM * 1.01 / de), math.asin(R_SUN_KM / ds), sep
-            )))
-            separation.append(math.degrees(math.pi - sep))
-    definition = record.to_definition()
+    selection = resolve_backend("ssapy")
+    moon, sun = ssapy_ephemeris_positions_km(times)
+    visible, separation = center_visibility_and_separation(record.mode, sun, moon)
     metadata = {
         "dynamic_event": True,
         "event_search_record": record.to_dict(),
         "event_search_backend": record.discovery_backend,
-        "state_source": state_source,
-        "ephemeris_backend": backend_label,
-        "frame_backend": frame_backend,
-        "backend_requested": requested,
-        "strict_backend": strict,
-        "backend_fallback_reason": fallback,
-        "time_input_pipeline": "UTC Julian date supplied to selected discovery/state backend",
+        "state_source": selection.selected,
+        "ephemeris_backend": selection.ephemeris_backend,
+        "frame_backend": selection.frame_backend,
         "solar_scope": "global",
         "event_classification": record.eclipse_type,
         "greatest_lat_deg": record.greatest_lat_deg,
         "greatest_lon_east_deg": record.greatest_lon_east_deg,
         "magnitude": record.magnitude,
         "obscuration": record.obscuration,
-        "moon_orientation_backend": (
-            "LLNL SSAPy DE440 binary lunar PCK" if state_source in {"ssapy", "ssapy-core"}
-            else "NAIF IAU_MOON 2009 text-PCK fallback"
-        ),
-        "state_interpolation": "shape-preserving cubic interpolation over serialized event samples",
     }
     return ReferenceEvent(
-        definition=definition,
+        definition=record.to_definition(),
         jd=np.asarray(times, dtype=float),
-        moon_km=np.asarray(moon, dtype=float),
-        sun_km=np.asarray(sun, dtype=float),
-        frame="GCRF/J2000 geocentric equatorial",
-        backend=backend_label,
-        center_visibility=np.asarray(visible, dtype=float),
-        separation_deg=np.asarray(separation, dtype=float),
+        moon_km=moon,
+        sun_km=sun,
+        frame="GCRF",
+        backend=selection.ephemeris_backend,
+        center_visibility=visible,
+        separation_deg=separation,
         metadata=metadata,
     )
 
@@ -865,7 +455,7 @@ def write_discovery_catalog(records: Iterable[DiscoveredEclipse], output: str | 
     path = Path(output).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "$schema": "ssapy-toolkit.eclipse.discovery-catalog/2.0",
+        "$schema": "ssatk.eclipse.discovery-catalog/1",
         "records": [record.to_dict() for record in records],
     }
     path.write_text(json.dumps(payload, indent=2, allow_nan=False), encoding="utf-8")
