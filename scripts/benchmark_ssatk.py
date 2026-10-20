@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the SSAPy-Toolkit benchmark dashboard from a source checkout."""
+"""Run the SSATK benchmark dashboard from a source checkout."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from ssapy_toolkit.benchmark import main
+from ssatk.benchmark import main
 
 
 if __name__ == "__main__":

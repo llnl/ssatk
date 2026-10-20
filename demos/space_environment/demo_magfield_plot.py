@@ -16,32 +16,46 @@ GALLERY_CATEGORY = "space_environment"
 import sys
 import os
 
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.magfield_plot_3d import plot_magfield_3d
+from ssatk.plots.figpath import figpath
+from ssatk.plots.magfield_plot_3d import plot_magfield_3d
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
-def main(make_figures=True):
-    if UNDER_PYTEST:
-        make_figures = False
+def main(make_figures=None, fast=None):
+    if make_figures is None:
+        make_figures = not UNDER_PYTEST
+    if fast is None:
+        fast = UNDER_PYTEST
     if not make_figures:
         return {"figure": None, "skipped": True, "reason": "figures_disabled"}
 
     try:
+        # gallery-call: *.html | *.png
         fig, stats = plot_magfield_3d(
             epoch           = 2025.0,
-            title           = "Earth Magnetic Field Lines & Van Allen Belts — IGRF 2025",
+            fidelity        = "draft" if fast else "high",
+            external_field  = None,
+            use_omni        = False,
+            belt_style      = "igrf",
+            show_magnetopause = False,
+            show_provenance = False,
+            split_topology  = False,
+            title           = "Earth internal field — IGRF 2025; illustrative L-shell belts",
             texture_path    = "auto",
             elev            = 8,
             azim            = -15,
-            max_r_re        = 15.0,
+            max_r_re        = 8.0,
             show_van_allen  = True,
             save_path       = figpath("demo_magfield_plot"),
         )
+        # gallery-end
     except ImportError as exc:
         print(f"Skipped: {exc}")
         return {"figure": None, "skipped": True, "reason": str(exc)}
-    print("Saved: demo_magfield_plot.html")
+    # A PNG preview belongs on the gallery card; the HTML remains interactive.
+    # Fail visibly if the configured publishing environment cannot export it.
+    fig.write_image(figpath("demo_magfield_plot.png"), width=1200, height=900)
+    print("Saved: demo_magfield_plot.html and demo_magfield_plot.png")
     return {"figure": fig, "stats": stats, "skipped": False}
 
 

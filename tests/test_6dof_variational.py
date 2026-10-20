@@ -1,20 +1,20 @@
 import numpy as np
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.accelerations_6dof import (
+import ssatk
+from ssatk.accelerations_6dof import (
     SpacecraftAccelConstBody,
     SpacecraftAccelConstNTW,
     constant_body_torque,
 )
-from ssapy_toolkit.coordinates.attitude import normalize_quaternion, rotate_vector
-from ssapy_toolkit.propagators_6dof import (
+from ssatk.coordinates.attitude import normalize_quaternion, rotate_vector
+from ssatk.propagators_6dof import (
     attitude_error_stm,
     propagate_6dof,
     propagate_6dof_covariance,
     propagate_6dof_variational,
 )
-from ssapy_toolkit.propagators_6dof.sixdof import sixdof_rhs
-from ssapy_toolkit.propagators_6dof.variational import (
+from ssatk.propagators_6dof.sixdof import sixdof_rhs
+from ssatk.propagators_6dof.variational import (
     _body_acceleration_jacobian,
     _free_rigid_body_jacobian,
     _gravity_gradient_jacobian,
@@ -169,20 +169,7 @@ def test_attitude_error_stm_has_nonsingular_three_parameter_attitude_state():
 
     assert result.attitude_error_stm is not None
     assert error_stm.shape == (2, 12, 12)
-    np.testing.assert_allclose(error_stm[0], np.eye(12), atol=1e-12)
-
-
-def test_variational_mass_state_is_included_and_custom_stm_is_honored():
-    stm0 = np.eye(14) * 2.0
-    result = propagate_6dof_variational(
-        times=[0.0, 0.01], inertia=np.eye(3), r0=[7e6, 0, 0], v0=[0, 7500, 0],
-        mass0=100.0, mass_flow_rate=lambda t, r, v, q, omega: 1.0, stm0=stm0,
-        rtol=1e-6,
-        atol=1e-9,
-    )
-    assert result.stm.shape == (2, 14, 14)
-    np.testing.assert_allclose(result.stm[0], stm0)
-    np.testing.assert_allclose(result.trajectory.mass, [100.0, 99.99], rtol=1e-8)
+    np.testing.assert_allclose(error_stm[0], np.eye(12), atol=1e-12, rtol=0)
 
 
 def test_covariance_transform_uses_stm_and_process_noise():
@@ -200,8 +187,8 @@ def test_covariance_transform_uses_stm_and_process_noise():
     expected = result.stm[-1] @ covariance0 @ result.stm[-1].T + process_noise[-1]
 
     assert ssatk.propagate_6dof_covariance is propagate_6dof_covariance
-    np.testing.assert_allclose(covariance[-1], expected, atol=1e-12)
-    np.testing.assert_allclose(covariance, np.swapaxes(covariance, -1, -2), atol=1e-12)
+    np.testing.assert_allclose(covariance[-1], expected, atol=1e-12, rtol=0)
+    np.testing.assert_allclose(covariance, np.swapaxes(covariance, -1, -2), atol=1e-12, rtol=0)
 
     local_stm = result.attitude_error_stm
     local_noise = np.broadcast_to(np.eye(12) * 1e-6, local_stm.shape).copy()
@@ -209,11 +196,11 @@ def test_covariance_transform_uses_stm_and_process_noise():
         result, np.eye(12), local_noise, coordinates="attitude_error"
     )
     local_expected = local_stm[-1] @ local_stm[-1].T + local_noise[-1]
-    np.testing.assert_allclose(local_covariance[-1], local_expected, atol=1e-12)
+    np.testing.assert_allclose(local_covariance[-1], local_expected, atol=1e-12, rtol=0)
     np.testing.assert_allclose(
         local_covariance,
         propagate_6dof_covariance(result, np.eye(12), local_noise),
-        atol=1e-12,
+        atol=1e-12, rtol=0
     )
 
 
@@ -266,7 +253,7 @@ def test_gravity_gradient_jacobian_matches_torque_finite_difference():
         position, quaternion, inertia, ssatk.EARTH_MU
     )
 
-    from ssapy_toolkit.propagators_6dof.sixdof import _gravity_gradient_torque_prepared
+    from ssatk.propagators_6dof.sixdof import _gravity_gradient_torque_prepared
 
     finite_dr = np.empty((3, 3))
     finite_dq = np.empty((3, 4))

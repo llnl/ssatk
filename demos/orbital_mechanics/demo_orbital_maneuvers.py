@@ -1,4 +1,4 @@
-"""All-in-one orbital maneuver demo for SSAPy-Toolkit.
+"""All-in-one orbital maneuver demo for SSATK.
 
 This gallery demo consolidates the previous small transfer, burn-conversion,
 and rendezvous maneuver demos into one user-facing workflow.  It compares
@@ -18,23 +18,22 @@ import numpy as np
 from ssapy import Orbit
 from ssapy.compute import rv
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
-from ssapy_toolkit.orbital_mechanics.burn_to_deltav import burn_to_deltav
-from ssapy_toolkit.orbital_mechanics.deltav_to_burn import deltav_to_burn
-from ssapy_toolkit.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
-from ssapy_toolkit.orbital_mechanics.transfer_hohmann import transfer_hohmann
-from ssapy_toolkit.orbital_mechanics.transfer_inclination_continuous import transfer_inclination_continuous
-from ssapy_toolkit.orbital_mechanics.transfer_optimal_function import transfer_optimal
-from ssapy_toolkit.orbital_mechanics.transfer_ssapy_function import transfer_ssapy
-from ssapy_toolkit.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.orbital_mechanics.burn_to_deltav import burn_to_deltav
+from ssatk.orbital_mechanics.deltav_to_burn import deltav_to_burn
+from ssatk.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
+from ssatk.orbital_mechanics.transfer_hohmann import transfer_hohmann
+from ssatk.orbital_mechanics.transfer_inclination_continuous import transfer_inclination_continuous
+from ssatk.orbital_mechanics.transfer_optimal_function import transfer_optimal
+from ssatk.orbital_mechanics.transfer_ssapy_function import transfer_ssapy
+from ssatk.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
     transfer_velocity_and_inclination_continuous,
 )
-from ssapy_toolkit.orbital_mechanics.transfer_velocity_continuous import transfer_velocity_continuous
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.orbital_mechanics.transfer_velocity_continuous import transfer_velocity_continuous
+from ssatk.plots.plotutils import figsave
 
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 INITIAL_ORBIT_COLOR = "#1f77b4"
 FINAL_ORBIT_COLOR = "#2ca02c"
 MANEUVER_COLOR = "#d62728"
@@ -496,7 +495,7 @@ def _summarize_delta_v(results_by_family):
 
 
 def _build_maneuver_results(fast):
-    samples = 32 if fast else 180
+    samples = 360
     r0, v0, _ = _circular_state(7000e3)
     transfer_angle = np.deg2rad(150.0)
     r_target, v_target, _ = _circular_state(9000e3, transfer_angle)
@@ -1118,7 +1117,7 @@ def _make_summary_figure(results):
     )
 
     fig.suptitle(
-        "SSAPy-Toolkit orbital maneuver overview\n"
+        "SSATK orbital maneuver overview\n"
         "Earth is rendered to scale at the origin; blue is the starting orbit, green is the target/final orbit, and red is the maneuver path.",
         fontsize=16,
     )
@@ -1315,16 +1314,26 @@ def main(make_figures=None, fast=None):
     elliptical_fig = None
     split_plane_change_fig = None
     if make_figures:
+        # gallery-call: orbital_maneuvers_overview.jpg
         fig = _make_summary_figure(results)
-        output_path = figsave(fig, f"{FIGDIR}/orbital_maneuvers_overview.jpg")
+        # gallery-end
+        output_path = figsave(fig, f"orbital_maneuvers_overview.jpg")
+        # gallery-call: orbital_maneuvers_staged_optimal.jpg
         staged_fig = _make_staged_optimal_figure(results)
-        staged_output_path = figsave(staged_fig, f"{FIGDIR}/orbital_maneuvers_staged_optimal.jpg")
+        # gallery-end
+        staged_output_path = figsave(staged_fig, f"orbital_maneuvers_staged_optimal.jpg")
+        # gallery-call: orbital_maneuvers_staged_timeline.jpg
         staged_timeline_fig = _make_staged_timeline_figure(results)
-        staged_timeline_output_path = figsave(staged_timeline_fig, f"{FIGDIR}/orbital_maneuvers_staged_timeline.jpg")
+        # gallery-end
+        staged_timeline_output_path = figsave(staged_timeline_fig, f"orbital_maneuvers_staged_timeline.jpg")
+        # gallery-call: orbital_maneuvers_elliptical_two_burn.jpg
         elliptical_fig = _make_elliptical_two_burn_figure(results)
-        elliptical_output_path = figsave(elliptical_fig, f"{FIGDIR}/orbital_maneuvers_elliptical_two_burn.jpg")
+        # gallery-end
+        elliptical_output_path = figsave(elliptical_fig, f"orbital_maneuvers_elliptical_two_burn.jpg")
+        # gallery-call: orbital_maneuvers_split_plane_change.jpg
         split_plane_change_fig = _make_split_plane_change_figure(results)
-        split_plane_change_output_path = figsave(split_plane_change_fig, f"{FIGDIR}/orbital_maneuvers_split_plane_change.jpg")
+        # gallery-end
+        split_plane_change_output_path = figsave(split_plane_change_fig, f"orbital_maneuvers_split_plane_change.jpg")
 
     return {
         "title": "Orbital Maneuvers Overview",

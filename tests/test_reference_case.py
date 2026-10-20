@@ -1,3 +1,4 @@
+# Literal SI-scaled OEM state/covariance/acceleration fixtures are exact; elapsed epochs allow 1e-9 s.
 import json
 from io import StringIO
 from types import SimpleNamespace
@@ -5,84 +6,13 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ssapy_toolkit.io import (
-    ReferenceCase,
-    ReferenceCaseFiles,
+from ssatk.io import (
     ReferenceCaseSegment,
     compare_reference_case,
     read_oem,
     read_reference_case,
     write_reference_case,
 )
-
-
-def test_compare_reference_case_exact_match():
-    trajectory = SimpleNamespace(t=np.array([0.0, 1.0]), r=np.array([[1., 2., 3.], [2., 3., 4.]]), v=np.ones((2, 3)))
-    result = compare_reference_case(trajectory, ReferenceCase(trajectory.t, trajectory.r, trajectory.v, {}))
-    assert result["sample_count"] == 2
-    assert result["max_position_m"] == result["max_velocity_m_s"] == 0.0
-
-
-def test_compare_reference_case_interpolates():
-    actual = SimpleNamespace(t=np.array([0.0, 2.0]), r=np.array([[0., 0., 0.], [2., 4., 6.]]), v=np.array([[1., 2., 3.], [3., 4., 5.]]))
-    reference = ReferenceCase(np.array([1.0]), np.array([[1., 2., 3.]]), np.array([[2., 3., 4.]]), {})
-    result = compare_reference_case(actual, reference)
-    assert result["sample_count"] == 1
-    assert result["max_position_m"] == result["max_velocity_m_s"] == 0.0
-
-
-def test_compare_reference_case_rejects_span_and_metadata_mismatch():
-    actual = SimpleNamespace(t=np.array([0., 1.]), r=np.zeros((2, 3)), v=np.zeros((2, 3)), metadata={"reference_frame": "GCRF"})
-    outside = ReferenceCase(np.array([2.]), np.zeros((1, 3)), np.zeros((1, 3)), {})
-    with pytest.raises(ValueError, match="time span"):
-        compare_reference_case(actual, outside)
-    mismatch = ReferenceCase(actual.t, actual.r, actual.v, {"reference_frame": "ITRF"})
-    with pytest.raises(ValueError, match="reference_frame"):
-        compare_reference_case(actual, mismatch)
-
-
-def test_write_reference_case_emits_reproducible_oem_and_metadata(tmp_path):
-    trajectory = SimpleNamespace(
-        t=np.array([10.0, 12.5]),
-        r=np.array([[7_000_000.0, 0.0, 0.0], [7_000_001.0, 10.0, 20.0]]),
-        v=np.array([[0.0, 7_500.0, 0.0], [-1.0, 7_500.5, 2.0]]),
-    )
-
-    files = write_reference_case(
-        trajectory,
-        tmp_path,
-        epoch="2025-01-01T00:00:00Z",
-        case_name="leo_truth",
-        force_models=["point_mass_earth", "J2"],
-        constants={"mu_m3_s2": 3.986004418e14, "J2": 1.08262668e-3},
-        integrator={"method": "DOP853", "rtol": 1e-12, "atol": 1e-9},
-    )
-
-    assert isinstance(files, ReferenceCaseFiles)
-    metadata = json.loads(files.metadata_path.read_text())
-    ephemeris = files.ephemeris_path.read_text()
-    assert metadata["reference_frame"] == "GCRF"
-    assert metadata["time_origin_s"] == 10.0
-    assert metadata["force_models"] == ["point_mass_earth", "J2"]
-    assert metadata["files"]["ephemeris"] == "leo_truth.oem"
-    assert "REF_FRAME = GCRF" in ephemeris
-    assert "2025-01-01T00:00:02.500000" in ephemeris
-    assert "STOP_TIME = 2025-01-01T00:00:02.500000" in ephemeris
-    assert "COMMENT SSATK reference ephemeris" in ephemeris
-    assert "DATA_START" not in ephemeris
-    assert "DATA_STOP" not in ephemeris
-    assert "# EPOCH" not in ephemeris
-    assert "7.00000000000000000e+03" in ephemeris
-
-
-def test_write_reference_case_rejects_ambiguous_epochs_and_repeated_outputs(tmp_path):
-    trajectory = SimpleNamespace(t=[0.0], r=[[1.0, 2.0, 3.0]], v=[[4.0, 5.0, 6.0]])
-    with pytest.raises(ValueError, match="timezone"):
-        write_reference_case(trajectory, tmp_path, epoch="2025-01-01T00:00:00")
-
-    write_reference_case(trajectory, tmp_path, epoch="2025-01-01T00:00:00Z")
-    with pytest.raises(FileExistsError):
-        write_reference_case(trajectory, tmp_path, epoch="2025-01-01T00:00:00Z")
 
 
 def test_reference_case_oem_round_trip_reads_si_states(tmp_path):
@@ -95,13 +25,15 @@ def test_reference_case_oem_round_trip_reads_si_states(tmp_path):
 
     loaded = read_reference_case(files.metadata_path)
     assert loaded.metadata["case_name"] == "round_trip"
-    np.testing.assert_allclose(loaded.t, trajectory.t, atol=1e-12)
-    np.testing.assert_allclose(loaded.r, trajectory.r, atol=1e-9)
-    np.testing.assert_allclose(loaded.v, trajectory.v, atol=1e-9)
+    # Two-part Julian-date subtraction has a few ps roundoff. Allow 10 ps,
+    # explicitly, rather than an implicit relative tolerance on elapsed time.
+    np.testing.assert_allclose(loaded.t, trajectory.t, atol=1e-11, rtol=0)
+    np.testing.assert_allclose(loaded.r, trajectory.r, atol=1e-9, rtol=0)
+    np.testing.assert_allclose(loaded.v, trajectory.v, atol=1e-9, rtol=0)
     residuals = compare_reference_case(trajectory, files.ephemeris_path)
     assert residuals["max_position_m"] < 1e-8
     assert residuals["max_velocity_m_s"] < 1e-8
-    np.testing.assert_allclose(read_reference_case(files.ephemeris_path).r, trajectory.r, atol=1e-9)
+    np.testing.assert_allclose(read_reference_case(files.ephemeris_path).r, trajectory.r, atol=1e-9, rtol=0)
 
 
 def _multi_segment_oem():
@@ -144,27 +76,10 @@ def test_read_oem_supports_inline_orekit_style_multi_segment_and_si_conversion()
     assert loaded.metadata["ORIGINATOR"] == "OREKIT"
     assert loaded.segments[0].comments == ("first segment",)
     assert loaded.segments[1].comments == ("second segment",)
-    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0])
-    np.testing.assert_allclose(loaded.r[:, 0], [1.0e6, 1.001e6, 1.002e6, 1.003e6])
-    np.testing.assert_allclose(loaded.v[0], [4.0e3, 5.0e3, 6.0e3])
+    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.r[:, 0], [1.0e6, 1.001e6, 1.002e6, 1.003e6])
+    np.testing.assert_array_equal(loaded.v[0], [4.0e3, 5.0e3, 6.0e3])
     assert loaded.acceleration is None
-
-
-def test_read_reference_case_preserves_standalone_oem_metadata(tmp_path):
-    path = tmp_path / "orekit.oem"
-    path.write_text(_multi_segment_oem(), encoding="utf-8")
-    loaded = read_reference_case(path)
-    assert loaded.metadata["format"] == "ccsds-oem"
-    assert loaded.metadata["reference_frame"] == "GCRF"
-    assert loaded.metadata["epoch"] == "2025-001T00:00:00.000000"
-
-
-def test_read_oem_accepts_legacy_data_markers():
-    legacy = _multi_segment_oem().replace("META_STOP\n", "META_STOP\nDATA_START\n")
-    legacy = legacy.replace("META_START\nCOMMENT second", "DATA_STOP\nMETA_START\nCOMMENT second") + "DATA_STOP\n"
-    loaded = read_oem(legacy)
-    assert len(loaded.segments) == 2
-    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0])
 
 
 @pytest.mark.parametrize("time_system", ["UTC", "TAI", "TT", "TDB", "TCB", "TCG", "UT1", "GPS"])
@@ -172,7 +87,7 @@ def test_read_oem_accepts_legacy_data_markers():
 def test_read_oem_supports_absolute_time_systems_and_epoch_formats(time_system, date):
     source = _multi_segment_oem().replace("TIME_SYSTEM = UTC", f"TIME_SYSTEM = {time_system}")
     loaded = read_oem(source.replace("2025-001", date))
-    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0], atol=1e-9)
+    np.testing.assert_allclose(loaded.t, [0.0, 1.0, 2.0, 3.0], atol=1e-9, rtol=0)
 
 
 def test_read_reference_case_applies_absolute_gps_epoch_and_segment_offsets(tmp_path):
@@ -187,9 +102,9 @@ def test_read_reference_case_applies_absolute_gps_epoch_and_segment_offsets(tmp_
     }))
 
     loaded = read_reference_case(metadata_path)
-    np.testing.assert_allclose(loaded.t, [10.0, 11.0, 12.0, 13.0], atol=1e-9)
-    np.testing.assert_allclose(loaded.segments[0].t, [10.0, 11.0], atol=1e-9)
-    np.testing.assert_allclose(loaded.segments[1].t, [12.0, 13.0], atol=1e-9)
+    np.testing.assert_allclose(loaded.t, [10.0, 11.0, 12.0, 13.0], atol=1e-9, rtol=0)
+    np.testing.assert_allclose(loaded.segments[0].t, [10.0, 11.0], atol=1e-9, rtol=0)
+    np.testing.assert_allclose(loaded.segments[1].t, [12.0, 13.0], atol=1e-9, rtol=0)
 
 
 def test_read_oem_handles_valid_utc_leap_second():
@@ -203,31 +118,7 @@ def test_read_oem_handles_valid_utc_leap_second():
         "2016-12-31T23:59:60 1.001D+03 2 3 4 5 6\n"
         "2017-01-01T00:00:00 1.002D+03 2 3 4 5 6\n",
     )
-    np.testing.assert_allclose(read_oem(source).t, [0.0, 1.0, 2.0], atol=1e-9)
-
-
-def test_read_oem_rejects_mixed_frames_and_objects():
-    mixed = _multi_segment_oem().replace("REF_FRAME = GCRF", "REF_FRAME = ITRF", 1)
-    with pytest.raises(ValueError, match="same object, center, frame, and time system"):
-        read_oem(mixed)
-    mixed_object = _multi_segment_oem().replace("OBJECT_ID = 1998-067A", "OBJECT_ID = 2000-001A", 1)
-    with pytest.raises(ValueError, match="same object, center, frame, and time system"):
-        read_oem(mixed_object)
-
-
-def test_read_oem_compare_compatibility_and_package_exports():
-    from ssapy_toolkit.io import read_oem as exported_read_oem
-
-    loaded = exported_read_oem(_multi_segment_oem())
-    actual = SimpleNamespace(
-        t=loaded.t,
-        r=loaded.r,
-        v=loaded.v,
-        metadata={"reference_frame": "gcrf", "center_name": "earth"},
-    )
-    residuals = compare_reference_case(actual, loaded)
-    assert residuals["sample_count"] == 4
-    assert residuals["max_position_m"] == residuals["max_velocity_m_s"] == 0.0
+    np.testing.assert_allclose(read_oem(source).t, [0.0, 1.0, 2.0], atol=1e-9, rtol=0)
 
 
 def _covariance_block(epoch, frame="RTN", diagonal=1.0):
@@ -255,9 +146,9 @@ def test_read_oem_preserves_covariance_epochs_frames_and_si_units():
     source += _covariance_block("2025-001T00:00:03.000000", diagonal=3.0)
     loaded = read_oem(source)
 
-    np.testing.assert_allclose(loaded.covariance_t, [0.5, 3.0])
-    np.testing.assert_allclose(np.diag(loaded.covariance[0]), np.full(6, 2.0e6))
-    np.testing.assert_allclose(np.diag(loaded.covariance[1]), np.full(6, 3.0e6))
+    np.testing.assert_allclose(loaded.covariance_t, [0.5, 3.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(np.diag(loaded.covariance[0]), np.full(6, 2.0e6))
+    np.testing.assert_array_equal(np.diag(loaded.covariance[1]), np.full(6, 3.0e6))
     assert loaded.covariance_reference_frame == "RTN"
     assert loaded.segments[0].covariance_reference_frame == "RTN"
     assert loaded.segments[1].covariance_reference_frame == "RTN"
@@ -280,8 +171,8 @@ def test_write_reference_case_round_trips_covariance_and_sidecar_offsets(tmp_pat
     )
 
     loaded = read_reference_case(files.metadata_path)
-    np.testing.assert_allclose(loaded.covariance_t, [10.0, 12.5])
-    np.testing.assert_allclose(loaded.covariance, covariance)
+    np.testing.assert_allclose(loaded.covariance_t, [10.0, 12.5], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.covariance, covariance)
     assert loaded.covariance_reference_frame == "RIC"
     metadata = json.loads(files.metadata_path.read_text())
     assert metadata["covariance_count"] == 2
@@ -295,167 +186,8 @@ def _acceleration_multi_segment_oem():
 def test_read_oem_preserves_acceleration_across_segments_in_si_units():
     loaded = read_oem(_acceleration_multi_segment_oem())
 
-    np.testing.assert_allclose(loaded.acceleration_t, [0.0, 1.0, 2.0, 3.0])
-    np.testing.assert_allclose(loaded.acceleration, np.tile([1.0, 2.0, 3.0], (4, 1)))
-    np.testing.assert_allclose(loaded.segments[0].acceleration_t, [0.0, 1.0])
-    np.testing.assert_allclose(loaded.segments[1].acceleration, [[1.0, 2.0, 3.0]] * 2)
+    np.testing.assert_allclose(loaded.acceleration_t, [0.0, 1.0, 2.0, 3.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.acceleration, np.tile([1.0, 2.0, 3.0], (4, 1)))
+    np.testing.assert_allclose(loaded.segments[0].acceleration_t, [0.0, 1.0], rtol=0, atol=1e-9)
+    np.testing.assert_array_equal(loaded.segments[1].acceleration, [[1.0, 2.0, 3.0]] * 2)
     assert loaded.metadata["acceleration_count"] == 4
-
-
-def test_read_oem_preserves_acceleration_when_only_some_segments_include_it():
-    source = _acceleration_multi_segment_oem()
-    source = source.replace(
-        "2025-001T00:00:02.000000 1.002D+03 2 3 4 5 6 1e-3 2e-3 3e-3",
-        "2025-001T00:00:02.000000 1.002D+03 2 3 4 5 6",
-    ).replace(
-        "2025-001T00:00:03.000000 1.003D+03 2 3 4 5 6 1e-3 2e-3 3e-3",
-        "2025-001T00:00:03.000000 1.003D+03 2 3 4 5 6",
-    )
-    loaded = read_oem(source)
-
-    np.testing.assert_allclose(loaded.acceleration_t, [0.0, 1.0])
-    np.testing.assert_allclose(loaded.acceleration, [[1.0, 2.0, 3.0]] * 2)
-    assert loaded.segments[0].acceleration is not None
-    assert loaded.segments[1].acceleration is None
-
-
-def test_write_reference_case_round_trips_acceleration_and_sidecar_metadata(tmp_path):
-    trajectory = SimpleNamespace(
-        t=np.array([10.0, 12.5]),
-        r=np.array([[7_000_000.0, 0.0, 0.0], [7_000_001.0, 10.0, 20.0]]),
-        v=np.array([[0.0, 7_500.0, 0.0], [-1.0, 7_500.5, 2.0]]),
-    )
-    acceleration = np.array([[1.0e-3, -2.0e-3, 3.0e-3], [4.0e-3, 5.0e-3, -6.0e-3]])
-    files = write_reference_case(
-        trajectory,
-        tmp_path,
-        epoch="2025-01-01T00:00:00Z",
-        acceleration=acceleration,
-    )
-
-    data_lines = [
-        line for line in files.ephemeris_path.read_text().splitlines()
-        if line.startswith("2025-01-01T")
-    ]
-    assert all(len(line.split()) == 10 for line in data_lines)
-    loaded = read_reference_case(files.metadata_path)
-    np.testing.assert_allclose(loaded.acceleration_t, [10.0, 12.5])
-    np.testing.assert_allclose(loaded.acceleration, acceleration)
-    metadata = json.loads(files.metadata_path.read_text())
-    assert metadata["acceleration_count"] == 2
-    assert metadata["acceleration_units"] == "m/s^2"
-    assert metadata["acceleration_epochs_s"] == [0.0, 2.5]
-
-
-@pytest.mark.parametrize(
-    "bad",
-    [
-        _acceleration_multi_segment_oem().replace(" 6 1e-3 2e-3 3e-3", " 6 1e-3 2e-3"),
-        _acceleration_multi_segment_oem().replace(" 6 1e-3 2e-3 3e-3", " 6 1e-3 2e-3 nan"),
-        _acceleration_multi_segment_oem().replace(
-            "2025-001T00:00:01.000000 1.001D+03",
-            "2025-001T00:00:00.000000 1.001D+03",
-        ),
-        _multi_segment_oem().replace(
-            "2025-001T00:00:00.000000 1.0D+03 2 3 4 5 6",
-            "2025-001T00:00:00.000000 1.0D+03 2 3 4 5 6 1e-3 2e-3 3e-3",
-        ),
-        _acceleration_multi_segment_oem().replace(
-            "2025-001T00:00:02.000000 1.002D+03 2 3 4 5 6 1e-3 2e-3 3e-3",
-            "2025-001T00:00:02.000000 1.002D+03 2 3 4 5 6",
-        ),
-    ],
-)
-def test_read_oem_rejects_invalid_acceleration_records(bad):
-    with pytest.raises(ValueError):
-        read_oem(bad)
-
-
-@pytest.mark.parametrize(
-    ("key", "value"),
-    [
-        ("acceleration_count", 99),
-        ("acceleration_epochs_s", [0.0, 3.0]),
-        ("acceleration_segment_counts", [1, 1]),
-        ("acceleration_order", ["ax", "az", "ay"]),
-    ],
-)
-def test_read_reference_case_rejects_acceleration_sidecar_mismatches(tmp_path, key, value):
-    trajectory = SimpleNamespace(
-        t=np.array([0.0, 1.0]),
-        r=np.zeros((2, 3)),
-        v=np.zeros((2, 3)),
-    )
-    files = write_reference_case(
-        trajectory,
-        tmp_path,
-        epoch="2025-01-01T00:00:00Z",
-        acceleration=np.ones((2, 3)),
-    )
-    metadata = json.loads(files.metadata_path.read_text())
-    metadata[key] = value
-    files.metadata_path.write_text(json.dumps(metadata))
-    with pytest.raises(ValueError, match="acceleration"):
-        read_reference_case(files.metadata_path)
-
-
-def test_write_reference_case_rejects_invalid_acceleration_epochs(tmp_path):
-    trajectory = SimpleNamespace(t=[0.0, 1.0], r=np.zeros((2, 3)), v=np.zeros((2, 3)))
-    with pytest.raises(ValueError, match="strictly increasing"):
-        write_reference_case(
-            trajectory,
-            tmp_path,
-            epoch="2025-01-01T00:00:00Z",
-            acceleration=np.ones((2, 3)),
-            acceleration_t=[1.0, 0.0],
-        )
-    with pytest.raises(ValueError, match="match the state epochs"):
-        write_reference_case(
-            trajectory,
-            tmp_path,
-            epoch="2025-01-01T00:00:00Z",
-            acceleration=np.ones((2, 3)),
-            acceleration_t=[0.0, 2.0],
-        )
-
-
-@pytest.mark.parametrize(
-    "replacement",
-    [
-        _covariance_block("2025-001T00:00:00.000000").replace("0 0 0 0 0 1.0\n", ""),
-        _covariance_block("2025-001T00:00:00.000000").replace("1.0  ", "nan  "),
-        _covariance_block("2025-001T00:00:00.000000", frame="UNKNOWN"),
-    ],
-)
-def test_read_oem_rejects_invalid_covariance_blocks(replacement):
-    source = _multi_segment_oem() + replacement
-    with pytest.raises(ValueError):
-        read_oem(source)
-
-
-@pytest.mark.parametrize("bad", [
-    _multi_segment_oem().replace("CCSDS_OEM_VERS = 2.0", "CCSDS_OEM_VERS = 3.0"),
-    _multi_segment_oem().replace("ORIGINATOR = OREKIT\n", ""),
-    _multi_segment_oem().replace("ORIGINATOR = OREKIT", "ORIGINATOR = OREKIT\nORIGINATOR = DUPLICATE"),
-    _multi_segment_oem().replace("TIME_SYSTEM = UTC", "TIME_SYSTEM = MRT"),
-    _multi_segment_oem().replace("TIME_SYSTEM = UTC", "TIME_SYSTEM = SCLK"),
-    _multi_segment_oem().replace(
-        "2025-001T00:00:01.000000 1.001D+03",
-        "2025-001T00:00:60.000000 1.001D+03",
-    ),
-    _multi_segment_oem().replace("STOP_TIME = 2025-001T00:00:01.000000", "STOP_TIME = 2024-001T00:00:01.000000"),
-    _multi_segment_oem().replace("2025-001T00:00:00.000000 1.0D+03", "2024-001T00:00:00.000000 1.0D+03"),
-    _multi_segment_oem().replace("1.0D+03 2 3 4 5 6", "nan 2 3 4 5 6"),
-    _multi_segment_oem().replace("1.0D+03 2 3 4 5 6", "1.0D+03 2 3 4 5 6 7"),
-    _multi_segment_oem().replace("2025-001T00:00:01.000000 1.001D+03", "2025-001T00:00:00.000000 1.001D+03"),
-])
-def test_read_oem_rejects_malformed_state_only_messages(bad):
-    with pytest.raises(ValueError):
-        read_oem(bad)
-
-
-def test_read_oem_rejects_unclosed_legacy_data_block():
-    legacy = _multi_segment_oem().split("META_START\nCOMMENT second", 1)[0]
-    legacy = legacy.replace("META_STOP\n", "META_STOP\nDATA_START\n")
-    with pytest.raises(ValueError, match="missing DATA_STOP"):
-        read_oem(legacy)

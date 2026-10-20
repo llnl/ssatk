@@ -19,29 +19,31 @@ def main(make_figures=None, fast=None):
     from astropy.time import Time
     import ssapy
 
-    from ssapy_toolkit.orbital_mechanics.orbital_accel_model_comparisons import compare_models  # [3]
-    from ssapy_toolkit.plots.plotutils import figsave  # [3]
+    from ssatk.orbital_mechanics.orbital_accel_model_comparisons import compare_models
+    from ssatk.plots.plotutils import figsave
 
     t0 = Time("2026-01-21T00:00:00", scale="utc")
     r0_m = np.array([7000e3, 0.0, 0.0], dtype=float)
     v0_mps = np.array([0.0, 7.5e3, 1.0e3], dtype=float)
     orbit = ssapy.Orbit(r=r0_m, v=v0_mps, t=t0)
 
-    dt_s = 300.0 if fast else 60.0
-    duration_s = 600.0 if fast else 3600.0
-    times = np.arange(0.0, duration_s + dt_s, dt_s, dtype=float)
+    # Gallery mode must retain the physics: all nine models, one complete
+    # orbit, and at most one degree of mean anomaly between samples.
+    times = np.linspace(0.0, float(orbit.period), 361 if fast else 721)
 
+    # gallery-call: *.jpg
     out = compare_models(
         orbit=orbit,
         times=times,
         assume_times="offset",
-        ode_kwargs={"rtol": 1e-8, "atol": 1e-10} if fast else {"rtol": 1e-10, "atol": 1e-12},
+        ode_kwargs={"rtol": 1e-11, "atol": 1e-12},
         reference=None,
-        plot_title="Demo: SSAPy accel ladder divergences",
+        plot_title="Force-model ladder · one complete LEO orbit",
         show_legend=True,
         epsilon_m=1e-3,
-        max_rungs=2 if fast else None,
+        max_rungs=None,
     )
+    # gallery-end
 
     dash = out["dashboard"]
     fig_time = None
@@ -59,12 +61,11 @@ def main(make_figures=None, fast=None):
         raise RuntimeError("Expected dashboard figures not found in output.")
 
     if make_figures:
-        out_dir = "figures"
-        figsave(fig_time, out_dir + "/accel_ladder_time_domain.jpg", dpi=200)
-        figsave(fig_rung, out_dir + "/accel_ladder_rung_summary.jpg", dpi=200)
+        figsave(fig_time, "accel_ladder_time_domain.jpg", dpi=200)
+        figsave(fig_rung, "accel_ladder_rung_summary.jpg", dpi=200)
         print("Saved via ssatk figure output root:")
-        print("  " + out_dir + "/accel_ladder_time_domain.jpg")
-        print("  " + out_dir + "/accel_ladder_rung_summary.jpg")
+        print("  " + "accel_ladder_time_domain.jpg")
+        print("  " + "accel_ladder_rung_summary.jpg")
 
     return {"out": out, "figure_time_domain": fig_time, "figure_rung_summary": fig_rung}
 

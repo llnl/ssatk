@@ -12,8 +12,8 @@ import os
 import sys
 from pathlib import Path
 
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.globe_orbit_daynight_plotly import plot_globe_orbit_daynight_plotly
+from ssatk.plots.figpath import figpath
+from ssatk.plots.globe_orbit_daynight_plotly import plot_globe_orbit_daynight_plotly
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -28,6 +28,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         save_path = figpath("demo_globe_orbit_daynight.html")
 
+    # gallery-call: *.html
     fig = plot_globe_orbit_daynight_plotly(
         a_km=7000.0,
         e=0.001,
@@ -41,6 +42,7 @@ def main(make_figures=None, fast=None):
         save_path=save_path,
         show_sun_body=False,
     )
+    # gallery-end
 
     if save_path:
         print(f"Saved: {save_path}")

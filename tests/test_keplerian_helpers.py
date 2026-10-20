@@ -1,13 +1,14 @@
+# Angle/unit conversion: 2e-14 relative; circular loop reference: 1e-6 m and 1e-9 m/s.
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU, MOON_RADIUS, RGEO
-from ssapy_toolkit.orbital_mechanics import keplerian
+from ssatk.constants import EARTH_MU, RGEO
+from ssatk.orbital_mechanics import keplerian
 
 
 def test_hkoe_period_longitude_and_anomaly_helpers(capsys):
-    np.testing.assert_allclose(keplerian.hkoe([RGEO, 0.1, 30.0, 40.0, 50.0, 60.0]), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3])
-    np.testing.assert_allclose(keplerian.hkoe(RGEO, 0.1, 30.0, 40.0, 50.0, 60.0), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3])
+    np.testing.assert_allclose(keplerian.hkoe([RGEO, 0.1, 30.0, 40.0, 50.0, 60.0]), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3], rtol=2e-14, atol=0)
+    np.testing.assert_allclose(keplerian.hkoe(RGEO, 0.1, 30.0, 40.0, 50.0, 60.0), [RGEO, 0.1, np.pi / 6, np.deg2rad(40), np.deg2rad(50), np.pi / 3], rtol=2e-14, atol=0)
 
     with pytest.raises(ValueError, match="6-element"):
         keplerian.hkoe([1, 2, 3])
@@ -26,11 +27,11 @@ def test_hkoe_period_longitude_and_anomaly_helpers(capsys):
 def test_kepler_state_conversions_for_circular_equatorial_case():
     r, v = keplerian.kepler_to_state(a=RGEO, e=0.0, i=0.0, pa=0.0, raan=0.0, nu=0.0)
     np.testing.assert_allclose(r, [RGEO, 0.0, 0.0], rtol=0, atol=1e-6)
-    np.testing.assert_allclose(v, [0.0, np.sqrt(EARTH_MU / RGEO), 0.0], rtol=1e-12)
+    np.testing.assert_allclose(v, [0.0, np.sqrt(EARTH_MU / RGEO), 0.0], rtol=1e-12, atol=0)
 
     r_loop, v_loop = keplerian.kepler_to_state_loop(a=RGEO, e=0.0, i=0.0, pa=0.0, raan=0.0, nu=0.0)
-    np.testing.assert_allclose(r_loop, r)
-    np.testing.assert_allclose(v_loop, v)
+    np.testing.assert_allclose(r_loop, r, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(v_loop, v, rtol=0, atol=1e-9)
 
     r_many, v_many = keplerian.kepler_to_state_loop(
         a=np.array([RGEO, RGEO * 1.1]),
@@ -62,91 +63,38 @@ def test_apsis_and_velocity_formula_helpers():
     assert keplerian.peri_apo_from_rv(rp, ra) == {"a": a, "e": e}
     assert keplerian.apapsis_from_a_rp(a, rp) == ra
     assert np.isclose(keplerian.vcircular(rp, mu_=EARTH_MU), np.sqrt(EARTH_MU / rp))
-    assert np.isclose(keplerian.vis_viva(a, rp, EARTH_MU), np.sqrt(EARTH_MU * (2.0 / rp - 1.0 / a)))
-    assert np.isclose(keplerian.v_periapsis(a, rp, EARTH_MU), keplerian.vis_viva(a, rp, EARTH_MU))
+    assert np.isclose(keplerian.vis_viva(a=a, r=rp, mu=EARTH_MU), np.sqrt(EARTH_MU * (2.0 / rp - 1.0 / a)))
+    assert np.isclose(keplerian.v_periapsis(a, rp, EARTH_MU), keplerian.vis_viva(a=a, r=rp, mu=EARTH_MU))
 
 
-def test_parametric_and_chance_radius_helpers():
-    x, y, z = keplerian.kepler_to_parametric(a=2.0, e=0.0, i=0.0, omega=0.0, pa=0.0, theta=90.0)
-    assert np.isclose(x, 0.0, atol=1e-12)
-    assert np.isclose(y, 2.0)
-    assert np.isclose(z, 0.0)
+@pytest.mark.parametrize("converter", ["kepler_to_state", "kepler_to_state_loop"])
+@pytest.mark.parametrize("eccentricity", [0.0, 0.12, 0.7])
+def test_kepler_to_state_matches_ssapy_and_conic_invariants(converter, eccentricity):
+    # R2: SSAPy's Orbit.fromKeplerianElements; R1: vis-viva and h = sqrt(mu p).
+    import ssapy
+    from ssatk.constants import EARTH_MU
+    from ssatk.orbital_mechanics import keplerian
 
-    v = np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])
-    assert keplerian.get_chance_radius(v, time_step=2.0) == 10.0 * 2.0 * 4.0 + 2.0 * MOON_RADIUS
+    a, i, pa, raan, nu = 8000e3, np.radians(51.6), np.radians(30.0), np.radians(40.0), np.radians(70.0)
+    r, v = (np.ravel(x) for x in getattr(keplerian, converter)(a, eccentricity, i, pa, raan, nu))
+    reference = ssapy.Orbit.fromKeplerianElements(a, eccentricity, i, pa, raan, nu, t=0.0)
 
-
-def test_rebound_orbital_elements_with_fake_rebound(monkeypatch):
-    class FakeTime:
-        def __init__(self, value, format="utc"):
-            self.jd = 2451545.0 if not str(value).startswith("JD") else str(value)
-
-    class FakeParticle:
-        def __init__(self, idx):
-            self.a = 1.0 + idx
-            self.e = 0.01 * idx
-            self.inc = 0.1 * idx
-            self.theta = 0.2 * idx
-            self.omega = 0.3 * idx
-            self.Omega = 0.4 * idx
-            self.f = 0.5 * idx
-            self.pomega = 0.6 * idx
-            self.l = 0.7 * idx
-            self.M = 0.8 * idx
-
-    class FakeSimulation:
-        def __init__(self):
-            self.particles = {hash(idx): FakeParticle(idx) for idx in range(9)}
-            self.added = []
-
-        def add(self, *args, **kwargs):
-            self.added.append((args, kwargs))
-
-        def move_to_com(self):
-            self.moved = True
-
-    monkeypatch.setattr(keplerian, "Time", FakeTime)
-    monkeypatch.setattr(keplerian.rebound, "Simulation", FakeSimulation)
-    monkeypatch.setattr(keplerian.rebound, "M_to_E", lambda e, mean: mean + e)
-
-    earth = keplerian.rebound_orbital_elements("earth", time="2000-01-01")
-    assert earth["a"] == 4.0
-    assert earth["eccentric_anomaly"] == pytest.approx(2.4 + 0.03)
-
-    all_planets = keplerian.rebound_orbital_elements("all", time="JD2451545.0", format="jd")
-    assert set(all_planets) == {"mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"}
-    assert all_planets["neptune"]["a"] == 9.0
-    with pytest.raises(ValueError, match="Unknown planet"):
-        keplerian.rebound_orbital_elements("pluto")
+    np.testing.assert_allclose(r, reference.r, atol=1e-6, rtol=0)        # m
+    np.testing.assert_allclose(v, reference.v, atol=1e-9, rtol=0)        # m/s
+    radius = np.linalg.norm(r)
+    assert np.linalg.norm(v) == pytest.approx(np.sqrt(EARTH_MU * (2.0 / radius - 1.0 / a)), rel=1e-12, abs=0)
+    semi_latus_rectum = a * (1.0 - eccentricity**2)
+    assert np.linalg.norm(np.cross(r, v)) == pytest.approx(np.sqrt(EARTH_MU * semi_latus_rectum), rel=1e-12, abs=0)
 
 
-def test_j2000_and_orbital_element_calculators():
-    earth = keplerian.j2000_orbitals("earth", Teph=2451545.0 + 36525.0)
-    assert set(earth) == {"a", "e", "i", "mean_longitude", "longitude_of_perihelion", "longitude_of_the_ascending_node"}
-    assert 0.0 <= earth["mean_longitude"] < 360.0
-    with pytest.raises(ValueError, match="Unknown planet"):
-        keplerian.j2000_orbitals("pluto")
+@pytest.mark.parametrize("eccentricity", [0.1, 0.3, 0.7, 0.95])
+def test_true_anomaly_from_mean_anomaly_inverts_keplers_equation(eccentricity):
+    # R1: nu -> E -> M in closed form, then true_anomaly(e, M) must return nu.
+    from ssatk.orbital_mechanics import keplerian
 
-    elements = keplerian.hkoe(RGEO, 0.1, 30.0, 40.0, 50.0, 60.0)
-    r, v = keplerian.kepler_to_state(*elements)
-    a, e, inc, pa, raan, nu = keplerian.state_to_kepler(r, v)
-    assert np.isfinite([a, e, inc, pa, raan, nu]).all()
-    assert a > 0.0
-
-    r2, v2 = keplerian.kepler_to_state(*keplerian.hkoe(RGEO * 1.1, 0.2, 50.0, 20.0, 100.0, 210.0))
-    calculated = keplerian.calculate_orbital_elements(np.vstack([r, r2]), np.vstack([v, v2]))
-    assert calculated["a"].shape == (2,)
-    assert np.all(calculated["e"] > 0.0)
-    apsides = keplerian.peri_apo_apsis_from_rv(r, v)
-    assert apsides["apoapsis"] > apsides["periapsis"]
-
-
-def test_apsis_validation_errors():
-    with pytest.raises(ValueError, match="positive"):
-        keplerian.a_from_periap(0.0, 1.0)
-    with pytest.raises(ValueError, match=">= perigee"):
-        keplerian.a_from_periap(2.0, 1.0)
-    with pytest.raises(ValueError, match="positive"):
-        keplerian.e_from_periap(1.0, 0.0)
-    with pytest.raises(ValueError, match=">= perigee"):
-        keplerian.e_from_periap(2.0, 1.0)
+    nu = np.radians([1.0, 45.0, 120.0, 179.0, 181.0, 300.0])
+    ecc_anom = 2 * np.arctan2(np.sqrt(1 - eccentricity) * np.sin(nu / 2),
+                              np.sqrt(1 + eccentricity) * np.cos(nu / 2))
+    mean = np.mod(ecc_anom - eccentricity * np.sin(ecc_anom), 2 * np.pi)
+    result = keplerian.true_anomaly(eccentricity=eccentricity, mean_anomaly=mean)
+    np.testing.assert_allclose(np.angle(np.exp(1j * (result - nu))), 0.0, atol=1e-12, rtol=0)

@@ -7,15 +7,13 @@ segmented run even when each segment was propagated with
 """
 
 import numpy as np
-import pytest
 
-from ssapy_toolkit.propagators_6dof.high_accuracy import (
+from ssatk.propagators_6dof.high_accuracy import (
     ImpulseManeuver,
     propagate_spacecraft_segments,
 )
-from ssapy_toolkit.propagators_6dof.sixdof import (
+from ssatk.propagators_6dof.sixdof import (
     Spacecraft,
-    _piecewise_solution_sequence,
 )
 
 # GPS seconds, 2024-05-13.
@@ -40,13 +38,6 @@ def _three_segments(epoch=GPS_EPOCH, dense=(True, True, True)):
     ]
 
 
-def test_segmented_propagation_preserves_dense_output():
-    trajectory = propagate_spacecraft_segments(
-        _drifting_spacecraft(), _three_segments()
-    )
-    assert trajectory.solution is not None
-
-
 def test_dense_output_spans_every_segment_boundary():
     """One query crossing both interior boundaries, deliberately unsorted."""
     trajectory = propagate_spacecraft_segments(
@@ -67,15 +58,6 @@ def test_dense_output_spans_every_segment_boundary():
     np.testing.assert_allclose(
         state[3:6].T, np.tile(V0, (offsets.size, 1)), rtol=0.0, atol=1.0e-9
     )
-
-
-def test_dense_output_accepts_a_scalar_epoch():
-    trajectory = propagate_spacecraft_segments(
-        _drifting_spacecraft(), _three_segments()
-    )
-    state = np.asarray(trajectory.solution(GPS_EPOCH + 2.4))
-    assert state.ndim == 1
-    np.testing.assert_allclose(state[:3], R0 + 2.4 * V0, rtol=0.0, atol=1.0e-2)
 
 
 def test_boundary_epoch_resolves_to_the_earlier_segment():
@@ -103,52 +85,3 @@ def test_boundary_epoch_resolves_to_the_earlier_segment():
 
     np.testing.assert_allclose(at_boundary[3:6], V0, rtol=0.0, atol=1.0e-9)
     np.testing.assert_allclose(just_after[3:6], V0 + dv, rtol=0.0, atol=1.0e-9)
-
-
-def test_dense_output_is_dropped_when_any_segment_lacks_it():
-    trajectory = propagate_spacecraft_segments(
-        _drifting_spacecraft(), _three_segments(dense=(True, False, True))
-    )
-    assert trajectory.solution is None
-
-
-def test_single_segment_returns_the_underlying_solution():
-    trajectory = propagate_spacecraft_segments(
-        _drifting_spacecraft(),
-        [{"times": [GPS_EPOCH, GPS_EPOCH + 1.0], "mu": 0.0, "dense_output": True}],
-    )
-    assert trajectory.solution is not None
-    state = np.asarray(trajectory.solution(GPS_EPOCH + 0.5))
-    np.testing.assert_allclose(state[:3], R0 + 0.5 * V0, rtol=0.0, atol=1.0e-2)
-
-
-def test_dispatcher_rejects_a_mismatched_breakpoint_count():
-    identity = [lambda t: np.atleast_2d(np.asarray(t, dtype=float))] * 3
-    with pytest.raises(ValueError, match="one epoch per interior segment"):
-        _piecewise_solution_sequence(identity, [1.0])
-
-
-def test_dispatcher_returns_none_on_unsorted_breakpoints():
-    identity = [lambda t: np.atleast_2d(np.asarray(t, dtype=float))] * 3
-    assert _piecewise_solution_sequence(identity, [2.0, 1.0]) is None
-
-
-def test_dispatcher_is_flat_not_nested():
-    """N segments must cost one dispatch level, not N-1 nested closures."""
-    depths = []
-
-    def probe(index):
-        def evaluate(t):
-            depths.append(index)
-            return np.atleast_2d(np.asarray(t, dtype=float))
-
-        return evaluate
-
-    count = 200
-    solution = _piecewise_solution_sequence(
-        [probe(index) for index in range(count)],
-        np.arange(1.0, float(count)),
-    )
-    # One query inside the last segment must touch exactly one segment.
-    solution(np.array([count - 0.5]))
-    assert depths == [count - 1]

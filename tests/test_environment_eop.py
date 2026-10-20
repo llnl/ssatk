@@ -1,11 +1,11 @@
 import numpy as np
 from astropy.time import Time
 
-from ssapy_toolkit.coordinates.earth_fixed import (
+from ssatk.coordinates.earth_fixed import (
     gcrf_to_itrf_eop,
     itrf_to_gcrf_eop,
 )
-from ssapy_toolkit.environment_eop import (
+from ssatk.environment_eop import (
     EarthOrientationRecord,
     EarthOrientationTable,
 )
@@ -49,3 +49,15 @@ def test_eop_frame_transform_round_trips_a_batch_of_states():
     assert itrf.shape == positions.shape
     assert np.all(np.isfinite(itrf))
     np.testing.assert_allclose(recovered, positions, rtol=0.0, atol=2.0e-5)
+    # Independent IAU 2006/2000A CIO transformation from ERFA/SOFA. The
+    # production SSAPy convention is IAU 1976/1980; 0.5 arcsec accommodates
+    # that model difference, while rejecting wrong sign/epoch/axis rotations.
+    import erfa
+    time = Time(times, format="gps")
+    fraction = (times - epoch) / 86400
+    dut1 = .3 + .2*fraction
+    xp, yp = (.1 + .2*fraction)*np.pi/648000, (.2 + .2*fraction)*np.pi/648000
+    rotation = erfa.c2t06a(time.tt.jd1, time.tt.jd2, time.utc.jd1,
+                          time.utc.jd2 + dut1/86400, xp, yp)
+    expected = np.einsum("nij,nj->ni", rotation, positions)
+    assert np.max(np.linalg.norm(itrf-expected, axis=1)) < 7e6*np.deg2rad(.5/3600)

@@ -5,8 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import ssapy
 
-from ssapy_toolkit.orbital_mechanics.equally_spaced_ta import equally_spaced_ta
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.orbital_mechanics.equally_spaced_ta import equally_spaced_ta
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -67,6 +67,7 @@ def main(make_figures=None, verbose=None, fast=None):
     y_dense = r_dense * np.sin(ta_dense)
 
     if make_figures:
+        # gallery-call: *.jpg
         fig, ax = plt.subplots(figsize=(7, 7))
         ax.plot(x_dense, y_dense, label="Orbit")
         ax.scatter(x, y, color="red", zorder=3, label="Equal arc-length samples")
@@ -86,6 +87,7 @@ def main(make_figures=None, verbose=None, fast=None):
 
         plt.axis("equal")
         figsave(fig, "equally_spaced_ta.jpg")
+        # gallery-end
         plt.close(fig)
 
     if verbose:

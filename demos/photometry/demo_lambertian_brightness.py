@@ -1,6 +1,6 @@
 """
 Demo + pytest benchmarks for `lambertian_sphere_brightness`
-(the model now living in ssapy_toolkit.compute).
+(the model now living in ssatk.compute).
 
 Two modes
 ---------
@@ -9,15 +9,15 @@ Two modes
             NO graphics are produced.
 * demo:     `python demo_lambertian_brightness.py`
             Same benchmarks AND benchmark figures, saved via
-            `ssapy_toolkit.plots.figsave` into figures/.
+            `ssatk.plots.figsave` into figures/.
 
-The model is imported from ssapy_toolkit.compute when available, falling
+The model is imported from ssatk.compute when available, falling
 back to the standalone lambertian_sphere_brightness.py next to this file.
 
 Benchmark references (all independent of the model code)
 ---------------------------------------------------------
 * Analytic Lambertian-sphere photometry (McCue et al. 1971; the same
-  closed form the retired ssapy_toolkit calc_M_v sphere term used),
+  closed form the retired ssatk calc_M_v sphere term used),
   re-implemented inline in this file:
       F/F_sun = A * (R/d)^2 * (2/3pi) [sin a + (pi - a) cos a]
       m_V     = M_sun + 5 log10(r_sun_sat / 10 pc) - 2.5 log10(F/F_sun)
@@ -43,17 +43,17 @@ import ssapy
 
 
 # ----------------------------------------------------------------------
-# Import the model: prefer ssapy_toolkit.compute, fall back to local file
+# Import the model: prefer ssatk.compute, fall back to local file
 # ----------------------------------------------------------------------
 def _import_model():
     """Locate `lambertian_sphere_brightness` and return its *defining*
     module (via inspect.getmodule), so private helpers and constants are
     available even when only the public functions are re-exported from
-    ssapy_toolkit.compute's __init__."""
+    ssatk.compute's __init__."""
     import inspect
     for name in (
-        "ssapy_toolkit.compute.lambertian_sphere_brightness",
-        "ssapy_toolkit.compute",
+        "ssatk.compute.lambertian_sphere_brightness",
+        "ssatk.compute",
         "lambertian_sphere_brightness",
     ):
         try:
@@ -65,7 +65,7 @@ def _import_model():
             defining = inspect.getmodule(fn)
             return defining if defining is not None else mod
     raise ImportError(
-        "lambertian_sphere_brightness not found in ssapy_toolkit.compute "
+        "lambertian_sphere_brightness not found in ssatk.compute "
         "or as a local module."
     )
 
@@ -274,7 +274,7 @@ def _demo_figures():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from ssapy_toolkit.plots import figsave
+    from ssatk.plots import figsave
 
     os.makedirs("tests", exist_ok=True)
     b = _ours_vs_analytic(n=181)
@@ -282,13 +282,14 @@ def _demo_figures():
     shadow = ~lit
 
     # ---- Figure 1: phase-curve benchmark vs analytic reference --------
+    # gallery-call: demo_phase_curve_benchmark.jpg
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(8, 7), sharex=True,
         gridspec_kw={"height_ratios": [3, 1]})
     ax1.plot(b["phase_deg"], b["ref_mag"], "k-", lw=3, alpha=0.35,
              label="analytic Lambertian sphere (McCue 1971, M_sun=4.80)")
     ax1.plot(b["phase_deg"][lit], b["ours_mag"][lit], "C0.", ms=4,
-             label="ssapy_toolkit lambertian_sphere_brightness (sunlit)")
+             label="ssatk lambertian_sphere_brightness (sunlit)")
     if shadow.any():
         ax1.axvspan(b["phase_deg"][shadow].min(),
                     b["phase_deg"][shadow].max(), color="0.85",
@@ -309,9 +310,11 @@ def _demo_figures():
     ax2.legend(fontsize=9)
     fig.tight_layout()
     figsave(fig, "demo_phase_curve_benchmark.jpg")
+    # gallery-end
     plt.close(fig)
 
     # ---- Figure 2: fractional-flux agreement (machine precision) ------
+    # gallery-call: demo_fractional_flux_benchmark.jpg
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ratio = np.where(b["ref_frac"] > 0,
                      b["ours_frac"] / np.maximum(b["ref_frac"], 1e-300), np.nan)
@@ -323,19 +326,24 @@ def _demo_figures():
     ax.grid(alpha=0.3)
     fig.tight_layout()
     figsave(fig, "demo_fractional_flux_benchmark.jpg")
+    # gallery-end
     plt.close(fig)
 
     # ---- Figure 3: airmass benchmark + multi-band magnitudes ----------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+    # gallery-call: demo_airmass_and_bands.jpg
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(12, 4.8), layout="constrained")
     z = np.linspace(0, 89.9, 300)
     ax1.semilogy(z, airmass_kasten_young(z), "C0-", label="Kasten-Young 1989")
     ax1.semilogy(z[z < 80], 1 / np.cos(np.radians(z[z < 80])), "k--",
                  lw=1, label="sec(z) (plane-parallel)")
-    for zr, Xr in [(0, 1.0), (60, 1.994), (85, 10.32)]:
-        ax1.plot(zr, Xr, "rs")
-    ax1.set_xlabel("zenith angle [deg]"); ax1.set_ylabel("airmass")
-    ax1.set_title("Airmass model vs reference values (red squares)")
-    ax1.legend(); ax1.grid(alpha=0.3)
+    ax1.plot([0, 60, 85], [1.0, 1.994, 10.32], "s", color="C3",
+             ms=5, label="Reference values", zorder=3)
+    ax1.set_xlabel("Zenith angle [deg]")
+    ax1.set_ylabel("Airmass")
+    ax1.set_title("Atmospheric airmass", pad=12)
+    ax1.legend(frameon=False, fontsize=9)
+    ax1.grid(alpha=0.2)
 
     site = ssapy.EarthObserver(lon=-156.26, lat=20.71, elevation=3055.0)
     r_site, _ = site.getRV(T0)
@@ -347,14 +355,21 @@ def _demo_figures():
                 temperature_K=290.0, radius_m=1.0, albedo=0.3,
                 time=T0, band=bb, k_extinction=0.0)["ab_mag_exoatmospheric"]
             for bb in bands]
-    ax2.bar(bands, mags, color="C1")
+    # Bands are categorical; connecting segments guide the eye, rather than
+    # representing a continuously sampled spectrum or wavelength spacing.
+    ax2.plot(bands, mags, "o-", color="C1", lw=2, ms=6,
+             markerfacecolor="white", markeredgewidth=1.5)
     ax2.invert_yaxis()
-    ax2.set_ylabel("exoatmospheric AB magnitude")
-    ax2.set_title("1 m sphere, 290 K, albedo 0.3, 800 km overhead:\n"
-                  "reflection-dominated VIS -> thermal-dominated LWIR")
-    ax2.grid(alpha=0.3, axis="y")
-    fig.tight_layout()
+    ax2.set_xlabel("Observing band (categorical)")
+    ax2.set_ylabel("Exoatmospheric AB magnitude (brighter upward)")
+    ax2.set_title("Brightness across visible and infrared bands\n"
+                  "1 m radius sphere · 290 K · albedo 0.3 · 800 km overhead",
+                  fontsize=10, pad=12)
+    ax2.grid(alpha=0.2, axis="y")
+    for ax in (ax1, ax2):
+        ax.spines[["top", "right"]].set_visible(False)
     figsave(fig, "demo_airmass_and_bands.jpg")
+    # gallery-end
     plt.close(fig)
 
     print("Saved via figsave: figures/demo_phase_curve_benchmark.jpg")

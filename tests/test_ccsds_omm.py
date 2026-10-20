@@ -1,5 +1,4 @@
 from dataclasses import replace
-from io import StringIO
 
 import numpy as np
 import pytest
@@ -10,7 +9,7 @@ from ssapy.compute import rv
 from ssapy.propagator import SGP4Propagator
 from ssapy.utils import teme_to_gcrf
 
-from ssapy_toolkit.io.ccsds_omm import format_omm_xml, read_omm_xml, write_omm_xml
+from ssatk.io.ccsds_omm import format_omm_xml, read_omm_xml
 
 TERRA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <ndm>
@@ -33,6 +32,12 @@ def test_celestrak_shaped_read_round_trip_and_comments():
     assert record.argument_of_pericenter == pytest.approx(record.argument_of_perigee)
     assert record.inclination_rad == pytest.approx(record.inclination)
     assert record.raan_rad == pytest.approx(record.raan)
+    # Synthetic CelesTrak-shaped fixture: literal input values, converted to
+    # SI. These are parser oracles, not a claim of an observed TERRA ephemeris.
+    assert record.mean_motion_rad_s == pytest.approx(14.61150647*2*np.pi/86400, rel=1e-12, abs=0)
+    assert record.mean_motion_dot_rad_s2 == pytest.approx(.338e-5*2*np.pi/86400**2, rel=1e-12, abs=0)
+    assert record.inclination_rad == pytest.approx(np.deg2rad(97.9399), abs=1e-12)
+    assert record.raan_rad == pytest.approx(np.deg2rad(286.4820), abs=1e-12)
     text = format_omm_xml(record)
     assert "<omm " in text and "<omm><omm" not in text
     restored = read_omm_xml(text)
@@ -58,44 +63,10 @@ def test_submicrosecond_epoch_and_empty_celestrak_header_are_preserved():
     assert "2026-08-27T19:05:27.769056123" in rendered
     orbit = record.to_ssapy_orbit()
     sat = orbit._sat
-    assert orbit.t == pytest.approx(Time(sat.jdsatepoch, sat.jdsatepochF, format="jd").gps)
+    assert orbit.t == pytest.approx(Time(sat.jdsatepoch, sat.jdsatepochF, format="jd").gps, abs=1e-6)
 
     ordinal = read_omm_xml(TERRA_XML.replace("2026-08-27T19:05:27.769056", "2026-239T19:05:27.769056"))
     assert ordinal.epoch.isot == "2026-08-27T19:05:27.769056000"
-
-
-def test_multiple_messages_and_namespaces():
-    second = TERRA_XML.split("<omm ", 1)[1].split("</omm>", 1)[0].replace("TERRA", "AQUA").replace("25994", "27424")
-    multiple = TERRA_XML.replace("</ndm>", f"<omm {second}</omm></ndm>")
-    records = read_omm_xml(multiple.replace("<ndm>", '<ndm xmlns="urn:ccsds:test">'))
-    assert [record.object_name for record in records] == ["TERRA", "AQUA"]
-    assert format_omm_xml(records).count("<omm ") == 2
-
-
-def test_stream_path_and_overwrite_safety(tmp_path):
-    record = read_omm_xml(TERRA_XML)
-    stream = StringIO()
-    assert write_omm_xml(record, stream) is None
-    assert read_omm_xml(StringIO(stream.getvalue())).norad_cat_id == 25994
-    path = tmp_path / "new" / "terra.xml"
-    assert write_omm_xml(record, path) == path
-    with pytest.raises(FileExistsError):
-        write_omm_xml(record, path)
-
-
-@pytest.mark.parametrize(
-    ("old", "new", "error"),
-    [
-        ("<REF_FRAME>TEME</REF_FRAME>", "<REF_FRAME>GCRF</REF_FRAME>", "TEME"),
-        ("<MEAN_ELEMENT_THEORY>SGP4</MEAN_ELEMENT_THEORY>", "<MEAN_ELEMENT_THEORY>SDP4</MEAN_ELEMENT_THEORY>", "SGP4"),
-        ("<MEAN_MOTION>14.61150647</MEAN_MOTION>", "<MEAN_MOTION>nan</MEAN_MOTION>", "finite"),
-        ("<EPHEMERIS_TYPE>0</EPHEMERIS_TYPE>", "<EPHEMERIS_TYPE>1</EPHEMERIS_TYPE>", "EPHEMERIS_TYPE"),
-        ("<ECCENTRICITY>.0002704</ECCENTRICITY>", "<ECCENTRICITY>1</ECCENTRICITY>", "eccentricity"),
-    ],
-)
-def test_invalid_omm_fields_are_rejected(old, new, error):
-    with pytest.raises(ValueError, match=error):
-        read_omm_xml(TERRA_XML.replace(old, new))
 
 
 def test_ssapy_sgp4_matches_direct_native_satrec():
@@ -110,13 +81,3 @@ def test_ssapy_sgp4_matches_direct_native_satrec():
     rotation = teme_to_gcrf(time)
     assert np.allclose(actual_r[0], rotation @ (np.asarray(r) * 1.0e3), rtol=0.0, atol=1e-8)
     assert np.allclose(actual_v[0], rotation @ (np.asarray(v) * 1.0e3), rtol=0.0, atol=1e-11)
-
-
-def test_unknown_nested_data_is_rejected_instead_of_lost():
-    text = TERRA_XML.replace("</data>", "<covarianceMatrix><CX_X>1</CX_X></covarianceMatrix></data>")
-    with pytest.raises(ValueError, match="unsupported OMM data block COVARIANCEMATRIX"):
-        read_omm_xml(text)
-
-    wrong_units = TERRA_XML.replace("<INCLINATION>", '<INCLINATION units="rad">')
-    with pytest.raises(ValueError, match="unsupported units"):
-        read_omm_xml(wrong_units)

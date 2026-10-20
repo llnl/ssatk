@@ -19,12 +19,12 @@ from ssapy.accel import AccelEarthRad, AccelKepler, AccelSolRad
 from ssapy.gravity import AccelHarmonic, AccelThirdBody
 from ssapy.propagator import SciPyPropagator
 
-from ssapy_toolkit.compute.lambertian_magnitude import lambertian_reflection
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.groundtrack_plot import groundtrack_plot
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.plots.plotutils import figsave
-from ssapy_toolkit.time_functions.get_times import get_times
+from ssatk.compute.lambertian_magnitude import lambertian_reflection
+from ssatk.plots.figpath import figpath
+from ssatk.plots.groundtrack_plot import groundtrack_plot
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.plots.plotutils import figsave
+from ssatk.time_functions.get_times import get_times
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -137,16 +137,22 @@ def main(make_figures=None, fast=None):
     # Plot: GCRF and lunar frames — save with figpath
     # ------------------------------------------------------------
     if make_figures:
+        # gallery-call: ssatk_orbit_gcrf.jpg
         fig, _ax = orbit_plot(r, times, frame="gcrf")
-        out_gcrf = figpath("ssapy_orbit_gcrf")
+        # gallery-end
+        out_gcrf = figpath("ssatk_orbit_gcrf")
         figsave(fig, save_path=out_gcrf)
 
+        # gallery-call: ssatk_orbit_lunar.jpg
         fig, _ax = orbit_plot(r, times, frame="lunar")
-        out_lunar = figpath("ssapy_orbit_lunar")
+        # gallery-end
+        out_lunar = figpath("ssatk_orbit_lunar")
         figsave(fig, save_path=out_lunar)
 
         # Ground track
-        groundtrack_plot(r, times, save_path=figpath("ssapy_ground_track"))
+        # gallery-call: ssatk_ground_track.jpg
+        groundtrack_plot(r, times, save_path=figpath("ssatk_ground_track"))
+        # gallery-end
 
     # ------------------------------------------------------------
     # Lambertian reflectance (apparent magnitude)
@@ -159,6 +165,7 @@ def main(make_figures=None, fast=None):
         xticks = np.linspace(times.decimalyear[0], times.decimalyear[-1], 4)
         xtick_labels = [decimal_to_datetime_label(t) for t in xticks]
 
+        # gallery-call: lambertian_reflectance.png
         plt.figure(dpi=300)
         plt.plot(times.decimalyear, mv)
         plt.xlabel("Date")
@@ -168,6 +175,7 @@ def main(make_figures=None, fast=None):
 
         out_mv = figpath("lambertian_reflectance")
         plt.savefig(out_mv, dpi=300, bbox_inches="tight")
+        # gallery-end
         plt.close()
         print("Saved:", out_mv)
 

@@ -8,14 +8,14 @@ import numpy as np
 from astropy.time import Time
 from ssapy import Orbit, rv
 
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.coordinates.earth_fixed import gcrf_to_itrf, itrf_to_gcrf
-from ssapy_toolkit.coordinates.geodetic import gcrf_to_lonlat
-from ssapy_toolkit.coordinates.satellite_frames import gcrf_to_ntw, ntw_to_gcrf
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import RGEO
+from ssatk.coordinates.earth_fixed import gcrf_to_itrf, itrf_to_gcrf
+from ssatk.coordinates.geodetic import gcrf_to_lonlat
+from ssatk.coordinates.satellite_frames import frame_to_gcrf_matrix, gcrf_to_ntw, ntw_to_gcrf
+from ssatk.coordinates.lunar import gcrf_to_lunar_fixed
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 
 def main(make_figures=None, fast=None):
@@ -50,7 +50,15 @@ def main(make_figures=None, fast=None):
     roundtrip_error_m = np.linalg.norm(r_roundtrip - r_gcrf, axis=1)
     ntw_error = float(np.linalg.norm(dv_roundtrip - dv_gcrf))
 
+    # A local Earth-fixed direction requires an epoch before using it in GCRF.
+    enu_to_gcrf = frame_to_gcrf_matrix("enu", lat=0.0, lon=0.0, t=t0)
+    greenwich_up_gcrf = enu_to_gcrf @ [0.0, 0.0, 1.0]
+    # These are instantaneous rotating-frame velocities in m/s, even when
+    # output epochs are spaced hours apart.
+    r_lunar, v_lunar = gcrf_to_lunar_fixed(r_gcrf, times, v=v_gcrf)
+
     if make_figures:
+        # gallery-call: *.jpg
         fig, axes = plt.subplots(2, 2, figsize=(11, 8))
         axes[0, 0].plot(r_gcrf[:, 0] / 1e3, r_gcrf[:, 1] / 1e3)
         axes[0, 0].set_title("GCRF XY")
@@ -79,7 +87,8 @@ def main(make_figures=None, fast=None):
         axes[1, 1].grid(alpha=0.3)
 
         fig.tight_layout()
-        figsave(fig, f"{FIGDIR}/coordinate_frame_overview.jpg")
+        figsave(fig, f"coordinate_frame_overview.jpg")
+        # gallery-end
 
     return {
         "r_gcrf": r_gcrf,
@@ -90,6 +99,9 @@ def main(make_figures=None, fast=None):
         "height": height,
         "roundtrip_error_m": roundtrip_error_m,
         "ntw_error": ntw_error,
+        "greenwich_up_gcrf": greenwich_up_gcrf,
+        "r_lunar": r_lunar,
+        "v_lunar": v_lunar,
     }
 
 

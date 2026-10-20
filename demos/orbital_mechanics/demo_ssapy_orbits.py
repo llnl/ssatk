@@ -5,9 +5,9 @@ import numpy as np
 from ssapy import Orbit, rv
 from astropy.time import Time
 
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.constants import RGEO
-from ssapy_toolkit.plots.orbit_plot import orbit_plot  # [30]
+from ssatk.plots.figpath import figpath
+from ssatk.constants import RGEO
+from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -36,7 +36,9 @@ def main(make_figures=None, fast=None):
         rs.append(orbit.r)
 
     if make_figures:
-        orbit_plot(rs, view="xy", show=False, save_path=figpath("ssapy_orbit_sampling_trueAnomaly"))
+        # gallery-call: ssatk_orbit_sampling_trueAnomaly.jpg
+        orbit_plot(rs, view="xy", show=False, save_path=figpath("ssatk_orbit_sampling_trueAnomaly"))
+        # gallery-end
 
     print("Time sampling")
     rs = []
@@ -46,12 +48,16 @@ def main(make_figures=None, fast=None):
         rs.append(orbit_new.r)
 
     if make_figures:
-        orbit_plot(np.array(rs), show=False, save_path=figpath("ssapy_orbit_sampling_time"))
+        # gallery-call: ssatk_orbit_sampling_time.jpg
+        orbit_plot(np.array(rs), show=False, save_path=figpath("ssatk_orbit_sampling_time"))
+        # gallery-end
 
     print("Full orbit sampled.")
     rs, v = rv(orbit, np.arange(0, orbit.period, 3600 if fast else 600))
     if make_figures:
-        orbit_plot(rs, show=False, save_path=figpath("ssapy_orbit_object"))
+        # gallery-call: ssatk_orbit_object.jpg
+        orbit_plot(rs, show=False, save_path=figpath("ssatk_orbit_object"))
+        # gallery-end
     print("Complete.")
 
     return {"samples_true_anomaly": rs, "orbit": orbit}

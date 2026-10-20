@@ -1,4 +1,4 @@
-"""Solar and lunar eclipse demonstration for the SSAPy-Toolkit gallery."""
+"""Solar and lunar eclipse demonstration for the SSATK gallery."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,7 +7,7 @@ GALLERY_CATEGORY = "eclipse"
 
 
 def main(make_figures: bool | None = None, fast: bool | None = None, backend: str = "reference"):
-    from ssapy_toolkit.eclipse import EventRequest, ObserverConfig, build_event, validate_event
+    from ssatk.eclipse import EventRequest, ObserverConfig, build_event, validate_event
 
     fast = bool(fast)
     minimum_states = 25 if fast else 81
@@ -25,7 +25,7 @@ def main(make_figures: bool | None = None, fast: bool | None = None, backend: st
         "files": [],
     }
     if make_figures:
-        from ssapy_toolkit.plots.eclipse_scientific_suite import generate_event_scientific_summary
+        from ssatk.plots.eclipse_scientific_suite import generate_event_scientific_summary
         out = Path("eclipse")
         solar_path = generate_event_scientific_summary(solar, out / "solar_eclipse_summary.png")
         lunar_path = generate_event_scientific_summary(lunar, out / "lunar_eclipse_summary.png")

@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 
 from demos.six_dof._common import demo_flags, hours, save_demo_figure
-from ssapy_toolkit.accelerations_6dof import SpacecraftFacetSolRad
-from ssapy_toolkit.constants import AU
-from ssapy_toolkit.propagators_6dof import Spacecraft
-from ssapy_toolkit.satellites import Facet, SpacecraftBody
+from ssatk.accelerations_6dof import SpacecraftFacetSolRad
+from ssatk.constants import AU
+from ssatk.propagators_6dof import Spacecraft
+from ssatk.satellites import Facet, SpacecraftBody
 
 TITLE = "6-DoF Facet Solar-Radiation Pressure"
 DESCRIPTION = "Compares SRP force and torque with and without facet self-shadowing."
@@ -80,6 +80,7 @@ def main(make_figures=None, fast=None):
         import matplotlib.pyplot as plt
 
         time_hr = hours(times)
+        # gallery-call: *.png
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
         fig.suptitle("6-DoF facet SRP: optical properties and self-shadowing", fontsize=18)
 
@@ -108,6 +109,7 @@ def main(make_figures=None, fast=None):
         axes[1, 1].grid(True, axis="y", alpha=0.3)
 
         figure_path = save_demo_figure(fig, "demo_6dof_srp_facets.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

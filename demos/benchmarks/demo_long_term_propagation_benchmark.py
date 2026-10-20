@@ -12,10 +12,10 @@ import numpy as np
 
 from demos.benchmarks import demo_gmat_benchmark, demo_orekit_benchmark
 from demos.benchmarks.benchmark_report import write_benchmark_report
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state
+from ssatk.constants import EARTH_MU
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk.plots.figpath import figpath
+from ssatk.propagators_orbit import propagate_orbit_state
 
 UNDER_PYTEST = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
 GALLERY_CATEGORY = "benchmarks"
@@ -174,7 +174,9 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
             continue
         case["tools"] = tool_results
         if make_figures:
+            # gallery-call: *_residuals.png
             case["plots"] = _write_case_plot(case, residuals, figure_dir)
+            # gallery-end
         results.append(case)
 
     if not results:
@@ -193,12 +195,16 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         "cases": results,
     }
     if make_figures:
+        # gallery-call: *_summary.png
         summary["summary_plot"] = _write_summary_plot(results, figure_dir)
+        # gallery-end
     result_path = Path(ssatk_data("data/benchmarks/long_term_propagation_results.json"))
     result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary["results_path"] = str(result_path)
     if make_figures:
+        # gallery-call: benchmark_regime_matrix.png
         summary["report_path"] = write_benchmark_report()
+        # gallery-end
         result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if verbose:
         print(json.dumps(summary, indent=2, sort_keys=True))

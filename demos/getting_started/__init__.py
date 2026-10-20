@@ -1,2 +1,2 @@
-"""Getting-started SSAPy-Toolkit demos."""
+"""Getting-started SSATK demos."""
 

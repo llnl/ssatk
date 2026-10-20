@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Rigorous validation driver for ssapy_toolkit.ellipse_fit.
+Rigorous validation driver for ssatk.ellipse_fit.
 
 Pytest-safe mode:
 - runs with SAVE_PLOTS disabled by default
@@ -14,10 +14,10 @@ import sys
 import numpy as np
 from ssapy.propagator import KeplerianPropagator
 
-from ssapy_toolkit.constants import RGEO  # [7]
-from ssapy_toolkit.orbital_mechanics.ellipse_fit import ellipse_fit  # [7]
-from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit  # [7]
-from ssapy_toolkit.plots.plotutils import figsave  # [7]
+from ssatk.constants import RGEO
+from ssatk.orbital_mechanics.ellipse_fit import ellipse_fit
+from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -286,7 +286,9 @@ def main(make_figures=None, fast=None):
         P2s_m, swA, swB, used_lon = _run_sweep_case_with_retries(P1s_m, lat_rad, tagp)
         sweep_store.append({"inc_deg": float(inc_deg), "lon_deg": float(used_lon), "P2": P2s_m, "A": swA, "B": swB})
 
+    # gallery-call: *.png
     _plot_incsweep_all_transfers_3d(sweep_store, P1s_m, make_figures=make_figures)
+    # gallery-end
 
     return {"baseline_A": resA, "baseline_B": resB, "sweep_store": sweep_store}
 

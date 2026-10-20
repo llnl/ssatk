@@ -2,4 +2,4 @@ sphinx
 sphinx-rtd-theme
 myst-parser
 docutils
-llnl-ssapy>=1.1.9
+llnl-ssapy>=1.1.12

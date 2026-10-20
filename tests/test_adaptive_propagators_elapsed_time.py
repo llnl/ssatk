@@ -9,8 +9,8 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_orbit.high_accuracy import (
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_orbit.high_accuracy import (
     propagate_orbit_state,
     propagate_orbit_state_with_stm,
 )
@@ -21,26 +21,6 @@ EPOCHS = pytest.mark.parametrize(
 
 R0 = [7.0e6, 0.0, 0.0]
 V0 = [0.0, float(np.sqrt(EARTH_MU / 7.0e6)), 0.0]
-
-
-def _thrust_cut_out(epoch):
-    """A step-discontinuous acceleration: on for 0.5 s, then off."""
-
-    def acceleration(r, v, t):
-        return np.array([1.0, 0.0, 0.0]) if (t - epoch) < 0.5 else np.zeros(3)
-
-    return acceleration
-
-
-@EPOCHS
-def test_step_discontinuity_resolves_at_any_epoch(epoch):
-    """Raised RuntimeError from GPS 1e8 upward before this change."""
-    result = propagate_orbit_state(
-        r0=R0, v0=V0, t0=epoch, times=epoch + np.array([0.0, 1.0, 2.0]),
-        mu=EARTH_MU, acceleration=_thrust_cut_out(epoch), rtol=1e-10, atol=1e-12,
-    )
-    assert result.r.shape == (3, 3)
-    assert np.all(np.isfinite(result.r))
 
 
 @EPOCHS

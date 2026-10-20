@@ -2,10 +2,10 @@
 
 import numpy as np
 
-from ssapy_toolkit.accelerations_6dof import SpacecraftAccelJ2
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS, J2_wgs
-from ssapy_toolkit.orbital_mechanics import kepler_to_state
-from ssapy_toolkit.propagators_6dof import propagate_6dof_high_accuracy
+from ssatk.accelerations_6dof import SpacecraftAccelJ2
+from ssatk.constants import EARTH_MU, EARTH_RADIUS, J2_wgs
+from ssatk.orbital_mechanics import kepler_to_state
+from ssatk.propagators_6dof import propagate_6dof_high_accuracy
 
 
 def _raan(trajectory):

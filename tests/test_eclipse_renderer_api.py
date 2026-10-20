@@ -5,12 +5,12 @@ import pytest
 
 
 def test_shared_eclipse_renderer_apis_build_mesh_data(monkeypatch):
-    from ssapy_toolkit.plots.globe_orbit_daynight_plotly import (
+    from ssatk.plots.globe_orbit_daynight_plotly import (
         _earth_surface_data,
         _wgs84_vertices,
     )
-    from ssapy_toolkit.plots import moon_render
-    from ssapy_toolkit.plots.moon_render import _moon_surface_data, _moon_unit_mesh
+    from ssatk.plots import moon_render
+    from ssatk.plots.moon_render import _moon_surface_data, _moon_unit_mesh
 
     monkeypatch.setattr(
         moon_render,
@@ -61,7 +61,7 @@ def test_shared_eclipse_renderer_apis_build_mesh_data(monkeypatch):
 def test_scientific_summary_uses_toolkit_figure_output(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from ssapy_toolkit.plots import eclipse_scientific_suite, plotutils
+    from ssatk.plots import eclipse_scientific_suite, plotutils
 
     event = SimpleNamespace(jd=np.array([1.0]), greatest_jd=1.0)
     renderer = SimpleNamespace(render=lambda index: np.zeros((6, 8, 3), dtype=np.uint8))
@@ -86,7 +86,7 @@ def test_scientific_summary_uses_toolkit_figure_output(monkeypatch, tmp_path):
 def test_browser_worker_reports_unavailable_chromium(monkeypatch, tmp_path):
     import json
 
-    from ssapy_toolkit.plots import eclipse_browser_matrix
+    from ssatk.plots import eclipse_browser_matrix
 
     result_path = tmp_path / "result.json"
     monkeypatch.setattr(eclipse_browser_matrix.shutil, "which", lambda name: None)

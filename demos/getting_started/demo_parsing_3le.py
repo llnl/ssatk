@@ -3,12 +3,12 @@
 import os
 import sys
 
-from ssapy_toolkit.io.demo_data import ensure_demo_data_file
-from ssapy_toolkit.io.read_3le import read_3le
-from ssapy_toolkit.io.read_3le_by_bit import read_3le_by_bit
-from ssapy_toolkit.io.tle_iter_pairs import tle_iter_pairs
-from ssapy_toolkit.io.tle_prop_to_time import tle_prop_to_time
-from ssapy_toolkit.io.pprint_utils import pprint
+from ssatk.io.demo_data import ensure_demo_data_file
+from ssatk.io.read_3le import read_3le
+from ssatk.io.read_3le_by_bit import read_3le_by_bit
+from ssatk.io.tle_iter_pairs import tle_iter_pairs
+from ssatk.io.tle_prop_to_time import tle_prop_to_time
+from ssatk.io.pprint_utils import pprint
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

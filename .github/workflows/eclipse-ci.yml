@@ -2,9 +2,9 @@ name: Eclipse checks
 on:
   pull_request:
     paths:
-      - 'ssapy_toolkit/**/eclipse*.py'
-      - 'ssapy_toolkit/plots/eclipse_*.js'
-      - 'ssapy_toolkit/plots/moon_*.py'
+      - 'ssatk/**/eclipse*.py'
+      - 'ssatk/plots/eclipse_*.js'
+      - 'ssatk/plots/moon_*.py'
       - 'demos/eclipse/**'
       - 'tests/test_eclipse*.py'
       - 'tests/test_gcrf_itrf_roundtrip.py'
@@ -28,8 +28,8 @@ jobs:
           tests/test_eclipse_renderer_api.py
       - name: Package imports with no failures
         run: >
-          python -c "import ssapy_toolkit.plots, ssapy_toolkit.eclipse; print('imports clean')"
+          python -c "import ssatk.plots, ssatk.eclipse; print('imports clean')"
       - name: Eclipse CLI resolves
         run: |
-          ssapy-eclipse --help > /dev/null
-          ssapy-eclipse audit --output "${RUNNER_TEMP}/audit.json"
+          ssatk-eclipse --help > /dev/null
+          ssatk-eclipse audit --output "${RUNNER_TEMP}/audit.json"

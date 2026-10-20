@@ -10,44 +10,58 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
+          pip install -e ".[dev,propulsion]"
 
       - name: Verify release tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          project_version="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
+          # Release only commits that main contains (v1.1.3 was cut from a
+          # PR branch, so main never received its version bump).
+          git merge-base --is-ancestor HEAD origin/main \
+            || { echo "::error::$RELEASE_TAG is not on main; merge first, then tag a commit on main."; exit 1; }
+          # pyproject.toml, codemeta.json and CITATION.cff must all carry the
+          # tag's version.
+          python scripts/check_release_metadata.py --tag "$RELEASE_TAG"
 
-          with (Path("pyproject.toml")).open("rb") as handle:
-              print(tomllib.load(handle)["project"]["version"])
-          PY
-          )"
-          test "$RELEASE_TAG" = "v$project_version"
+      - name: Find the previous release on main
+        id: previous
+        run: |
+          set -euo pipefail
+          # Lint and policy checks cover everything since the last release
+          # reachable from this tag. merge-base(origin/main, HEAD) equals HEAD
+          # for a tag on main, which left those checks with nothing to check.
+          if previous="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null)"; then
+            echo "ref=$previous" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$(git rev-list --max-parents=0 HEAD | tail -n 1)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run tests
         run: python -m pytest -q
 
       - name: Run Ruff syntax checks
+        env:
+          BASE_REF: ${{ steps.previous.outputs.ref }}
         run: |
           set -euo pipefail
-          base_ref="$(git merge-base origin/main HEAD)"
+          echo "Checking Python files changed since $BASE_REF"
+          base_ref="$BASE_REF"
           mapfile -t python_files < <(
             git diff --name-only --diff-filter=ACMR "$base_ref" HEAD -- '*.py'
           )
@@ -56,14 +70,16 @@ jobs:
           fi
 
       - name: Check repository policy
-        run: python scripts/check_repository_policy.py --base-ref "$(git merge-base origin/main HEAD)" --head-ref HEAD
+        env:
+          BASE_REF: ${{ steps.previous.outputs.ref }}
+        run: python scripts/check_repository_policy.py --base-ref "$BASE_REF" --head-ref HEAD
 
       - name: Run analytical validation profile
-        run: python -m ssapy_toolkit.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
+        run: python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
 
       - name: Upload analytical validation results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: analytical-validation-release
           path: .ci-output/benchmark-validation/benchmark_results.json
@@ -71,17 +87,17 @@ jobs:
 
   build-and-publish:
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/p/ssapy-toolkit
+      url: https://pypi.org/p/ssatk
     permissions:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -98,18 +114,30 @@ jobs:
 
       - name: Smoke-test wheel
         run: |
-          pip install --no-deps dist/*.whl
-          pip install "llnl-ssapy-data>=0.1.5"
+          # Install the wheel with its declared dependencies, exactly as a user
+          # would, so a missing or misnamed ssa-data-* package fails here.
+          pip install dist/ssatk-*.whl
           python -I - <<'PY'
-          from importlib.metadata import entry_points
+          from importlib.metadata import entry_points, version
+          from importlib.util import find_spec
 
-          import ssapy_toolkit
-          from ssapy_toolkit.data import data_resource
+          import ssatk
+          from ssatk.data import data_resource, resource_package
+          from ssatk.plots._textures import earth_texture_path
+          from ssatk.plots.starfield import find_data_file
 
-          assert data_resource("environment/eop/finals2000A.all").is_file()
-          assert data_resource("environment/space_weather/SW-All.csv").is_file()
+          # The retired single-wheel archive must not be what makes this pass.
+          assert find_spec("ssapy_data") is None, "llnl-ssapy-data leaked into the release env"
+          assert ssatk.__version__ == version("ssatk")
+          for name in ("environment/eop/finals2000A.all",
+                       "environment/space_weather/SW-All.csv",
+                       "earth_map.npz", "bright_stars.csv"):
+              assert data_resource(name).is_file(), name
+              assert resource_package(name) == "ssa_data_core", name
+          assert find_data_file("bright_stars.csv") is not None
+          assert earth_texture_path().is_file()
           scripts = {entry.name for entry in entry_points(group="console_scripts")}
-          assert {"ssapy-demo-gallery", "ssatk-benchmark", "ssapy-magnetosphere"} <= scripts
+          assert {"ssatk-demo-gallery", "ssatk-benchmark", "ssatk-magnetosphere"} <= scripts
           PY
 
       - name: Publish to PyPI

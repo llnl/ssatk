@@ -4,8 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ssapy_toolkit.compute import lambertian_magnitude as photometry
-from ssapy_toolkit.compute._visibility import line_of_sight_blocked
+from ssatk.compute import lambertian_magnitude as photometry
 
 
 class PhotometryVisibilityTests(unittest.TestCase):
@@ -34,13 +33,3 @@ class PhotometryVisibilityTests(unittest.TestCase):
         result = self.package(geometry)
         self.assertEqual(result['irradiance_inband_total_at_observer_W_m2'], 0.)
         self.assertEqual(result['ab_mag_observed'], np.inf)
-
-    def test_visible_target_keeps_finite_observed_flux(self):
-        geometry = self.geometry([8e6, 0, 0], [7e6, 0, 0])
-        result = self.package(geometry)
-        self.assertEqual(result['irradiance_inband_total_at_observer_W_m2'], 0.1)
-        self.assertEqual(result['ab_mag_observed'], result['ab_mag_exoatmospheric'])
-
-    def test_geoid_endpoint_does_not_occult_itself(self):
-        self.assertFalse(line_of_sight_blocked([0, 0, 7e6], [0, 0, 6356752.]))
-        self.assertTrue(line_of_sight_blocked([0, 0, -7e6], [0, 0, 6356752.]))

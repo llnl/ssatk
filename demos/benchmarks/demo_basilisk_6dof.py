@@ -9,8 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ssapy_toolkit.accelerations_6dof import constant_body_thrust, constant_body_torque
-from ssapy_toolkit.propagators_6dof import propagate_6dof
+from ssatk.accelerations_6dof import constant_body_thrust, constant_body_torque
+from ssatk.propagators_6dof import propagate_6dof
 
 GALLERY_INCLUDE = False
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -70,7 +70,7 @@ def run(*, output_dir: Path = OUTPUT_DIR, fast: bool = UNDER_PYTEST) -> dict:
         return {"skipped": True, "reason": "Basilisk package unavailable"}
 
     from Basilisk.utilities import RigidBodyKinematics
-    from ssapy_toolkit.coordinates.attitude import quaternion_from_matrix
+    from ssatk.coordinates.attitude import quaternion_from_matrix
 
     def mrp_to_quaternion(sigma):
         return quaternion_from_matrix(np.asarray(RigidBodyKinematics.MRP2C(np.asarray(sigma).ravel())).T)

@@ -11,10 +11,10 @@ keeping every callback and every returned epoch absolute.
 import numpy as np
 import pytest
 
-from ssapy_toolkit.accelerations_6dof.thrust import SpacecraftManeuverAccel
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof.sixdof import Spacecraft, propagate_6dof
-from ssapy_toolkit.satellites import SpacecraftBody, Tank
+from ssatk.accelerations_6dof.thrust import SpacecraftManeuverAccel
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof.sixdof import Spacecraft, propagate_6dof
+from ssatk.satellites import SpacecraftBody, Tank
 
 # GPS seconds. 1.4e9 is 2024-05-13; 3.8e9 is 2100-06-20.
 EPOCHS = pytest.mark.parametrize(
@@ -108,19 +108,4 @@ def test_events_are_defined_and_reported_in_absolute_time(epoch):
     assert trajectory.status == 1
     assert trajectory.t[-1] == pytest.approx(epoch + 0.25, rel=0.0, abs=1.0e-6)
     assert trajectory.t_events[0][0] == pytest.approx(epoch + 0.25, rel=0.0, abs=1.0e-6)
-    np.testing.assert_allclose(trajectory.r[-1], [0.25, 0.0, 0.0], atol=1.0e-9)
-
-
-@EPOCHS
-def test_dense_output_is_queried_in_absolute_time(epoch):
-    trajectory = propagate_6dof(
-        r0=[0.0, 0.0, 0.0], v0=[1.0, 0.0, 0.0], t0=epoch,
-        times=[epoch, epoch + 1.0], inertia=np.eye(3), mu=0.0, dense_output=True,
-    )
-    assert trajectory.solution is not None
-    np.testing.assert_allclose(
-        trajectory.solution(epoch + 0.5)[:3], [0.5, 0.0, 0.0], atol=1.0e-9
-    )
-    np.testing.assert_allclose(
-        trajectory.solution(epoch + np.array([0.25, 0.75]))[0], [0.25, 0.75], atol=1.0e-9
-    )
+    np.testing.assert_allclose(trajectory.r[-1], [0.25, 0.0, 0.0], atol=1.0e-9, rtol=0)

@@ -12,22 +12,22 @@ from demos.six_dof._common import (
     save_demo_figure,
     set_equal_3d,
 )
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.coordinates.satellite_frames import frame_to_gcrf_matrix
-from ssapy_toolkit.accelerations_6dof import (
+from ssatk.constants import EARTH_MU
+from ssatk.coordinates.satellite_frames import frame_to_gcrf_matrix
+from ssatk.accelerations_6dof import (
     SpacecraftAttitudePD,
     SpacecraftManeuverAccel,
     SpacecraftThrusterAccel,
     thrust_profile_trapezoid,
 )
-from ssapy_toolkit.propagators_6dof import Spacecraft, attitude_quaternion_from_frame
-from ssapy_toolkit.plots.plotutils import (
+from ssatk.propagators_6dof import Spacecraft, attitude_quaternion_from_frame
+from ssatk.plots.plotutils import (
     apply_auto_log_scale,
     log_safe_values,
     should_use_log_scale,
 )
-from ssapy_toolkit.engines import thruster_spec
-from ssapy_toolkit.satellites import SpacecraftBody
+from ssatk.engines import thruster_spec
+from ssatk.satellites import SpacecraftBody
 
 TITLE = "6-DoF Finite-Burn Fidelity"
 DESCRIPTION = (
@@ -182,6 +182,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         import matplotlib.pyplot as plt
 
+        # gallery-call: *.png
         fig = plt.figure(figsize=(16, 11), constrained_layout=True)
         ax_orbit = fig.add_subplot(2, 2, 1, projection="3d")
         ax_offset = fig.add_subplot(2, 2, 2)
@@ -259,6 +260,7 @@ def main(make_figures=None, fast=None):
         ax_rtn.legend(fontsize=8)
 
         figure_path = save_demo_figure(fig, "demo_6dof_finite_burn.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

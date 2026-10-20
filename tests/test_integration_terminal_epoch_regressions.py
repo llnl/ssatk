@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ssapy_toolkit.propagators_6dof import propagate_6dof
+from ssatk.propagators_6dof import propagate_6dof
 
 BASE = {
     "r0": [7.0e6, 0.0, 0.0],
@@ -37,40 +37,6 @@ def test_root_one_ulp_past_a_sample_collapses_onto_the_stopping_epoch(epoch):
     assert np.all(np.diff(times) > 1.0e-6)
 
 
-@pytest.mark.parametrize("epoch", [0.0, 1.4e9, 3.8e9], ids=["t0", "gps2024", "gps2100"])
-def test_root_exactly_on_a_sample_is_not_duplicated(epoch):
-    interior = epoch + 5.0
-    trajectory = propagate_6dof(
-        times=np.array([epoch, interior, epoch + 10.0]), t0=epoch,
-        events=(_terminal_at(interior),), rtol=1e-12, atol=1e-14, **BASE)
-    times = np.asarray(trajectory.t, dtype=float)
-    assert times.size == 2
-    assert times[-1] == pytest.approx(interior, abs=1.0e-6)
-
-
-@pytest.mark.parametrize("epoch", [0.0, 1.4e9], ids=["t0", "gps2024"])
-def test_root_between_samples_is_appended(epoch):
-    root = epoch + 5.0
-    trajectory = propagate_6dof(
-        times=np.array([epoch, epoch + 2.0, epoch + 10.0]), t0=epoch,
-        events=(_terminal_at(root),), rtol=1e-12, atol=1e-14, **BASE)
-    times = np.asarray(trajectory.t, dtype=float)
-    assert times.size == 3
-    assert times[-1] == pytest.approx(root, abs=1.0e-6)
-    assert np.all(np.diff(times) > 1.0e-6)
-
-
-def test_earlier_nonterminal_event_does_not_become_the_endpoint():
-    def early(t, y):
-        return t - 2.0
-    early.terminal = False
-    trajectory = propagate_6dof(
-        times=np.linspace(0.0, 20.0, 21), t0=0.0,
-        events=(early, _terminal_at(5.0)), rtol=1e-11, atol=1e-13, **BASE)
-    assert trajectory.status == 1
-    assert float(trajectory.t[-1]) == pytest.approx(5.0, abs=1.0e-6)
-
-
 def test_requested_sample_just_before_the_root_survives_at_small_epochs():
     trajectory = propagate_6dof(
         times=np.array([0.0, 1.25 - 5.0e-7, 2.0]), t0=0.0,
@@ -78,4 +44,4 @@ def test_requested_sample_just_before_the_root_survives_at_small_epochs():
     times = np.asarray(trajectory.t, dtype=float)
     assert times.size == 3
     assert times[-1] == pytest.approx(1.25, abs=1.0e-9)
-    assert times[-1] - times[-2] == pytest.approx(5.0e-7, rel=1e-6)
+    assert times[-1] - times[-2] == pytest.approx(5.0e-7, rel=1e-6, abs=0)

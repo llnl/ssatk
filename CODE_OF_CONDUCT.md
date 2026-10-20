@@ -1,4 +1,4 @@
-# SSAPy Toolkit Community Code of Conduct
+# Space Situational Awareness Toolkit (SSATK) Community Code of Conduct
 
 ## Our Pledge
 
@@ -30,7 +30,7 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## Scope
 
-This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the SSAPy Toolkit project or its community. Examples of representing the project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of the project may be further defined and clarified by SSAPy Toolkit maintainers.
+This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the SSATK project or its community. Examples of representing the project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of the project may be further defined and clarified by SSATK maintainers.
 
 ## Enforcement
 

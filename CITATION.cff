@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "SSAPy-Toolkit was created by Travis R. Yeager. If you use SSAPy-Toolkit in your work, please cite it using the metadata from this file."
-title: "SSAPy-Toolkit"
+message: "Space Situational Awareness Toolkit (SSATK) was created by Travis R. Yeager. If you use SSATK in your work, please cite it using the metadata from this file."
+title: "Space Situational Awareness Toolkit (SSATK)"
 type: software
 authors:
   - family-names: "Yeager"
@@ -20,15 +20,16 @@ contact:
     given-names: "Travis R."
     email: "yeagerastro@gmail.com"
     affiliation: "Lawrence Livermore National Laboratory"
-abstract: "SSAPy-Toolkit provides higher-level orbital mechanics, plotting, data I/O, coordinate/time conversion, transfer-design, and workflow utilities built on LLNL SSAPy."
+abstract: "SSATK is a Python toolkit for space situational awareness and astrodynamics: orbit and 6-DoF spacecraft propagation, impulsive and continuous-thrust transfer design, coordinate and time frames, space-environment models, conjunction screening and orbit determination, standard orbit-data formats, and visualization."
 keywords:
   - orbital mechanics
   - astrodynamics
   - space situational awareness
   - visualization
-  - SSAPy
+  - orbit propagation
+  - spacecraft dynamics
 license: "BSD-3-Clause"
-repository-code: "https://github.com/llnl/SSAPy-Toolkit"
-url: "https://github.com/llnl/SSAPy-Toolkit"
-version: "1.0.5"
-date-released: "2026-08-11"
+repository-code: "https://github.com/LLNL/ssatk"
+url: "https://github.com/LLNL/ssatk"
+version: "1.1.4"
+date-released: "2026-10-14"

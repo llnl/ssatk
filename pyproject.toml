@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ssapy-toolkit"
-version = "1.0.5"
-description = "SSAPy Toolkit: extensions for orbital mechanics, plotting, and data IO"
+name = "ssatk"
+version = "1.1.4"
+description = "Space Situational Awareness Toolkit (SSATK): orbit and 6-DoF propagation, transfer design, frames, space environment, conjunction screening, data I/O and visualization"
 authors = [
   { name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }
 ]
@@ -24,6 +24,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Operating System :: OS Independent",
   "Topic :: Scientific/Engineering :: Astronomy",
   "Topic :: Scientific/Engineering :: Visualization",
@@ -33,8 +34,11 @@ dependencies = [
   "astropy",
   "h5py",
   "imageio",
-  "llnl-ssapy-data>=0.1.5",
-  "llnl-ssapy>=1.1.9",
+  "llnl-ssapy>=1.1.12",
+  "ssa-data-core==0.0.1",
+  "ssa-data-gravity==0.0.1",
+  "ssa-data-lunar==0.0.1",
+  "ssa-data-lunar-gravity==0.0.1",
   "matplotlib",
   "numpy",
   "pandas",
@@ -50,6 +54,17 @@ monitoring = [
   "psutil",
 ]
 
+propulsion = ["ssa-data-propulsion==0.0.1"]
+benchmarks = ["ssa-data-benchmarks==0.0.1"]
+all-data = [
+  "ssa-data-core==0.0.1",
+  "ssa-data-gravity==0.0.1",
+  "ssa-data-lunar==0.0.1",
+  "ssa-data-lunar-gravity==0.0.1",
+  "ssa-data-propulsion==0.0.1",
+  "ssa-data-benchmarks==0.0.1",
+]
+
 notebook = [
   "ipython",
   "ipyvolume",
@@ -57,6 +72,7 @@ notebook = [
 
 static = [
   "kaleido",
+  "plotly>=6.1.1",
 ]
 
 browser = [
@@ -107,20 +123,21 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/llnl/SSAPy-Toolkit"
-Repository = "https://github.com/llnl/SSAPy-Toolkit"
-Issues = "https://github.com/llnl/SSAPy-Toolkit/issues"
-Documentation = "https://ssapy-toolkit.readthedocs.io/"
+Homepage = "https://github.com/LLNL/ssatk"
+Repository = "https://github.com/LLNL/ssatk"
+Issues = "https://github.com/LLNL/ssatk/issues"
+Documentation = "https://ssatk.readthedocs.io/"
 
 [tool.setuptools]
-packages = { find = { where = ["."], include = ["ssapy_toolkit*", "demos*"] } }
+packages = { find = { where = ["."], include = ["ssatk*", "demos*"] } }
 
 [tool.setuptools.package-data]
 demos = ["README.md"]
 "demos.benchmarks" = ["README.md", "orekit/*.java", "orekit/*.xml"]
-"ssapy_toolkit.plots" = ["*.js", "eclipse_three_license.txt"]
+"ssatk.plots" = ["*.js", "eclipse_three_license.txt"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
   "slow: demo smoke tests that may render media or run longer workflows",
 ]
@@ -130,8 +147,8 @@ filterwarnings = [
 ]
 
 [project.scripts]
-ssapy-demo-gallery = "ssapy_toolkit.run_all_demos:main"
-ssatk-benchmark = "ssapy_toolkit.benchmark:main"
-ssapy-magnetosphere = "ssapy_toolkit.plots.magfield_plot_3d:main"
-ssapy-bake-moon = "ssapy_toolkit.io.moon_maps:main"
-ssapy-eclipse = "ssapy_toolkit.eclipse_cli:main"
+ssatk-demo-gallery = "ssatk.run_all_demos:main"
+ssatk-benchmark = "ssatk.benchmark:main"
+ssatk-magnetosphere = "ssatk.plots.magfield_plot_3d:main"
+ssatk-bake-moon = "ssatk.io.moon_maps:cli"
+ssatk-eclipse = "ssatk.eclipse_cli:main"

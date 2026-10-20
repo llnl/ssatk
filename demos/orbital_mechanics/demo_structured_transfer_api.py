@@ -1,4 +1,4 @@
-"""Readable transfer_optimal API walkthrough for SSAPy-Toolkit.
+"""Readable transfer_optimal API walkthrough for SSATK.
 
 This demo is intentionally written like a help document.  The important
 ``transfer_optimal(...)`` calls are spelled out directly in ``main`` from top to
@@ -15,8 +15,10 @@ The examples cover:
 5. Direct, immediate staged, timed staged, best-route, and engine-constrained
    searches.
 
-Each run saves one three-panel overview image under
-``~/ssatk_output/figures`` when figures are enabled.
+The dashboard separates total burn budgets, planned burn timing and two
+representative routes. A separate fixed-departure rendezvous search samples
+35--120 minutes of flight time; it is not a comparison of unlike objectives.
+The plotted coast arcs are Keplerian plans, not finite-thrust propagation.
 """
 
 from __future__ import annotations
@@ -24,7 +26,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from textwrap import fill
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,32 +36,39 @@ import numpy as np
 from ssapy import Orbit, rv
 from ssapy.propagator import KeplerianPropagator
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.orbital_mechanics.transfer_optimal_function import transfer_optimal
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.orbital_mechanics.transfer_optimal_function import transfer_optimal
+from ssatk.plots.figpath import figpath
+from ssatk.plots.plotutils import figsave
 
 
-TITLE = "Structured Transfer API"
+TITLE = "Transfer Planning: Routes, Burns, and Flight Time"
 DESCRIPTION = (
-    "Demonstrates readable transfer_optimal calls for structured boundary, "
-    "objective, constraint, route, and solver controls."
+    "Compare direct and staged routes, total burn budgets, and planned burn "
+    "timing; explore a sampled 35–120 minute rendezvous trade with transfer_optimal."
 )
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 COMPARISON_TOF = 3600.0
 STAGED_LEG_TOF = COMPARISON_TOF / 2.0
 DIRECT_TOF_RANGE = (COMPARISON_TOF, COMPARISON_TOF)
 STAGED_LEG_TOF_RANGE = (STAGED_LEG_TOF, STAGED_LEG_TOF)
 
-TITLE_FONTSIZE = 26
-SUBTITLE_FONTSIZE = 20
-AXIS_LABEL_FONTSIZE = 17
-TICK_LABEL_FONTSIZE = 14
-LEGEND_FONTSIZE = 13
-CASE_LABEL_FONTSIZE = 12.5
-ANNOTATION_FONTSIZE = 12.5
+BURN_COLORS = ("#087e9b", "#c07824", "#7560aa")
+INK = "#20324b"
+MUTED = "#5b6b80"
+CASE_LABELS = {
+    "01": "Direct rendezvous",
+    "02": "Intercept",
+    "02b": "Inject, free phase",
+    "03": "Insertion, arrival objective",
+    "04": "Time objective, fixed time",
+    "05": "Raw-vector input",
+    "06": "Staged: immediate",
+    "07": "Staged: timed",
+    "08": "Best route, ≤2 burns",
+    "09": "Engine sizing",
+}
 
 
 def _circular_state(radius=7000e3, theta=0.0, inclination=0.0, t=0.0):
@@ -105,6 +113,9 @@ def _burn_value(burn, key, default=None):
 
 
 def _transfer_time_bounds(result):
+    # A single departure burn does not mark the end of the transfer coast.
+    if "initial" in result and "final" in result:
+        return float(result["initial"]["t"]), float(result["final"]["t"])
     trajectory = result.get("trajectory")
     if trajectory is not None and trajectory.get("t") is not None:
         times = np.asarray(trajectory["t"], dtype=float)
@@ -126,22 +137,8 @@ def _burn_duration(burn):
     return max(0.0, float(end) - float(start))
 
 
-def _burn_acceleration(burn):
-    acceleration = _burn_value(burn, "acceleration_mag", None)
-    if acceleration is not None:
-        return float(acceleration)
-    duration = _burn_duration(burn)
-    delta_v = float(_burn_value(burn, "delta_v_mag", _burn_value(burn, "dv_mag", 0.0)))
-    return delta_v / duration if duration > 0.0 else 0.0
-
-
 def _case_number(case):
     return case["slug"].split("_", 1)[0]
-
-
-def _wrapped_case_label(case, width=24):
-    wrapped = fill(case["title"], width=width)
-    return f"{_case_number(case)} {wrapped.replace(chr(10), chr(10) + '   ')}"
 
 
 def _sample_transfer_leg(leg, samples=90):
@@ -157,8 +154,6 @@ def _sample_transfer_leg(leg, samples=90):
     times = np.linspace(t0, t1, max(2, int(samples)))
     positions, _velocities = rv(transfer_orbits[0], times, propagator=KeplerianPropagator())
     positions = np.atleast_2d(np.asarray(positions, dtype=float))
-    positions[0] = np.asarray(leg["initial"]["r"], dtype=float).reshape(3)
-    positions[-1] = np.asarray(leg["final"]["r"], dtype=float).reshape(3)
     return times, positions
 
 
@@ -183,156 +178,264 @@ def _planned_trajectory_samples(result, samples_per_leg=90):
     return _sample_transfer_leg(result, samples_per_leg)
 
 
-def _draw_trajectory_overview(ax, results, cases, colors):
-    for index, case in enumerate(cases):
-        result = results[case["slug"]]
-        times, positions = _planned_trajectory_samples(result, samples_per_leg=120)
-        if positions is None:
-            continue
-        color = colors(index % 10)
-        ax.plot(positions[:, 0] / 1e3, positions[:, 1] / 1e3, color=color, lw=2.0, label=_case_number(case))
-        ax.scatter(positions[0, 0] / 1e3, positions[0, 1] / 1e3, color="blue", s=55, zorder=4)
-        ax.scatter(positions[-1, 0] / 1e3, positions[-1, 1] / 1e3, color="green", s=55, zorder=4)
-        mid_index = len(positions) // 2
-        ax.annotate(
-            _case_number(case),
-            (positions[mid_index, 0] / 1e3, positions[mid_index, 1] / 1e3),
-            textcoords="offset points",
-            xytext=(5, 5),
-            fontsize=ANNOTATION_FONTSIZE,
-            color=color,
-            weight="bold",
-        )
+def _flight_time_study(initial_orbit, target_orbit, *, fast):
+    """One comparable objective at every sample: direct rendezvous total delta-v."""
+    problem = {
+        "boundary": {"initial": initial_orbit, "target": target_orbit,
+                     "departure_mode": "now", "arrival_mode": "rendezvous"},
+        "objective": {"minimize": "delta_v", "delta_v_mode": "total"},
+        "constraints": {"tof_range": (35 * 60.0, 120 * 60.0),
+                        "perigee_altitude_min": 100e3, "max_burns": 2},
+        "route": "direct",
+        "solver": {"n_grid": (1, 69 if fast else 137), "polish": False,
+                   "refine": False, "propagate": False, "samples": 40,
+                   "burn_duration": 1.0},
+    }
+    search = transfer_optimal(problem=problem)
+    grid = search["diagnostics"]["pareto"]
+    tofs = np.asarray(grid["tof"], dtype=float)
+    costs = np.full(len(tofs), np.nan)
+    best = None
+    # The search grid uses a coarser Lambert tolerance than a finalized plan.
+    # Finalize each accepted sample so the curve and the 60-min bars report
+    # the same burn-cost definition, rather than mixing the two tolerances.
+    for i in np.flatnonzero(np.isfinite(grid["dv"])):
+        point = dict(problem,
+                     constraints=dict(problem["constraints"], tof_range=(tofs[i], tofs[i])),
+                     solver=dict(problem["solver"], n_grid=(1, 1)))
+        result = transfer_optimal(problem=point)
+        costs[i] = result["delta_v_total"]
+        if best is None or costs[i] < best["delta_v_total"]:
+            best = result
+    best["diagnostics"]["flight_time_study"] = dict(tof=tofs, dv=costs)
+    return best
 
+
+def _burn_budget(result):
+    """Departure / intermediate / final matching burns, all in m/s."""
+    values = [float(_burn_value(b, "delta_v_mag", 0.0)) for b in result["burns"]]
+    return np.array([values[0], sum(values[1:-1]), values[-1] if len(values) > 1 else 0.0])
+
+
+def _schedule_groups(results, cases):
+    """Group matching schedules to 1 microsecond and 1 micrometre/s precision."""
+    groups = {}
+    for case in cases:
+        result = results[case["slug"]]
+        key = (_transfer_time_bounds(result), tuple(
+            tuple(round(float(_burn_value(b, k, 0.0)), 6)
+                  for k in ("t_start", "t_end", "delta_v_mag"))
+            for b in result["burns"]))
+        if key not in groups:
+            groups[key] = {"result": result, "numbers": []}
+        groups[key]["numbers"].append(_case_number(case))
+    return list(groups.values())
+
+
+def _style_axis(ax):
+    ax.set_facecolor("white")
+    ax.tick_params(labelsize=10, colors=MUTED)
+    ax.spines[["top", "right"]].set_visible(False)
+    for name in ("left", "bottom"):
+        ax.spines[name].set_color("#cbd5e1")
+    ax.set_axisbelow(True)
+    ax.grid(color="#e5eaf0", lw=0.7)
+
+
+def _draw_routes(ax, results):
     from matplotlib.patches import Circle
 
-    earth = Circle((0.0, 0.0), 6378.137, color="0.70", alpha=0.35)
-    ax.add_patch(earth)
+    direct = results["01_direct_rendezvous_orbits"]
+    staged = results["06_immediate_staged_sections"]
+    for result, color, label in ((direct, BURN_COLORS[0], "Direct · case 01"),
+                                 (staged, BURN_COLORS[1], "Staged · case 06")):
+        _, positions = _planned_trajectory_samples(result, samples_per_leg=480)
+        ax.plot(*positions[:, :2].T / 1e3, color=color, lw=2.6, label=label)
+    for state, label in ((direct["initial"], "Initial orbit"), (direct["final"], "Target orbit")):
+        orbit = _orbit((state["r"], state["v"], state["t"]))
+        period = 2 * np.pi * np.sqrt(np.linalg.norm(state["r"])**3 / EARTH_MU)
+        positions, _ = rv(orbit, np.linspace(state["t"], state["t"] + period, 240),
+                          propagator=KeplerianPropagator())
+        ax.plot(*positions[:, :2].T / 1e3, color="#9cabbc", lw=0.9, ls=":")
+    ax.add_patch(Circle((0, 0), EARTH_RADIUS / 1e3, facecolor="#d9e9f2", edgecolor="#9db9cb"))
+    ax.text(0, -900, "Earth", ha="center", color="#52738b", fontsize=13)
+    for point, text, offset, align in (
+        (direct["initial"]["r"], "Departure", (-6, -30), "right"),
+        (direct["final"]["r"], "Arrival", (4, 20), "left"),
+        (staged["stage_legs"][0]["final"]["r"], "Stage stop", (22, 7), "left"),
+    ):
+        xy = np.asarray(point)[:2] / 1e3
+        ax.scatter(*xy, color=INK, s=26, zorder=5)
+        ax.annotate(text, xy, xytext=offset, textcoords="offset points", ha=align,
+                    fontsize=11, color=INK, arrowprops=dict(arrowstyle="-", color=MUTED))
+    ax.set(xlim=(-10400, 10400), ylim=(-9600, 10300), xlabel="GCRF x [km]", ylabel="GCRF y [km]")
     ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("GCRF x [km]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("GCRF y [km]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_title("Transfer Trajectories\nblue=start, green=end", fontsize=SUBTITLE_FONTSIZE)
-    ax.tick_params(labelsize=TICK_LABEL_FONTSIZE)
-    ax.grid(alpha=0.25)
-    ax.legend(title="case", title_fontsize=LEGEND_FONTSIZE, fontsize=LEGEND_FONTSIZE, ncol=3, loc="lower left")
-
-def _draw_burn_event_overview(ax, results, cases, colors):
-    all_burns = [burn for case in cases for burn in results[case["slug"]].get("burns", [])]
-    max_delta_v = max((float(_burn_value(burn, "delta_v_mag", 0.0)) for burn in all_burns), default=1.0)
-    max_accel = max((_burn_acceleration(burn) for burn in all_burns), default=1.0)
-    y_positions = np.arange(len(cases))[::-1]
-    y_labels = []
-
-    for index, (case, y_position) in enumerate(zip(cases, y_positions)):
-        result = results[case["slug"]]
-        color = colors(index % 10)
-        t0, t1 = _transfer_time_bounds(result)
-        duration_hours = max((t1 - t0) / 3600.0, 1e-6)
-        y_labels.append(_wrapped_case_label(case))
-        ax.hlines(y_position, 0.0, duration_hours, color="0.82", lw=4.0, zorder=0)
-        for burn_index, burn in enumerate(result.get("burns", []), 1):
-            start = float(_burn_value(burn, "t_start", _burn_value(burn, "t", t0)))
-            end = float(_burn_value(burn, "t_end", start))
-            middle_hours = (0.5 * (start + end) - t0) / 3600.0
-            delta_v = float(_burn_value(burn, "delta_v_mag", _burn_value(burn, "dv_mag", 0.0)))
-            acceleration = _burn_acceleration(burn)
-            marker_size = 80.0 + 360.0 * np.sqrt(delta_v / max_delta_v) if max_delta_v > 0.0 else 120.0
-            alpha = 0.35 + 0.55 * (acceleration / max_accel) if max_accel > 0.0 else 0.75
-            ax.scatter(
-                middle_hours,
-                y_position,
-                s=marker_size,
-                color=color,
-                alpha=min(alpha, 0.95),
-                edgecolor="k",
-                linewidth=0.45,
-                zorder=3,
-            )
-            ax.annotate(
-                f"{burn_index}: {delta_v:.0f}",
-                (middle_hours, y_position),
-                textcoords="offset points",
-                xytext=(0, 8 if burn_index % 2 else -13),
-                ha="center",
-                va="bottom" if burn_index % 2 else "top",
-                fontsize=ANNOTATION_FONTSIZE,
-                color="0.15",
-            )
-
-    ax.set_yticks(y_positions)
-    ax.set_yticklabels(y_labels, fontsize=CASE_LABEL_FONTSIZE, linespacing=1.15)
-    ax.set_xlabel("time since departure [h]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_title("Burn Events\n(size = delta-v; opacity = acceleration)", fontsize=SUBTITLE_FONTSIZE)
-    ax.tick_params(axis="x", labelsize=TICK_LABEL_FONTSIZE)
-    ax.grid(axis="x", alpha=0.25)
-    ax.set_ylim(-0.75, len(cases) - 0.25)
+    ax.legend(loc="lower center", frameon=False, fontsize=10, ncol=2)
 
 
-def _draw_objective_overview(ax, results, cases, colors):
-    for index, case in enumerate(cases):
-        result = results[case["slug"]]
-        diagnostics = result.get("diagnostics", {})
-        color = colors(index % 10)
-        pareto = diagnostics.get("pareto") if case.get("designer") else None
-        if pareto is not None:
-            tof = np.asarray(pareto.get("tof", []), dtype=float) / 3600.0
-            delta_v = np.asarray(pareto.get("dv", []), dtype=float)
-            if tof.size and delta_v.size:
-                ax.plot(tof, delta_v, color=color, lw=2.0, alpha=0.55)
-        selected_tof = float(result.get("tof", 0.0)) / 3600.0
-        selected_delta_v = float(diagnostics.get("objective_delta_v", result.get("delta_v_total", 0.0)))
-        marker = "s" if result.get("method") == "transfer_optimal_staged" else "o"
-        ax.scatter(selected_tof, selected_delta_v, color=color, marker=marker, s=135, edgecolor="k", linewidth=0.8, zorder=4)
-        ax.annotate(
-            _case_number(case),
-            (selected_tof, selected_delta_v),
-            textcoords="offset points",
-            xytext=(5, 5),
-            fontsize=ANNOTATION_FONTSIZE + 1,
-            color=color,
-            weight="bold",
+def _draw_budgets(ax, results, cases):
+    from matplotlib.patches import Patch
+
+    y = np.arange(len(cases))[::-1]
+    budgets = np.array([_burn_budget(results[c["slug"]]) for c in cases])
+    for row in y[::2]:
+        ax.axhspan(row - .48, row + .48, color="#f4f7fa", zorder=0)
+    left = np.zeros(len(cases))
+    for component, color in enumerate(BURN_COLORS):
+        values = budgets[:, component]
+        ax.barh(y, values, left=left, height=.57, color=color, zorder=2)
+        for yi, x, width in zip(y, left, values):
+            if width > 200:
+                ax.text(x + width / 2, yi, f"{width:,.0f}", ha="center", va="center",
+                        fontsize=10, color="white")
+        left += values
+    for yi, total in zip(y, left):
+        ax.text(total + 55, yi, f"{total:,.0f}", va="center", fontsize=11, weight="bold", color=INK)
+    ax.set_yticks(y, [f"{_case_number(c)}   {CASE_LABELS[_case_number(c)]}" for c in cases], fontsize=11)
+    ax.tick_params(axis="y", length=0)
+    ax.set(xlim=(0, max(left) * 1.21), ylim=(-.6, len(cases) - .4), xlabel="Total planned Δv [m/s]")
+    ax.grid(axis="y", visible=False)
+    ax.legend(handles=[Patch(color=color, label=label) for color, label in zip(
+        BURN_COLORS, ("Departure", "Stage burns", "Arrival match"))],
+        loc="lower left", bbox_to_anchor=(0, 1.01), frameon=False, fontsize=10, ncol=3,
+        borderaxespad=0, columnspacing=1)
+
+
+def _draw_timeline(ax, results, cases):
+    groups = _schedule_groups(results, cases)
+    labels = []
+    for row, group in enumerate(groups):
+        y = len(groups) - row - 1
+        result = group["result"]
+        burns = result["burns"]
+        start, stop = _transfer_time_bounds(result)
+        engine = any(_burn_value(b, "thrust") is not None for b in burns)
+        title = ("Engine sizing" if engine else "Departure only" if len(burns) == 1
+                 else "Staged route" if len(burns) > 2 else "Two burns")
+        labels.append(f"{title}\n{' · '.join(group['numbers'])}")
+        ax.hlines(y, 0, (stop - start) / 60, color="#c9d3df", lw=2)
+        for i, burn in enumerate(burns):
+            t0 = (float(_burn_value(burn, "t_start")) - start) / 60
+            t1 = (float(_burn_value(burn, "t_end")) - start) / 60
+            dv = float(_burn_value(burn, "delta_v_mag"))
+            color = BURN_COLORS[0 if i == 0 else 2 if i == len(burns) - 1 else 1]
+            ax.plot([t0, t1], [y, y], color=color, lw=7, solid_capstyle="butt")
+            x = (t0 + t1) / 2
+            ax.scatter(x, y, color=color, s=28, zorder=3)
+            # Two stage burns occur at almost the same epoch: label opposite sides.
+            lower = len(burns) > 2 and i == 1
+            align = "left" if i == 0 else "right" if i == len(burns) - 1 else "center"
+            ax.annotate(f"B{i + 1} · {dv:,.0f}", (x, y), xytext=(0, -16 if lower else 13),
+                        textcoords="offset points", ha=align, va="top" if lower else "bottom",
+                        fontsize=10, color=INK)
+            if engine:
+                ax.annotate(f"{_burn_duration(burn):.0f} s", (x, y), xytext=(0, -13),
+                            textcoords="offset points", ha=align, va="top", fontsize=10, color=MUTED)
+    ax.set_yticks(np.arange(len(groups))[::-1], labels, fontsize=10)
+    ax.tick_params(axis="y", length=0, pad=12)
+    ax.grid(axis="y", visible=False)
+    ax.set(xlim=(-3, 63), ylim=(-.6, len(groups) - .35), xlabel="Minutes since departure")
+
+
+def _draw_flight_time_trade(ax, trade, direct):
+    pareto = trade["diagnostics"]["flight_time_study"]
+    minutes = np.asarray(pareto["tof"]) / 60
+    dv = np.asarray(pareto["dv"])
+    valid = np.isfinite(dv)
+    ax.plot(minutes, dv, color=BURN_COLORS[0], lw=2, label="Direct rendezvous")
+    best = int(np.nanargmin(dv))
+    ax.scatter(minutes[best], dv[best], marker="D", s=55, color=BURN_COLORS[1], zorder=4,
+               label="Lowest sampled Δv")
+    ax.scatter(direct["tof"] / 60, direct["delta_v_total"], s=70, facecolor="white",
+               edgecolor=INK, linewidth=1.5, zorder=5, label="60 min API comparison")
+    # Show rejected samples without inventing an interpolated feasible boundary.
+    rejected = minutes[~valid]
+    if len(rejected):
+        ax.scatter(rejected, np.full(len(rejected), .965), transform=ax.get_xaxis_transform(),
+                   marker="x", s=20, color="#9ca6b5", label="No feasible grid solution")
+    ax.set(xlim=(minutes[0] - 1, minutes[-1] + 1), xlabel="Flight time [min]", ylabel="Total Δv [m/s]")
+    ax.legend(loc="upper left", frameon=False, fontsize=9.5)
+
+
+def _build_overview(results, cases, trade):
+    """Build four panels with separate geometry, budgets, timing and comparable trade."""
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import FancyBboxPatch
+
+    with plt.rc_context({"font.family": "DejaVu Sans", "font.size": 11,
+                         "text.color": INK, "axes.labelcolor": MUTED}):
+        fig = plt.figure(figsize=(20, 15), facecolor="#f5f7fb")
+        fig.text(.05, .962, "Transfer planning: what changes, and what costs more?", fontsize=26, weight="bold")
+        fig.text(.05, .936, "SSATK structured transfer API  •  7,000 → 9,000 km orbital radius  •  8° target-plane inclination", fontsize=13, color=MUTED)
+        direct = results["01_direct_rendezvous_orbits"]
+        staged = results["06_immediate_staged_sections"]
+        extra = 100 * (staged["delta_v_total"] / direct["delta_v_total"] - 1)
+        cards = [
+            ("DIRECT RENDEZVOUS", f"{direct['delta_v_total']:,.0f} m/s", "Departure + arrival matching, at 60 min"),
+            ("STAGED ROUTE, SAME ARRIVAL TIME", f"{extra:+.1f}% Δv", f"{staged['delta_v_total']:,.0f} m/s across four planned burns"),
+            ("SEPARATE FLIGHT-TIME STUDY", "35–120 min", "Same departure; total rendezvous Δv at each sample"),
+        ]
+        left, right, column_gap = .05, .95, .06
+        panel_width = (right - left - column_gap) / 2
+        columns = (left, left + panel_width + column_gap)
+        card_gap = .02
+        card_width = (right - left - 2 * card_gap) / 3
+        for i, (label, value, detail) in enumerate(cards):
+            x = left + i * (card_width + card_gap)
+            fig.add_artist(FancyBboxPatch((x, .844), card_width, .08,
+                                         boxstyle="round,pad=0,rounding_size=0.008",
+                                         transform=fig.transFigure, facecolor="white", edgecolor="#dde4ee"))
+            fig.text(x + .01, .9, label, fontsize=10, color=MUTED)
+            fig.text(x + .01, .873, value, fontsize=23, weight="bold", color=BURN_COLORS[0])
+            fig.text(x + .01, .852, detail, fontsize=10, color=MUTED)
+        row_bottoms = (.51, .11)
+        plot_height, label_gutter, plot_width = .245, .115, .30
+        headings = (
+            ("A   Two routes, one arrival", "Geocentric celestial reference frame (GCRF), x–y projection"),
+            ("B   Where the Δv is spent", "All ten API cases on the same total-burn-cost basis"),
+            ("C   When the burns happen", "Equivalent schedules grouped; burn labels give Δv in m/s"),
+            ("D   Does more flight time help?", "Fixed departure · rendezvous · perigee altitude ≥100 km"),
         )
-        dv_budget = diagnostics.get("dv_budget")
-        if dv_budget is not None:
-            ax.axhline(float(dv_budget), color=color, ls=":", lw=1.4, alpha=0.45)
+        axes = []
+        for i, (title, subtitle) in enumerate(headings):
+            x, bottom = columns[i % 2], row_bottoms[i // 2]
+            y = bottom + plot_height + .062
+            fig.text(x, y, title, fontsize=18, weight="bold")
+            fig.text(x, y - .022, subtitle, fontsize=11, color=MUTED)
+            axes.append(fig.add_axes((x + label_gutter, bottom, plot_width, plot_height)))
+        for ax in axes:
+            _style_axis(ax)
+        _draw_routes(axes[0], results)
+        # Equal physical x/y scaling without shrinking or centering this panel
+        # away from the common grid: widen its x range to match the panel shape.
+        y0, y1 = axes[0].get_ylim()
+        physical_aspect = (plot_width * fig.get_figwidth()
+                           / (plot_height * fig.get_figheight()))
+        half_width = (y1 - y0) * physical_aspect / 2
+        axes[0].set_xlim(-half_width, half_width)
+        _draw_budgets(axes[1], results, cases)
+        _draw_timeline(axes[2], results, cases)
+        _draw_flight_time_trade(axes[3], trade, direct)
+        note_style = dict(fontsize=10, color=MUTED, linespacing=1.4, va="top")
+        fig.text(columns[0], row_bottoms[0] - .046, "Representative cases 01 and 06; coincident API routes are not overplotted.\nDotted curves show the initial and target orbits. Earth uses its physical radius.", **note_style)
+        fig.text(columns[1], row_bottoms[0] - .046, "02 / 02b omit arrival matching; 03 optimizes only the arrival burn.\n04 holds time fixed, so its API example does not demonstrate a faster arrival.", **note_style)
+        fig.text(columns[0], row_bottoms[1] - .046, "Dots: nominal 1 s burns. Thick segments: engine-sized windows.\nStage arrival and departure burns are labelled on opposite sides.", **note_style)
+        p = trade["diagnostics"]["flight_time_study"]
+        best = int(np.nanargmin(p["dv"]))
+        step = np.diff(p["tof"])[0] / 60
+        fig.text(columns[1], row_bottoms[1] - .046, f"Lowest sampled cost: {p['dv'][best]:,.0f} m/s at {p['tof'][best] / 60:.2f} min.\nGrid spacing: {step:g} min; this is a sampled result, not a global optimum.", **note_style)
+        fig.text(left, .012, "MODEL: two-body Lambert / Kepler planning. Coast arcs are not finite-thrust propagation; engine durations are sizing estimates.\nCase numbers map to the explicit transfer_optimal calls in demo_structured_transfer_api.py. Synthetic scenario; no flight data.", fontsize=9, color=MUTED, linespacing=1.4)
+    return fig
 
-    ax.set_xlabel("time of flight [h]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("objective delta-v [m/s]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_title(
-        "Objective / Design Trade\n"
-        "Pareto lines = direct cases\n"
-        "markers = selected solutions",
-        fontsize=SUBTITLE_FONTSIZE,
-    )
-    ax.tick_params(labelsize=TICK_LABEL_FONTSIZE)
-    ax.grid(alpha=0.3)
 
-
-def _save_three_panel_overview(results, cases, *, make_figures=True):
+def _save_overview(results, cases, trade, *, make_figures=True):
     if not make_figures:
         return None
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    colors = plt.get_cmap("tab10")
-    fig, axes = plt.subplots(
-        1,
-        3,
-        figsize=(34, 14.5),
-        gridspec_kw={"width_ratios": [1.1, 1.9, 1.1]},
-    )
-    _draw_trajectory_overview(axes[0], results, cases, colors)
-    _draw_burn_event_overview(axes[1], results, cases, colors)
-    _draw_objective_overview(axes[2], results, cases, colors)
-    fig.suptitle("Structured Transfer API Overview", fontsize=TITLE_FONTSIZE)
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94), w_pad=3.0)
-
-    save_rel = f"{FIGDIR}/structured_transfer_api_overview.jpg"
-    figsave(fig, save_rel)
-    return figpath(save_rel)
+    # gallery-call: *.jpg
+    fig = _build_overview(results, cases, trade)
+    # gallery-end
+    save_rel = f"structured_transfer_api_overview.jpg"
+    return figsave(fig, figpath(save_rel))
 
 
 def main(make_figures=None, fast=None):
@@ -802,7 +905,8 @@ def main(make_figures=None, fast=None):
         designer=True,
     )
 
-    overview_path = _save_three_panel_overview(results, cases, make_figures=make_figures)
+    flight_time_study = _flight_time_study(initial_orbit, target_orbit, fast=fast)
+    overview_path = _save_overview(results, cases, flight_time_study, make_figures=make_figures)
     if overview_path is not None:
         output_paths.append(overview_path)
 
@@ -818,6 +922,8 @@ def main(make_figures=None, fast=None):
         "title": TITLE,
         "description": DESCRIPTION,
         "results": results,
+        "cases": cases,
+        "flight_time_study": flight_time_study,
         "summary": rows,
         "output_paths": output_paths,
     }

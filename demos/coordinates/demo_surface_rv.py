@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 
 from astropy.time import Time
 
-from ssapy_toolkit.coordinates.geodetic import surface_rv
-from ssapy_toolkit.time_functions.get_times import get_times
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.coordinates.geodetic import surface_rv
+from ssatk.time_functions.get_times import get_times
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

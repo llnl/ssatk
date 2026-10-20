@@ -12,9 +12,9 @@ matplotlib.use("Agg", force=True)
 
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS
-from ssapy_toolkit.propagators_6dof import rotate_vector
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.constants import EARTH_MU, EARTH_RADIUS
+from ssatk.propagators_6dof import rotate_vector
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 FIGDIR = "six_dof"

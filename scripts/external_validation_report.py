@@ -15,8 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from ssapy_toolkit import __version__
-from ssapy_toolkit.constants import EARTH_MU
+from ssatk import __version__
+from ssatk.constants import EARTH_MU
 
 Metric = tuple[str, str, float]
 
@@ -142,10 +142,10 @@ def run_external_validation(*, output_path: Path | None = None, fast: bool = Tru
     report = {
         "schema_version": 1,
         "deterministic": True,
-        "ssapy_toolkit_version": __version__,
+        "ssatk_version": __version__,
         "configuration": {"fast": fast, "allow_install": False, "make_figures": False},
         "provenance": {
-            "reference": "Existing SSAPy-Toolkit external benchmark runners; residuals are compared at runner-reported epochs.",
+            "reference": "Existing SSATK external benchmark runners; residuals are compared at runner-reported epochs.",
             "source_checkout": True,
         },
         "summary": summary,

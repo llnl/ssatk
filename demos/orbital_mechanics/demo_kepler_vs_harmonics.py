@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Hardcoded groundtrack validation using ssapy_toolkit (+ssapy), no file I/O.
+Hardcoded groundtrack validation using ssatk (+ssapy), no file I/O.
 
 Uses only your utilities:
-- ssapy_toolkit.get_times, gcrf_to_lonlat
-- ssapy_toolkit.ssapy_wrapper.{best_prop, keplerian_prop}
+- ssatk.get_times, gcrf_to_lonlat
+- ssatk.ssapy_wrapper.{best_prop, keplerian_prop}
 - ssapy.Orbit, ssapy.rv
-- ssapy_toolkit.coordinates.geodetic.lonlat_distance
+- ssatk.coordinates.geodetic.lonlat_distance
 """
 
 import os
@@ -16,9 +16,9 @@ import numpy as np
 from astropy.time import Time
 from ssapy import Orbit, rv
 
-from ssapy_toolkit.time_functions.get_times import get_times
-from ssapy_toolkit.coordinates.geodetic import gcrf_to_lonlat, lonlat_distance
-from ssapy_toolkit.ssapy_wrappers.ssapy_props import keplerian_prop, best_prop, threebody_prop
+from ssatk.time_functions.get_times import get_times
+from ssatk.coordinates.geodetic import gcrf_to_lonlat, lonlat_distance
+from ssatk.ssapy_wrappers.ssapy_props import keplerian_prop, best_prop, threebody_prop
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 

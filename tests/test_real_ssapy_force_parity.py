@@ -5,8 +5,8 @@ from ssapy.accel import AccelDrag, AccelSolRad
 from ssapy.body import get_body
 from ssapy.gravity import AccelHarmonic, AccelThirdBody
 
-from ssapy_toolkit.accelerations_6dof import SpacecraftAccelSSAPy
-from ssapy_toolkit.propagators_6dof.sixdof import Spacecraft
+from ssatk.accelerations_6dof import SpacecraftAccelSSAPy
+from ssatk.propagators_6dof.sixdof import Spacecraft
 
 R = np.array([7.0e6, -1.2e6, 2.5e6])
 V = np.array([1.1e3, 7.2e3, -0.4e3])

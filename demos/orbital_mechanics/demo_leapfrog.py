@@ -3,11 +3,11 @@ import sys
 
 import numpy as np
 
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
-from ssapy_toolkit.propagators_orbit.leap_frog import leapfrog
-from ssapy_toolkit.accelerations_orbit.accel_uniform_earth import accel_uniform_earth
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.constants import RGEO, VGEO  # inferred from context [21]
+from ssatk.plots.orbit_plot import orbit_plot
+from ssatk.propagators_orbit.leap_frog import leapfrog
+from ssatk.accelerations_orbit.accel_uniform_earth import accel_uniform_earth
+from ssatk.plots.figpath import figpath
+from ssatk.constants import RGEO, VGEO
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -24,6 +24,7 @@ def main(make_figures=None, fast=None):
     r2, v2 = leapfrog(r0=[RGEO, 0, 0], v0=[0, VGEO, 0], t=t, velocity=(0, 600, -1))
 
     if make_figures:
+        # gallery-call: testing_leapfrog_RGEO.jpg
         orbit_plot(
             r1,
             view="xy",
@@ -32,6 +33,8 @@ def main(make_figures=None, fast=None):
             title="GEO",
             show=False,
         )
+        # gallery-end
+        # gallery-call: testing_leapfrog_RGEO_velocity_burn.jpg
         orbit_plot(
             r2,
             view="xy",
@@ -40,6 +43,7 @@ def main(make_figures=None, fast=None):
             title="GEO",
             show=False,
         )
+        # gallery-end
 
     return {"nominal": (r1, v1), "velocity_burn": (r2, v2)}
 

@@ -16,9 +16,9 @@ import numpy as np
 from astropy.time import Time
 from ssapy import Orbit, rv
 
-from ssapy_toolkit.constants import MOON_MU, MOON_RADIUS
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.moon_webgl import moon_webgl
+from ssatk.constants import MOON_MU, MOON_RADIUS
+from ssatk.plots.figpath import figpath
+from ssatk.plots.moon_webgl import moon_webgl
 
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -55,6 +55,7 @@ def main(make_figures=None, fast=None):
             "orbit_visualization/demo_moon_webgl_animation.html"
         )
         try:
+            # gallery-call: *.html
             moon_webgl(
                 r=positions,
                 t=times,
@@ -64,6 +65,7 @@ def main(make_figures=None, fast=None):
                 embed_assets=True,
                 save_path=html_path,
             )
+            # gallery-end
             print(f"Saved: {html_path}")
         except FileNotFoundError as exc:
             # The high-resolution baked maps are optional local data. Keep the

@@ -3,6 +3,7 @@ name: Build Demo Gallery
 on:
   push:
     branches: [main, master]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -11,61 +12,93 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
+  # Pull requests get their own group so they never cancel a Pages deploy.
+  group: ${{ github.event_name == 'pull_request' && format('gallery-pr-{0}', github.ref) || 'github-pages' }}
   cancel-in-progress: true
 
 jobs:
   build-gallery:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      PYTHONPATH: ${{ github.workspace }}/SSAPy-Data/src
+      MPLBACKEND: Agg
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Checkout SSAPy data
-        uses: actions/checkout@v4
-        with:
-          repository: llnl/SSAPy-Data
-          ref: 981aa894b4767103220722fe4a6d449e4077a292
-          path: SSAPy-Data
+      - name: Set absolute gallery data paths
+        run: |
+          echo "SSATK_CACHE=$RUNNER_TEMP/ssatk-cache" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_DIR=$RUNNER_TEMP/ssatk-cache/orekit" >> "$GITHUB_ENV"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
+
+      - name: Set up Java for Orekit comparisons
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: demos/benchmarks/orekit/pom.xml
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e SSAPy-Data
-          pip install -e .[dev]
+          pip install -e ".[dev,all-data,geomagnetics,video,static,browser]"
+
+      - name: Install Chrome for static previews
+        run: plotly_get_chrome -y
+
+      - name: Install Orekit reference runtime
+        # Maven is provided by the ubuntu-24.04 runner image.
+        run: mvn -B -q -f demos/benchmarks/orekit/pom.xml dependency:build-classpath
+
+      - name: Cache reference data and Earth/Moon source maps
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.SSATK_CACHE }}
+          key: gallery-reference-data-${{ hashFiles('scripts/prepare_gallery_data.py', 'ssatk/io/moon_maps.py') }}
+
+      - name: Prepare DE430 reference data and NASA Earth/Moon maps
+        run: python -m scripts.prepare_gallery_data
 
       - name: Validate JavaScript plot assets
         run: |
-          node --check ssapy_toolkit/plots/satellite_viewer_scene.js
-          node --check ssapy_toolkit/plots/satellite_viewer_smoketest.js
+          node --check ssatk/plots/satellite_viewer_scene.js
+          node --check ssatk/plots/satellite_viewer_smoketest.js
+          node --check ssatk/plots/solar_sky.js
 
-      - name: Build demo gallery
+      - name: Check publishing and export contracts
         env:
           MPLBACKEND: Agg
+          SSATK_BROWSER_TESTS: "1"
+        run: python -m pytest scripts/tests -q
+
+      - name: Build demo gallery
         run: |
-          ssapy-demo-gallery --output site
+          ssatk-demo-gallery --output site --timeout 900 --strict
+
+      - name: Check published asset links
+        run: python -m ssatk.gallery_validation site
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build-gallery
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -73,4 +106,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

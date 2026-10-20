@@ -1,2 +1,2 @@
-"""Coordinate and frame-transform SSAPy-Toolkit demos."""
+"""Coordinate and frame-transform SSATK demos."""
 

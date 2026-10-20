@@ -9,15 +9,15 @@ run end to end. Neither answers the question you actually need before telling
 people a release is usable: *does every module import on its own, and does
 every demo still produce its figure?*
 
-That gap is not hypothetical. `ssapy_toolkit.geomagnetics` was broken on main
+That gap is not hypothetical. `ssatk.geomagnetics` was broken on main
 for a while -- importing it directly raised ImportError from a circular
-dependency, while `import ssapy_toolkit.plots` happened to work because it
+dependency, while `import ssatk.plots` happened to work because it
 entered the cycle from the other side. No test caught it, because every test
 imported the package first.
 
 What it checks
 --------------
-1. IMPORT   Each module in ssapy_toolkit/plots/ is imported in its own fresh
+1. IMPORT   Each module in ssatk/plots/ is imported in its own fresh
             subprocess, with nothing else imported first. A module that only
             works when something else is loaded first fails here, which is the
             point.
@@ -53,7 +53,7 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PLOTS_DIR = REPO_ROOT / "ssapy_toolkit" / "plots"
+PLOTS_DIR = REPO_ROOT / "ssatk" / "plots"
 DEMOS_DIR = REPO_ROOT / "demos"
 
 # Per-check timeout. Some demos legitimately take a while (field-line tracing,
@@ -98,7 +98,7 @@ def check_imports(only: list[str] | None) -> list[dict]:
         t0 = time.time()
         # Import the submodule directly and nothing else first. If it needs the
         # package to be loaded already, that is exactly what we want to catch.
-        status, detail = _run(f"import ssapy_toolkit.plots.{name}")
+        status, detail = _run(f"import ssatk.plots.{name}")
         results.append(dict(kind="import", name=name, status=status,
                             detail=detail, seconds=round(time.time() - t0, 1)))
         print(f"  [{status:>7}] {name}" + (f"  -- {detail}" if detail and status != OK else ""))

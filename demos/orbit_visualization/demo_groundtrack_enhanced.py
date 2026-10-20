@@ -1,5 +1,5 @@
 """
-Demo script for ssapy_toolkit groundtrack_enhanced.
+Demo script for ssatk groundtrack_enhanced.
 
 This is the instrumented ground track: unlike the plain groundtrack_plot demo,
 which draws tracks and nothing else, this one answers an operational question --
@@ -18,7 +18,7 @@ It adds, on top of the track:
 
 Change site_lat/site_lon to move the ground station, or swap in your own
 ephemeris. To drive it from live TLEs instead of the synthetic orbit below,
-see ssapy_toolkit/plots/tle_updater.py; that path needs Space-Track
+see ssatk/plots/tle_updater.py; that path needs Space-Track
 credentials and network access, so this demo stays self-contained.
 
 Pytest-safe mode:
@@ -35,8 +35,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.time import Time
 
-from ssapy_toolkit.plots.groundtrack_enhanced import plot_enhanced_groundtrack
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.plots.groundtrack_enhanced import plot_enhanced_groundtrack
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -97,6 +97,7 @@ def main(make_figures=None, fast=None):
 
     r_km, t = make_circular_orbit(npts=npts, n_orbits=n_orbits)
 
+    # gallery-call: *.jpg
     fig, ax, stats = plot_enhanced_groundtrack(
         r_eci_km=r_km,
         t=t,
@@ -106,6 +107,7 @@ def main(make_figures=None, fast=None):
         sat_name=f"LEO {INC_DEG:.1f} deg, {ALT_KM:.0f} km",
         min_elev_deg=MIN_ELEV_DEG,
     )
+    # gallery-end
 
     vis = stats.get("site_visibility_pct")
     if vis is not None:
@@ -113,7 +115,7 @@ def main(make_figures=None, fast=None):
               f"{n_orbits:.0f}-orbit arc (>= {MIN_ELEV_DEG:.0f} deg elevation)")
 
     if make_figures:
-        figsave(fig, "demo_gallery/figures/demo_groundtrack_enhanced")
+        figsave(fig, "demo_groundtrack_enhanced")
     else:
         plt.close(fig)
 

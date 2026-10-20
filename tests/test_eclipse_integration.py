@@ -4,7 +4,7 @@ import numpy as np
 
 
 def test_finite_source_geometry_and_ray_intersections():
-    from ssapy_toolkit.compute.eclipse_core import (
+    from ssatk.compute.eclipse_core import (
         circle_overlap_visible_fraction,
         finite_source_visibility,
         ray_ellipsoid_intersections,
@@ -31,7 +31,7 @@ def test_finite_source_geometry_and_ray_intersections():
 
 
 def test_reference_eclipses_pass_physical_validation():
-    from ssapy_toolkit.eclipse import EventRequest, build_event, validate_event
+    from ssatk.eclipse import EventRequest, build_event, validate_event
 
     for kind, expected_key in (("solar", "solar_2024_04_08"), ("lunar", "lunar_2025_03_14")):
         event = build_event(EventRequest(kind=kind, backend="reference", sample_count=25))
@@ -45,7 +45,7 @@ def test_reference_eclipses_pass_physical_validation():
 
 
 def test_ssapy_backend_is_strict_and_passes_physical_validation():
-    from ssapy_toolkit.eclipse import EventRequest, build_event, validate_event
+    from ssatk.eclipse import EventRequest, build_event, validate_event
 
     for kind in ("solar", "lunar"):
         event = build_event(EventRequest(kind=kind, backend="ssapy", sample_count=25))

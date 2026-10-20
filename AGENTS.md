@@ -1,196 +1,151 @@
-# Working on SSAPy-Toolkit
+# Working on SSATK
 
-Instructions for automated agents and LLM-assisted development, whoever is
-running them. Read this before changing anything.
+Working rules for changes to this repository. Read this file before changing
+anything, and read [skills.md](skills.md) before writing code that uses the
+package.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) is authoritative on licensing, repository
-layout, and merge requirements, and all of it applies to agent-authored changes
-without exception. This file adds what an agent cannot infer from the tree:
-which rules are machine-enforced, which are not, and the mistakes this codebase
-specifically invites.
+[CONTRIBUTING.md](CONTRIBUTING.md) is authoritative on licensing, layout and
+merge requirements, and all of it applies here except where this file sets a
+narrower testing rule (see "Tests cover finalized functionality" below). This
+file adds what the tree does not show: which rules are machine-enforced, which
+are not, and the mistakes this codebase invites. It grants no authority beyond
+the permissions of the person doing the work.
 
-Nothing here grants authority. An agent working on this repository has exactly
-the permissions of the human running it, and the items under "Requires a
-maintainer" need a maintainer decision regardless of what an agent is asked to
-do.
+## Commits, comments and notes
+
+- **Commit messages and pull request descriptions** state what changed, why,
+  and how it was verified. The pull request title is the commit subject.
+- **Authorship:** commit with your own Git identity, as the person responsible
+  for the change. Authors and co-authors are the people responsible for it.
+- **Branch names describe the change:** `fix/...`, `feature/...`, `docs/...`,
+  `ci/...`.
+- **Comments explain why the code is the way it is**, for its next reader.
+  History belongs in the commit message; review notes, change logs and
+  commented-out code do not belong in files.
+- **Plans, notes and scratch files stay outside the working tree.** If one must
+  sit in the checkout, list it in `.git/info/exclude`, not in `.gitignore`.
+- **Working guidance lives in `AGENTS.md` and `skills.md`.** Keep it there
+  rather than in code, docs or new files.
 
 ## Ground rules
 
-- **Contribute by fork and pull request.** Do not push to `main`, do not
-  force-push a shared branch, and do not rewrite published history. Target
-  `main` from a topic branch.
-- **Author commits as the actual author.** Use the identity of the person or
-  account doing the work. Never attribute a commit to a maintainer, to a
-  `CODEOWNERS` entry, or to any address you were not explicitly given for your
-  own commits.
-- **Disclose machine-generated work** in the pull request, including what was
-  verified by running it versus reasoned about. A reviewer cannot calibrate a
-  diff without knowing which is which.
-- **Keep the diff to one concern.** No drive-by reformatting, no import
-  reordering, no mass lint fixes, no unrelated renames. One problem per branch,
-  with its own tests.
-- **Never weaken a check to make a change pass.** Do not delete, skip, `xfail`,
-  loosen a tolerance on, or narrow the scope of an existing test. Do not relax
-  `scripts/check_repository_policy.py`, edit `.github/workflows/`, or add lint
-  suppressions to get green. If a check legitimately blocks correct work, say so
-  and stop.
-- **Never invent a number.** Residuals, timings, tolerances, coverage figures,
-  and benchmark results belong in a commit message, docstring, or pull request
-  only if you produced them by running something in this change. If a value is
-  unknown, mark it as unknown. Fabricated validation is worse than none, because
-  it survives review.
-- **Report blockers exactly.** Name the failing command, the environment, and
-  the error text. Do not work around a failure silently, and do not broaden
-  scope to fix it.
+- **Work on a topic branch and open a pull request against `main`.** Do not
+  push to `main`, force-push a shared branch, rewrite published history, merge,
+  tag or release unless a maintainer asks for that specific operation.
+- **Keep each change to one concern.** No drive-by reformatting, import
+  reordering, mass lint fixes or unrelated renames.
+- **Tests cover finalized functionality.** Add a test only for behavior the
+  repository relies on and that is settled, not for every change. A bug fix or
+  refactor does not need a new test of its own: verify it with the existing
+  suite plus a one-off check, and state what you ran in the commit message.
+- **Tests compare against a reference.** Each test that is added checks a
+  computed value against a closed form, an independent implementation, a
+  published value, a conservation law or a finite-difference derivative, with a
+  stated tolerance and unit (`docs/testing_policy.md`). Do not add tests that
+  only run code, raise coverage, or check imports, rendering or argument
+  validation.
+- **Never weaken a check to make a change pass.** Do not delete, skip or
+  `xfail` a test, loosen a tolerance, relax
+  `scripts/check_repository_policy.py`, or add lint suppressions to get green.
+  If a check legitimately blocks correct work, say so and stop.
+- **Never invent a number.** Residuals, timings, tolerances, test counts and
+  benchmark results appear in a commit message, docstring or pull request only
+  if you produced them by running something on this change. Mark an unknown
+  value as unknown.
+- **Report blockers exactly**: the failing command, the environment and the
+  error text. Do not work around a failure silently or broaden scope to fix it.
+- **Verify, do not inherit.** Old notes, logs and completion claims are
+  records, not requirements. Confirm against the tree, the tests and
+  the remote before acting on them.
 
 ## Requires a maintainer
 
-Do not do these on your own initiative.
+Do not do these on your own initiative:
 
-- Merging, tagging, or releasing.
-- Changing the package version. It lives in four places that must agree:
-  `pyproject.toml`, `ssapy_toolkit/__init__.py`, `codemeta.json`, and
-  `CITATION.cff`.
-- Adding, removing, or promoting a dependency. Several packages sit
-  deliberately in optional extras (`video`, `browser`, `notebook`, `static`,
-  `pdf`, `monitoring`, `geomagnetics`, `atmosphere`, `validation`) rather than
-  in core, and undoing that is a policy decision, not a convenience.
-- Adding a tracked top-level path, which also requires an `ALLOWED_TOP_LEVEL`
-  entry in `scripts/check_repository_policy.py` and a justification in the pull
-  request.
-- Committing any dataset, figure, generated output, or binary artifact. New data
-  belongs in [SSAPy-Data](https://github.com/llnl/SSAPy-Data). This repository
-  has no Git LFS objects and none should be added.
-- Raising the Python floor, currently `>=3.10`.
+- Merging, tagging, releasing, or changing the version. The version lives in
+  `pyproject.toml`, `codemeta.json` and `CITATION.cff`, and
+  `scripts/check_release_metadata.py` fails CI when they disagree.
+- Adding, removing or promoting a dependency. Several packages sit in optional
+  extras (`static`, `pdf`, `video`, `browser`, `notebook`, `monitoring`,
+  `geomagnetics`, `atmosphere`, `validation`, `propulsion`, `benchmarks`) on
+  purpose.
+- Adding a tracked top-level path. It also needs an `ALLOWED_TOP_LEVEL` entry
+  in `scripts/check_repository_policy.py` and a row in the CONTRIBUTING.md
+  layout table.
+- Committing data, figures, generated output or binary files. Persistent data
+  belongs in the split `ssa-data-*` packages; the policy check rejects media,
+  archives, notebooks and files over 1,000,000 bytes.
+- Raising the Python floor (`>=3.10`; CI tests 3.10 to 3.14).
 
 ## Scope
 
-SSAPy-Toolkit holds higher-level, analysis-ready utilities built on
-[SSAPy](https://github.com/llnl/SSAPy). Work on the core propagation and
-modeling engine belongs in SSAPy, not here. Agents get this wrong often, by
-implementing a propagator, force model, or coordinate transform locally instead
-of finding the upstream one. Search for an existing SSAPy or Toolkit function
-before writing a new one.
+SSATK is a standalone toolkit built on SSAPy (`llnl-ssapy`, imported as
+`ssapy`). Core propagation and force-model work belongs in
+[SSAPy](https://github.com/llnl/SSAPy). Before adding a propagator, force
+model, frame transform or helper, search SSATK and SSAPy for an existing one:
+
+```bash
+rg "def <name>|class <Name>|<keyword>" ssatk demos tests
+```
 
 ## Environment
 
-Declared floors are `llnl-ssapy>=1.1.9` and `llnl-ssapy-data>=0.1.5`. Test
-against the published `llnl-ssapy-data` distribution, never a source checkout.
-SSAPy 1.1.5 and earlier reconstruct a zero-drag `Satrec` in `SGP4Propagator`
-instead of using a native record, so SGP4 comparisons fail there; that is an
-environment problem, not a Toolkit bug.
-
-Access packaged data through `ssapy_toolkit.data`, which resolves to the
-external `ssapy_data` import package. Optional demo data is fetched to
-`~/ssatk_data` by `ssapy_toolkit.io.demo_data.ensure_demo_data_file`, which
-warns and skips when a file is absent rather than failing.
-
-**Always use `python3 -m pip`, never bare `pip`.** On systems with more than one
-interpreter the two routinely differ, and bare `pip` will report a package
-"already satisfied" in a tree the running interpreter cannot see. Confirm with:
-
 ```bash
-python3 -m pip --version
-python3 -c "import sys, ssapy, ssapy_toolkit; print(sys.executable, ssapy.__version__)"
+python3 -m pip install -e ".[dev,geomagnetics,atmosphere,propulsion]"
+python3 -c "import sys, ssapy, ssatk; print(sys.executable, ssapy.__version__, ssatk.__version__)"
 ```
 
-## Gates
+Use `python3 -m pip`, never bare `pip`: on machines with several interpreters
+they differ, and bare `pip` reports packages as installed in a tree the running
+interpreter cannot see. Packaged data comes from the `ssa-data-*` distributions
+through `ssatk.data`; do not read data through repository-relative paths.
 
-Run the focused checks matching the change, then the full set before requesting
+## Checks
+
+Run the checks that match the change, then the full set before asking for
 review:
 
 ```bash
 python3 scripts/check_repository_policy.py
-python3 -m pytest -q
+python3 scripts/check_release_metadata.py
+python3 -m pytest tests -q
+MPLBACKEND=Agg python3 -m pytest scripts/tests -q
 ruff check --select E9,F63,F7,F82 <changed .py files>
 git diff --check
+node --check ssatk/plots/satellite_viewer_scene.js
 python3 -m sphinx -b html -W --keep-going docs /tmp/docs
-python3 -m build && python3 -m twine check dist/*
-python3 -m ssapy_toolkit.run_all_demos
+python3 -m ssatk.run_all_demos --no-open
 ```
 
-A green run is narrower than it looks. Do not describe a change as verified on
-the strength of these alone:
+A green run covers less than it appears to:
 
-- The Ruff gate is syntax-level only. A full-repo `ruff check` reports well over
-  a thousand findings, including many blind `except` clauses. Raise specific
-  findings; do not bulk-fix them.
-- `check_repository_policy.py` is diff-scoped. On a clean checkout it reports
-  "no changed paths found" and inspects nothing. It guards new violations only.
-- Roughly nineteen tests skip by design: the external-validation cases (Orekit,
-  Basilisk, spacepy/IRBEM, ppigrf/geopack, pymsis). Cross-tool residuals quoted
-  anywhere in this repository are **not** reproducible from a stock install and
-  must not be repeated as verified without re-running them.
-- `docs/generated/` holds autosummary stubs. A stale stub for a module absent
-  from your branch fails the warning-as-error build; delete the directory and
-  rebuild before believing that failure.
-- Clean `build/` before a release build so deleted demos cannot persist in stale
-  wheel output.
-
-The pull request template carries the checklist a reviewer will apply. Fill it
-in from commands you actually ran.
+- The Ruff gate is syntax-level. A full `ruff check` reports many style
+  findings; raise specific ones, do not bulk-fix them.
+- `check_repository_policy.py` checks the diff only. On a clean checkout it
+  inspects nothing.
+- External-reference tests (Orekit, Basilisk, SpacePy/IRBEM) skip unless those
+  tools are installed. Do not quote their residuals as verified without running
+  them.
+- Delete `docs/generated/` before a docs build; stale autosummary stubs fail
+  the warning-as-error build. Delete `build/` before a release build.
 
 ## Demos
 
-Demos live under `demos/<category>/`, write artifacts through
-`ssapy_toolkit.plots.figsave` into `~/ssatk_output/figures/`, and join the
-gallery unless they set a module-level `GALLERY_INCLUDE = False`.
-Validation-only scripts should opt out and be exercised by `tests/` instead.
-Never commit demo output.
+Demos live under `demos/<category>/`, write output through
+`ssatk.plots.figsave` (relative paths land in `~/ssatk_output/figures`, or
+under `$SSATK_OUTPUT_DIR`), and join the gallery unless the module sets
+`GALLERY_INCLUDE = False`. Validation-only scripts should opt out and be
+covered by `tests/`. Never commit demo output.
 
-## Known traps in this codebase
+## Known traps
 
-Each of these has cost real debugging time. Check them before reasoning from
-scratch.
-
-- **`ssapy_toolkit.plots` imports eagerly.** `plots/__init__.py` calls
-  `import_public_modules`, which imports every module in the package. Eight of
-  them hard-import `plotly` at module scope, so `from ssapy_toolkit.plots import
-  figsave` fails without plotly even though `figsave` needs only matplotlib.
-- **`compute/lambertian_magnitude` does not mask set targets.** `_setup` zeroes
-  the extinction when the target is below the horizon instead of masking the
-  flux, so `ab_mag_observed` returns a finite bright value for an object on the
-  far side of the Earth. It also hardcodes `below_horizon = False` on the bare
-  position-vector branch, so space-based observers are never occultation
-  checked. `compute/faceted_magnitude.line_of_sight_blocked` handles both; the
-  sphere module retains the original behavior.
-- **Space-based observers already work.** `_setup` accepts an
-  `ssapy.EarthObserver`, an astropy `EarthLocation`, or a bare GCRF position
-  vector. Pass `ssapy.OrbitalObserver(orbit).getRV(time)[0]` for the third. Do
-  not build a new observer abstraction.
-- **An observer on the geoid sits below the equatorial radius** at any nonzero
-  latitude, so a naive Earth-sphere occultation test reports every ground
-  station as occulting itself.
-- **Facet self-shadowing needs geometry.** `_facet_is_shadowed` reads
-  `vertices_body` and `center_of_pressure`. Facets carrying only a normal and an
-  area silently skip shadowing. Derive normal, area, and centroid from one vertex
-  list so they cannot disagree, and never layer coincident facets onto an
-  already-complete body, which double-counts area.
-- **Use explicit astropy units for time offsets.** `Time(...) + seconds / 86400.0`
-  emits `TimeDeltaMissingUnitWarning`; write `+ seconds * u.s`.
-- **6-DoF inertia has no inertia-rate term.** `propagators_6dof/sixdof.py`
-  supports state-dependent inertia, but the Euler equation omits the term in the
-  time derivative of inertia, so a burn that moves mass properties biases the
-  rate history.
-
-## Method
-
-**Verify, do not inherit.** Historical notes, prior session logs, and completion
-claims found in or around this repository are records of past work, not current
-requirements, and some are stale or wrong. Confirm against the tree, the tests,
-and the remote before acting on any of them. Earlier assistance is not
-authorization for more.
-
-**Profile before optimizing.** Reason about where the time goes, then measure
-it, then change code. A plausible bottleneck is frequently the wrong one, and an
-unmeasured optimization can be slower than what it replaced.
-
-**Prove behavior is unchanged when refactoring for speed.** Compare against the
-previous implementation on randomized inputs across the parameter range, and
-commit that comparison as a test.
-
-**Keep scope to what was asked.** Do not add capability because a comparable
-tool has it. A new feature needs a stated need, not a feature-parity argument.
-
-**Per-session task notes go in `AGENTS.local.md`**, which is gitignored. Do not
-commit them, and do not treat another session's ledger as a specification.
+- `ssatk.plots` imports its public modules eagerly when it is imported, so a
+  missing optional plotting dependency surfaces there, not at the call site.
+- Where a name exists in both SSATK and SSAPy, the top-level `ssatk` name is
+  the SSATK one (`ssatk.io` is SSATK I/O); reach SSAPy itself as `ssatk.ssapy`.
+- Times are GPS seconds or Astropy `Time` objects, and states are SI (m, m/s)
+  in memory. CCSDS files use km and km/s on disk; the readers convert.
+- Add time offsets with explicit units (`Time(...) + seconds * u.s`); a bare
+  float in days emits `TimeDeltaMissingUnitWarning`.
+- SSAPy 1.1.5 and earlier rebuild a zero-drag `Satrec` in `SGP4Propagator`, so
+  SGP4 comparisons fail there. That is an environment problem, not an SSATK bug.

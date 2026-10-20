@@ -1,12 +1,12 @@
 # `sun_view.py` — Sun / Earth / Moon 3D rendering
 
 Plotly-based Sun model, day/night-shaded Earth and Moon, and a background
-starfield, for SSAPy-Toolkit's 3D scenes.
+starfield, for Space Situational Awareness Toolkit (SSATK)'s 3D scenes.
 
 ## Public API
 
 ```python
-from ssapy_toolkit.plots.sun_view import (
+from ssatk.plots.sun_view import (
     sun_position_eci,     # configured Astropy ephemeris direction + distance
     SunLayer,             # glowing sun sphere + corona
     EarthShadingLayer,    # textured, day/night-shaded Earth
@@ -32,20 +32,20 @@ reading or modifying it.
 
 ### Real physical constants (sourced, never hardcoded)
 
-These come from `ssapy_toolkit.constants` (or `astropy` where the toolkit
+These come from `ssatk.constants` (or `astropy` where the toolkit
 has no equivalent) and carry their true physical values. They should stay
 sourced from those authorities, never re-hardcoded as literals:
 
 | Name        | Source                                   | Meaning                          |
 |-------------|------------------------------------------|----------------------------------|
-| `R_EARTH_KM`| `ssapy_toolkit.constants.EARTH_RADIUS`   | Earth equatorial radius (WGS84)  |
-| `R_MOON_KM` | `ssapy_toolkit.constants.MOON_RADIUS`    | Moon radius                      |
-| `R_SUN_KM`  | `ssapy_toolkit.constants.SUN_RADIUS`     | Sun radius                       |
+| `R_EARTH_KM`| `ssatk.constants.EARTH_RADIUS`   | Earth equatorial radius (WGS84)  |
+| `R_MOON_KM` | `ssatk.constants.MOON_RADIUS`    | Moon radius                      |
+| `R_SUN_KM`  | `ssatk.constants.SUN_RADIUS`     | Sun radius                       |
 | `AU_KM`     | `astropy.units.au`                       | 1 astronomical unit in km        |
 
 `sun_position_eci()` likewise uses the **real** JPL (DE-series) solar
 ephemeris via `astropy.get_body("sun", t)` — the same real-API approach as
-`ssapy_toolkit/accelerations_orbit/accel_sun.py` — not a hand-rolled analytic
+`ssatk/accelerations_orbit/accel_sun.py` — not a hand-rolled analytic
 series.
 
 ### Deliberately artistic constants (NOT physical scale)
@@ -69,7 +69,7 @@ deliberately uses `VISUAL_SUN_RADIUS_KM` instead.
 
 **Earth and the Moon, by contrast, are drawn at true scale** — their real
 radii (`R_EARTH_KM`, `R_MOON_KM`) and the Moon's real orbital distance
-(`ssapy_toolkit.constants.LD`) are small enough to render honestly. Only the
+(`ssatk.constants.LD`) are small enough to render honestly. Only the
 Sun's size and placement are schematic.
 
 ## Rendering notes

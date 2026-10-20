@@ -15,9 +15,9 @@ from demos.six_dof._common import (
     set_equal_3d,
     vector_angle_deg,
 )
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof import Spacecraft, normalize_quaternion
-from ssapy_toolkit.satellites import SpacecraftBody
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof import Spacecraft, normalize_quaternion
+from ssatk.satellites import SpacecraftBody
 
 TITLE = "6-DoF Gravity-Gradient Torque"
 DESCRIPTION = "Compares torque-free and gravity-gradient attitude propagation for an elongated spacecraft."
@@ -70,6 +70,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         import matplotlib.pyplot as plt
 
+        # gallery-call: *.png
         fig = plt.figure(figsize=(14, 9), constrained_layout=True)
         ax_orbit = fig.add_subplot(2, 2, 1, projection="3d")
         ax_angle = fig.add_subplot(2, 2, 2)
@@ -104,6 +105,7 @@ def main(make_figures=None, fast=None):
         ax_quat.legend()
 
         figure_path = save_demo_figure(fig, "demo_6dof_gravity_gradient.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

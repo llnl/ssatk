@@ -1,5 +1,5 @@
 """
-Demo script for ssapy_toolkit groundtrack_plot.
+Demo script for ssatk groundtrack_plot.
 
 Pytest-safe mode:
 - builds a smaller set of synthetic tracks
@@ -14,8 +14,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.plots.groundtrack_plot import groundtrack_plot
-from ssapy_toolkit.plots.plotutils import figsave  # [18]
+from ssatk.plots.groundtrack_plot import groundtrack_plot
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -40,7 +40,7 @@ def make_circular_orbit_track(alt_km=500.0, inc_deg=51.6, npts=1200, n_orbits=3.
 
 
 def save_demo(fig, name):
-    figsave(fig, f"{name}")  # [18]
+    figsave(fig, f"{name}")
 
 
 def main(make_figures=None, fast=None):
@@ -58,6 +58,7 @@ def main(make_figures=None, fast=None):
 
     ground_stations = None
 
+    # gallery-call: *.jpg
     fig = groundtrack_plot(
         [r1, r2, r3],
         [t1, t2, t3],
@@ -69,6 +70,7 @@ def main(make_figures=None, fast=None):
         central_longitude=0,
         relabel_xticks=True,
     )
+    # gallery-end
 
     if make_figures:
         save_demo(fig, "demo_groundtrack_04_multi_custom_styles")

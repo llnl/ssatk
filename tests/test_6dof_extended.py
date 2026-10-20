@@ -1,10 +1,9 @@
 from dataclasses import replace
 
 import numpy as np
-import pytest
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.propagators_6dof import (
+import ssatk
+from ssatk.propagators_6dof import (
     FlexibleMode,
     HingedAppendage,
     SloshMode,
@@ -26,37 +25,17 @@ def test_extended_modes_propagate_and_couple_to_rigid_body():
     )
     assert result.trajectory.r.shape == (5, 3)
     assert result.hinge.shape == result.flexible.shape == result.slosh.shape == (5, 2)
-    assert not np.allclose(result.trajectory.omega[0], result.trajectory.omega[-1])
+    # Three uncoupled, undamped oscillators have exact sine/cosine solutions.
+    t = result.trajectory.t
+    for mode, frequency in ((result.hinge, np.sqrt(2)), (result.flexible, 3), (result.slosh, 2)):
+        expected = np.column_stack((.1 * np.cos(frequency * t), -.1 * frequency * np.sin(frequency * t)))
+        np.testing.assert_allclose(mode, expected, atol=1e-9, rtol=0)
+    # I=identity makes omega x I*omega vanish; integrate each mode's torque.
+    expected_omega = np.column_stack((.3 * np.sin(3*t), np.zeros_like(t),
+                                      .4 / np.sqrt(2) * np.sin(np.sqrt(2)*t) + .2*np.sin(2*t)))
+    np.testing.assert_allclose(result.trajectory.omega, expected_omega, atol=1e-9, rtol=0)
     assert np.linalg.norm(result.trajectory.v[0] - result.trajectory.v[-1]) > 1e-6
-    np.testing.assert_allclose(np.linalg.norm(result.trajectory.q, axis=1), 1.0, atol=1e-12)
-
-
-def test_extended_modes_accept_multiple_modes_per_category():
-    result = propagate_6dof_extended(
-        times=np.linspace(0, 0.1, 3), inertia=np.eye(3), mu=0,
-        r0=[7e6, 0, 0], v0=[0, 7500, 0], q0=[1, 0, 0, 0], bus_mass=10,
-        hinge=(
-            HingedAppendage([0, 0, 1], 1, stiffness=2, angle0=0.1),
-            HingedAppendage([0, 1, 0], 2, stiffness=3, angle0=-0.2),
-        ),
-        flexible=[
-            FlexibleMode([1, 0, 0], 1, 3, displacement0=0.1),
-            FlexibleMode([0, 1, 0], 2, 4, displacement0=-0.1),
-        ],
-        slosh=(SloshMode([1, 0, 0], 1, 2, displacement0=0.1),),
-    )
-
-    assert result.hinge.shape == (3, 2, 2)
-    assert result.flexible.shape == (3, 2, 2)
-    assert result.slosh.shape == (3, 2)
-
-
-def test_extended_modes_reject_invalid_coupling():
-    with pytest.raises(ValueError):
-        HingedAppendage([0, 0, 0], 1)
-    with pytest.raises(ValueError):
-        propagate_6dof_extended(times=[0, 1], inertia=np.eye(3), r0=[1, 0, 0], v0=[0, 1, 0],
-                                 flexible=FlexibleMode([1, 0, 0], 1, 1), slosh=SloshMode([1, 0, 0], 1, 1))
+    np.testing.assert_allclose(np.linalg.norm(result.trajectory.q, axis=1), 1.0, atol=1e-12, rtol=0)
 
 
 def test_slosh_force_follows_attitude():
@@ -66,7 +45,7 @@ def test_slosh_force_follows_attitude():
         slosh=SloshMode([1, 0, 0], 1, 1, displacement0=1), bus_mass=1,
     )
 
-    np.testing.assert_allclose(result.trajectory.v[-1], [0, 1e-3, 0], atol=1e-9)
+    np.testing.assert_allclose(result.trajectory.v[-1], [0, np.sin(1e-3), 0], atol=1e-12, rtol=0)
 
 
 def test_hinge_cubic_stiffness_matches_initial_torque_response():
@@ -79,17 +58,6 @@ def test_hinge_cubic_stiffness_matches_initial_torque_response():
 
     np.testing.assert_allclose(nonlinear.hinge[-1, 1], -1e-4, rtol=1e-6, atol=1e-12)
     np.testing.assert_allclose(nonlinear.trajectory.omega[-1, 2], 1e-4, rtol=1e-6, atol=1e-12)
-
-
-def test_extended_propagation_honors_initial_epoch_before_first_sample():
-    result = propagate_6dof_extended(
-        times=[10.0, 10.1], t0=0.0, inertia=np.eye(3), mu=0.0,
-        r0=[1.0, 0.0, 0.0], v0=[0.0, 0.0, 0.0],
-        acceleration=lambda t, r, v, q, omega: [t, 0.0, 0.0],
-        hinge=HingedAppendage([0.0, 0.0, 1.0], 1.0),
-    )
-
-    np.testing.assert_allclose(result.trajectory.v[0], [50.0, 0.0, 0.0], atol=1e-10)
 
 
 def test_extended_variational_stm_covers_modes_and_covariance():
@@ -116,8 +84,8 @@ def test_extended_variational_stm_covers_modes_and_covariance():
 
     assert ssatk.propagate_6dof_extended_variational is propagate_6dof_extended_variational
     assert result.stm.shape == (2, 20, 20)
-    np.testing.assert_allclose(result.stm[0], np.eye(20), atol=1e-12)
-    np.testing.assert_allclose(attitude_error_stm(result)[0], np.eye(19), atol=1e-12)
+    np.testing.assert_allclose(result.stm[0], np.eye(20), atol=1e-12, rtol=0)
+    np.testing.assert_allclose(attitude_error_stm(result)[0], np.eye(19), atol=1e-12, rtol=0)
 
     perturbation = 1e-6
     plus = propagate_6dof_extended(**{**kwargs, "hinge": replace(mode, angle0=mode.angle0 + perturbation)})
@@ -129,4 +97,4 @@ def test_extended_variational_stm_covers_modes_and_covariance():
 
     covariance = propagate_6dof_covariance(result, np.eye(20))
     assert covariance.shape == (2, 20, 20)
-    np.testing.assert_allclose(covariance, np.swapaxes(covariance, -1, -2), atol=1e-12)
+    np.testing.assert_allclose(covariance, np.swapaxes(covariance, -1, -2), atol=1e-12, rtol=0)

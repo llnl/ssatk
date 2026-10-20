@@ -2,7 +2,7 @@
 """
 demos/space_environment/demo_sun_view.py
 -----------------------
-Demo for ssapy_toolkit.plots.sun_view: builds a Plotly figure with a
+Demo for ssatk.plots.sun_view: builds a Plotly figure with a
 Sun model, Earth day/night shading, and Moon day/night shading.
 """
 
@@ -15,9 +15,9 @@ import numpy as np
 import plotly.graph_objects as go
 from astropy.time import Time
 
-from ssapy_toolkit.constants import LD
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.sun_view import (
+from ssatk.constants import LD
+from ssatk.plots.figpath import figpath
+from ssatk.plots.sun_view import (
     sun_position_eci,
     SunLayer,
     EarthShadingLayer,
@@ -45,6 +45,7 @@ def main(make_figures=None, fast=None):
         "dist_au": dist_au,
     }
 
+    # gallery-call: *.html
     fig = go.Figure()
 
     # Frame the camera around the near-field objects (Sun/Moon), not the
@@ -143,6 +144,7 @@ def main(make_figures=None, fast=None):
             out_html = out_html.with_suffix(".html")
         out_html.parent.mkdir(parents=True, exist_ok=True)
         fig.write_html(str(out_html))
+    # gallery-end
         print("Saved:", out_html)
         outputs["html"] = str(out_html)
 

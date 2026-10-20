@@ -9,8 +9,8 @@ import numpy as np
 import rebound
 from ssapy import Orbit
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.propagators_6dof import propagate_6dof_high_accuracy
+from ssatk.constants import EARTH_MU
+from ssatk.propagators_6dof import propagate_6dof_high_accuracy
 
 
 def test_two_body_fixed_epoch_matches_ssapy_keplerian_reference():

@@ -1,54 +1,41 @@
 """
-Demo script for ssapy_toolkit coverage_analysis.
+Demo script for ssatk coverage_analysis.
 
-Answers the question a ground station actually asks. Not "is this satellite
-overhead" -- "how often can I see it, for how long, and what is the worst gap
-between contacts?" Two figures:
+Shows three days of geometric HST access from WGS84 sea-level grid cells,
+with an example site at Cape Canaveral. TLE input uses SSAPy's SGP4Propagator.
+The displayed maps are raw 2-degree cells with 15-second time sampling and
+interpolated rise/set crossings. A contact shorter than the sample spacing
+can be missed. Window-edge contacts/gaps are clipped, not extrapolated.
 
-  site_analysis_<sat>.png
-      One propagation window seen from one site: elevation and azimuth against
-      time, the satellite's own illumination state, and which windows are
-      genuinely observable. That last panel is the logical AND of three
-      conditions -- satellite above the elevation mask, satellite sunlit, site
-      in darkness -- rather than a single collapsed percentage, because a pass
-      that fails any one of them is not a pass you can use optically.
+The site plot's optical candidates require elevation >10 degrees, full solar
+illumination and geometric Sun elevation <-6 degrees. This is a configurable
+geometric screen, not a weather, brightness or optical-detectability model.
+Map access uses a separate >5-degree mask and includes day and night.
 
-  coverage_metrics_<sat>.png
-      The pass structure behind a coverage percentage, computed at every point
-      on Earth: mean pass duration, longest gap between contacts, contacts per
-      day, and total contact minutes per day. "% of time visible" cannot tell
-      one clean usable pass from a dozen useless slivers at the same duty
-      cycle; these four can. All are masked to zero outside the orbit's real
-      inclination band rather than filled with a misleading low value.
-
-HST is the example because its 28.5 degree inclination puts a hard edge on the
-coverage map at roughly +/-50 degrees latitude -- visible proof the masking is
-real geometry and not a colour-scale artefact. The site is Cape Canaveral,
-which sits inside that band.
-
-Runs offline. The TLE comes from the satellite list bundled with the toolkit,
-so no Space-Track credentials and no network are needed. For current elements,
-refresh explicitly with ssapy_toolkit.io.tle_updater.
-
-Pytest-safe mode:
-- coarse coverage grid, so the 3-day propagation stays quick
-- does not save figures by default
+Runs offline using archived packaged HST elements, not a current tracking
+prediction. CSV grid values and a JSON record of the exact TLE, epoch and
+settings accompany the two PNGs. No figures or files are written when
+make_figures=False.
 """
 
 GALLERY_CATEGORY = "sensor_coverage"
 
 import os
+import csv
+import json
+from pathlib import Path
 import sys
 
-import matplotlib.pyplot as plt
 
-from ssapy_toolkit.plots.coverage_analysis import (
+from ssatk.plots.coverage_analysis import (
     SATELLITES,
     analyse_satellite,
     build_orbit,
 )
 
-UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
+UNDER_PYTEST = (
+    "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
+)
 
 SITE_NAME = "Cape Canaveral"
 SITE_LAT = 28.39
@@ -57,15 +44,11 @@ SITE_ALT_M = 0.0
 
 SAT_NAME = "HST"
 
-# 10 degrees is the conventional mask for a real site: below it a pass is
-# usually unusable because of terrain, buildings and atmospheric refraction.
-# The coverage grid uses 5 degrees because it asks a different question --
-# geometric visibility anywhere on Earth, not usability from one location.
+# Illustrative geometric masks; neither includes local terrain or weather.
 MIN_ELEV_SITE_DEG = 10.0
 MIN_ELEV_COVERAGE_DEG = 5.0
 
-# Sun below -6 degrees is civil twilight: dark enough that a sunlit satellite
-# is actually observable against the sky.
+# Civil-twilight cutoff used as an illustrative optical-candidate criterion.
 SUN_ELEV_DARK_DEG = -6.0
 
 
@@ -84,20 +67,19 @@ def main(make_figures=None, fast=None):
     if fast is None:
         fast = UNDER_PYTEST
 
-    # The coverage grid propagates 3 days at 30 s and evaluates topocentric
-    # elevation at every cell, so cost scales with n_lat * n_lon. The coarse
-    # grid exercises every code path in a fraction of the time; the full grid
-    # is what produces a figure worth looking at.
-    n_lat, n_lon = (12, 24) if fast else (36, 72)
+    # Published maps retain 2-degree cells even in the gallery's fast mode.
+    n_lat, n_lon = (30, 60) if fast and not make_figures else (90, 180)
 
     sat = _find_satellite(SAT_NAME)
     orbit = build_orbit(sat)
 
     out_dir = "."
     if make_figures:
-        from ssapy_toolkit.plots.coverage_analysis import _analysis_output_dir
+        from ssatk.plots.coverage_analysis import _analysis_output_dir
+
         out_dir = _analysis_output_dir(SITE_NAME, SITE_LAT, SITE_LON)
 
+    # gallery-call: *.png
     result = analyse_satellite(
         sat_name=sat["name"],
         orbit=orbit,
@@ -111,10 +93,56 @@ def main(make_figures=None, fast=None):
         n_lat=n_lat,
         n_lon=n_lon,
         out_dir=out_dir,
+        make_figures=make_figures,
     )
+    # gallery-end
 
-    if not make_figures:
-        plt.close("all")
+    if make_figures:
+        keys = [
+            "frac",
+            "mean_pass_grid",
+            "max_pass_grid",
+            "max_gap_grid",
+            "passes_day_grid",
+            "cum_contact_grid",
+        ]
+        with (Path(out_dir) / "coverage_grid_hst.csv").open("w", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["latitude_deg", "longitude_deg", *keys])
+            for i, la in enumerate(result["lat_grid"]):
+                for j, lo in enumerate(result["lon_grid"]):
+                    writer.writerow([la, lo, *(result[key][i, j] for key in keys)])
+        from astropy.time import Time
+
+        metadata = {
+            "satellite": sat,
+            "epoch_utc": Time(orbit.t, format="gps").utc.isot,
+            "propagator": result["propagator"],
+            "earth_model": "WGS84 sea level",
+            "duration_days": result["coverage_days"],
+            "step_seconds": result["coverage_step_s"],
+            "latitude_cells": n_lat,
+            "longitude_cells": n_lon,
+            "minimum_elevation_deg": MIN_ELEV_COVERAGE_DEG,
+            "global_mean_area_weighted": result["global_mean"],
+            "site_coverage": result["site_cov"],
+            "site": {
+                "name": SITE_NAME,
+                "lat_deg": SITE_LAT,
+                "lon_deg": SITE_LON,
+                "height_m": SITE_ALT_M,
+            },
+            "site_pass_statistics": {
+                key: (value.tolist() if hasattr(value, "tolist") else value)
+                for key, value in result["site_pass_stats"].items()
+            },
+            "limits": "Finite-window geometric access; interpolated crossings; sub-step contacts can be missed. No terrain, refraction, weather, or detectability model.",
+        }
+        if metadata["site_pass_statistics"]["n_passes"] == 0:
+            metadata["site_pass_statistics"]["time_to_first_min"] = None
+        (Path(out_dir) / "coverage_metadata_hst.json").write_text(
+            json.dumps(metadata, indent=2, allow_nan=False) + "\n"
+        )
 
     return result
 

@@ -1,2 +1,2 @@
-"""Photometry and brightness SSAPy-Toolkit demos."""
+"""Photometry and brightness SSATK demos."""
 

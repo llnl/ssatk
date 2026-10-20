@@ -17,8 +17,8 @@ GALLERY_CATEGORY = "space_environment"
 
 import os
 import sys
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.plots.van_allen_plot_3d import plot_van_allen_3d
+from ssatk.plots.figpath import figpath
+from ssatk.plots.van_allen_plot_3d import plot_van_allen_3d
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -32,30 +32,36 @@ def main(make_figures=True):
     figures = []
 
     # 1. Classic oblique
+    # gallery-call: demo_van_allen.html
     figures.append(plot_van_allen_3d(
         title        = "Van Allen Radiation Belts — IGRF 2025",
         texture_path = "auto",
         elev=25, azim=-55,
         save_path    = figpath("demo_van_allen"),
     ))
+    # gallery-end
     print("Saved: demo_van_allen.html/.png")
 
     # 2. Equatorial — best view of torus cross-section
+    # gallery-call: demo_van_allen_equatorial.html
     figures.append(plot_van_allen_3d(
         title        = "Van Allen Belts — equatorial view",
         texture_path = "auto",
         elev=5, azim=0,
         save_path    = figpath("demo_van_allen_equatorial"),
     ))
+    # gallery-end
     print("Saved: demo_van_allen_equatorial.html/.png")
 
     # 3. Polar
+    # gallery-call: demo_van_allen_polar.html
     figures.append(plot_van_allen_3d(
         title        = "Van Allen Belts — polar view",
         texture_path = "auto",
         elev=80, azim=0,
         save_path    = figpath("demo_van_allen_polar"),
     ))
+    # gallery-end
     print("Saved: demo_van_allen_polar.html/.png")
     return {"figures": figures, "skipped": False}
 

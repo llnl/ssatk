@@ -1,5 +1,2 @@
 # Developer tools (install with: python -m pip install -e .[dev])
-pytest
-ipykernel
-ruff
-nodeenv
+-e .[dev]

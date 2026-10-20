@@ -13,10 +13,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ssapy_toolkit.constants import EARTH_MU
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state
+from ssatk.constants import EARTH_MU
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk.plots.figpath import figpath
+from ssatk.propagators_orbit import propagate_orbit_state
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 OREKIT_VERSION = "10.3.1"
@@ -170,6 +170,7 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         out_dir = Path(figpath("benchmarks"))
         out_dir.mkdir(parents=True, exist_ok=True)
         hours = times / 3600.0
+        # gallery-call: orekit_two_body_position_error.png
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(hours, dr, label="|Δr|")
         ax.set(xlabel="Elapsed time [hr]", ylabel="Position residual [m]", title="SSATK vs Orekit two-body position")
@@ -177,8 +178,10 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         ax.legend()
         position_path = out_dir / "orekit_two_body_position_error.png"
         fig.savefig(position_path, dpi=200, bbox_inches="tight")
+        # gallery-end
         plt.close(fig)
 
+        # gallery-call: orekit_two_body_velocity_error.png
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(hours, dv, label="|Δv|")
         ax.set(xlabel="Elapsed time [hr]", ylabel="Velocity residual [m/s]", title="SSATK vs Orekit two-body velocity")
@@ -186,6 +189,7 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         ax.legend()
         velocity_path = out_dir / "orekit_two_body_velocity_error.png"
         fig.savefig(velocity_path, dpi=200, bbox_inches="tight")
+        # gallery-end
         plt.close(fig)
 
         result["position_error_plot"] = str(position_path)

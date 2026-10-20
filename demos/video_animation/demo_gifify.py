@@ -68,9 +68,10 @@ def main(make_artifacts=None, fast=None, verbose=None):
         plt.grid(True)
 
     if make_artifacts:
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
 
+        # gallery-call: test_chunks.gif
         out1 = gifify(
             plot_simple,
             x, y,
@@ -83,6 +84,7 @@ def main(make_artifacts=None, fast=None, verbose=None):
             fps=12,
             verbose=verbose,
         )
+        # gallery-end
         assert os.path.exists(out1["path"]) and os.path.getsize(out1["path"]) > 0, "test_chunks.gif not created"
         n1 = _count_gif_frames(out1["path"])
         assert n1 == out1["frames"], f"Frame mismatch (chunks): gif={n1} reported={out1['frames']}"
@@ -101,9 +103,10 @@ def main(make_artifacts=None, fast=None, verbose=None):
         return ax
 
     if make_artifacts:
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
 
+        # gallery-call: test_cumulative.gif
         out2 = gifify(
             plot_returns_axes,
             x, y,
@@ -114,6 +117,7 @@ def main(make_artifacts=None, fast=None, verbose=None):
             fps=10,
             verbose=verbose,
         )
+        # gallery-end
         assert os.path.exists(out2["path"]) and os.path.getsize(out2["path"]) > 0, "test_cumulative.gif not created"
         n2 = _count_gif_frames(out2["path"])
         assert n2 == out2["frames"], f"Frame mismatch (cumulative): gif={n2} reported={out2['frames']}"
@@ -130,9 +134,10 @@ def main(make_artifacts=None, fast=None, verbose=None):
         ax.grid(True)
 
     if make_artifacts:
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
 
+        # gallery-call: test_sliding.gif
         out3 = gifify(
             plot_with_ax,
             x, y,
@@ -146,6 +151,7 @@ def main(make_artifacts=None, fast=None, verbose=None):
             ax_arg_index=0,
             verbose=verbose,
         )
+        # gallery-end
         assert os.path.exists(out3["path"]) and os.path.getsize(out3["path"]) > 0, "test_sliding.gif not created"
         n3 = _count_gif_frames(out3["path"])
         assert n3 == out3["frames"], f"Frame mismatch (sliding): gif={n3} reported={out3['frames']}"
@@ -160,11 +166,11 @@ def main(make_artifacts=None, fast=None, verbose=None):
     # Fast non-artifact tests skip this because groundtrack_dashboard has its
     # own focused tests and rendering a dashboard dominates this smoke test.
     if make_artifacts:
-        from ssapy_toolkit.constants import RGEO
-        from ssapy_toolkit.plots.figpath import figpath
-        from ssapy_toolkit.plots.gifify import gifify
-        from ssapy_toolkit.plots.groundtrack_dashboard import groundtrack_dashboard
-        from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+        from ssatk.constants import RGEO
+        from ssatk.plots.figpath import figpath
+        from ssatk.plots.gifify import gifify
+        from ssatk.plots.groundtrack_dashboard import groundtrack_dashboard
+        from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
 
         r, _v, t = ssapy_orbit(a=RGEO, e=0.2)
 
@@ -173,6 +179,7 @@ def main(make_artifacts=None, fast=None, verbose=None):
         r_use = r[::step]
         t_use = t.gps[::step]
 
+        # gallery-call: test_groundtrack.gif
         out4 = gifify(
             groundtrack_dashboard,
             r_use, t_use,
@@ -188,15 +195,16 @@ def main(make_artifacts=None, fast=None, verbose=None):
             pad=1000,
             t0=float(t[0].gps),
         )
+        # gallery-end
         assert os.path.exists(out4["path"]) and os.path.getsize(out4["path"]) > 0, "test_groundtrack.gif not created"
         n4 = _count_gif_frames(out4["path"])
         assert n4 == out4["frames"], f"Frame mismatch (groundtrack): gif={n4} reported={out4['frames']}"
         print(f"Test 4 OK: {out4['path']} with {n4} frames")
         outputs["groundtrack"] = out4
     elif not fast:
-        from ssapy_toolkit.constants import RGEO
-        from ssapy_toolkit.plots.groundtrack_dashboard import groundtrack_dashboard
-        from ssapy_toolkit.ssapy_wrappers.ssapy_orbits import ssapy_orbit
+        from ssatk.constants import RGEO
+        from ssatk.plots.groundtrack_dashboard import groundtrack_dashboard
+        from ssatk.ssapy_wrappers.ssapy_orbits import ssapy_orbit
 
         r, _v, t = ssapy_orbit(a=RGEO, e=0.2)
         r_use = r

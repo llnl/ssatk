@@ -18,9 +18,9 @@ from ssapy.gravity import AccelThirdBody
 
 from demos.benchmarks import demo_gmat_benchmark, demo_orekit_benchmark
 from demos.benchmarks.benchmark_report import write_benchmark_report
-from ssapy_toolkit.io.ssatk_data import ssatk_data
-from ssapy_toolkit.plots.figpath import figpath
-from ssapy_toolkit.propagators_orbit import propagate_orbit_state
+from ssatk.io.ssatk_data import ssatk_data
+from ssatk.plots.figpath import figpath
+from ssatk.propagators_orbit import propagate_orbit_state
 
 UNDER_PYTEST = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
 EPOCH_UTC = "2026-01-01T12:00:00"
@@ -236,7 +236,7 @@ def _write_case_plot(case: dict, residuals: dict[str, np.ndarray], out_dir: Path
     axes[1].set_xlabel("Elapsed time [hr]")
     axes[0].set_title(
         f"SSATK n-body residuals: {case['label']} — {case['mode_label']}\n"
-        "Earth μ = GMAT JGM2; SSAPy / GMAT / Orekit DE430"
+        "Earth μ = GMAT JGM2; SSATK / GMAT / Orekit DE430"
     )
     for axis in axes:
         axis.grid(True, alpha=0.3)
@@ -271,7 +271,7 @@ def _write_summary_plot(cases: list[dict], out_dir: Path) -> str:
     fig.text(
         0.5,
         0.01,
-        "Earth μ = GMAT JGM2; SSAPy / GMAT / Orekit DE430",
+        "Earth μ = GMAT JGM2; SSATK / GMAT / Orekit DE430",
         ha="center",
         fontsize=9,
     )
@@ -346,7 +346,9 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
             case["expected_sample_count"] = expected_samples
             case["tools"] = tool_results
             if make_figures:
+                # gallery-call: *_residuals.png
                 case["plot"] = _write_case_plot(case, residuals, figure_dir)
+                # gallery-end
             results.append(case)
 
     if not results:
@@ -361,12 +363,16 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         "cases": results,
     }
     if make_figures:
+        # gallery-call: *_summary.png
         summary["summary_plot"] = _write_summary_plot(results, figure_dir)
+        # gallery-end
     result_path = Path(ssatk_data("data/benchmarks/nbody_propagation_results.json"))
     result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary["results_path"] = str(result_path)
     if make_figures:
+        # gallery-call: benchmark_regime_matrix.png
         summary["report_path"] = write_benchmark_report()
+        # gallery-end
         result_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if verbose:
         print(json.dumps(summary, indent=2, sort_keys=True))

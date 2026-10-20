@@ -25,8 +25,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ssapy_toolkit.compute.sampling import perturb_state_3d
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.compute.sampling import perturb_state_3d
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -216,7 +216,9 @@ def main(make_figures=None, fast=None, verbose=None):
         }
 
         if make_figures:
+            # gallery-call: *.jpg
             fig = plot_offsets_2d(label, r_offsets, v_offsets, r_nom, v_nom)
+            # gallery-end
             safe_label = label.replace(" ", "_")
             figsave(fig, f"sampling_tests_{safe_label}")
             plt.close(fig)

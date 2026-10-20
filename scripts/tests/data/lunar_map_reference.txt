@@ -1,0 +1,25 @@
+Lunar map orientation reference
+
+Oracle: CSPICE N0067 via SpiceyPy 8.3.0. Matrices are geometric J2000/ICRF
+to MOON_ME, evaluated by pxform("J2000", "MOON_ME", str2et(utc)). They were
+generated independently of SSATK and SSAPy's orientation implementation.
+The JSON records the exact kernel SHA-256 hashes and 50 UTC sample epochs.
+
+Sources:
+https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de440_200625.bpc
+https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/moon_de440_250416.tf
+https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+
+Reproduction with optional SpiceyPy, outside CI:
+  import spiceypy as spice
+  for path in ("moon_pa_de440_200625.bpc", "moon_de440_250416.tf", "naif0012.tls"):
+      spice.furnsh(path)
+  matrix = spice.pxform("J2000", "MOON_ME", spice.str2et(utc))
+
+The regression test uses the stored matrices, not the recorded error values.
+Its 2 cm surface displacement budget covers SSAPy's evaluation of the lunar
+TDB kernel at TT (under 9 mm here) and epoch conversion roundoff. The frame
+kernel's ME421-aligned frame approximates historical ME421 within 0.534 m over
+2000–2040, per NAIF's published dense-sampling comparison; this is separate
+from the implementation comparison. Image-map georegistration, finite texel
+size and relief are not included in the 2 cm numerical rotation budget.

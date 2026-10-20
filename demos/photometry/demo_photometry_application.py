@@ -7,12 +7,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.time import Time
 
-from ssapy_toolkit.compute.lambertian_magnitude import lambertian_reflection
-from ssapy_toolkit.constants import EARTH_RADIUS
-from ssapy_toolkit.plots.plotutils import figsave
+from ssatk.compute.lambertian_magnitude import lambertian_reflection
+from ssatk.constants import EARTH_RADIUS
+from ssatk.plots.plotutils import figsave
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 
 def main(make_figures=None, fast=None):
@@ -53,6 +52,7 @@ def main(make_figures=None, fast=None):
         geocentric_proxy[band] = np.asarray(geo["ab_mag_exoatmospheric"], dtype=float)
 
     if make_figures:
+        # gallery-call: *.jpg
         fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
         for band in bands:
             axes[0].plot(ranges_km, topocentric[band], label=f"{band} observed")
@@ -73,7 +73,8 @@ def main(make_figures=None, fast=None):
         axes[1].legend()
 
         fig.tight_layout()
-        figsave(fig, f"{FIGDIR}/photometry_topocentric_geocentric_bands.jpg")
+        figsave(fig, f"photometry_topocentric_geocentric_bands.jpg")
+        # gallery-end
 
     return {
         "ranges_km": ranges_km,

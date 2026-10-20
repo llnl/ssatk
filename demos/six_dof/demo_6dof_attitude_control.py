@@ -11,9 +11,9 @@ from demos.six_dof._common import (
     quaternion_angle_deg,
     save_demo_figure,
 )
-from ssapy_toolkit.accelerations_6dof import SpacecraftAttitudePD
-from ssapy_toolkit.propagators_6dof import Spacecraft, normalize_quaternion
-from ssapy_toolkit.satellites import SpacecraftBody
+from ssatk.accelerations_6dof import SpacecraftAttitudePD
+from ssatk.propagators_6dof import Spacecraft, normalize_quaternion
+from ssatk.satellites import SpacecraftBody
 
 TITLE = "6-DoF Attitude Control"
 DESCRIPTION = "Propagates one spacecraft with and without a body-frame quaternion PD attitude controller."
@@ -68,6 +68,7 @@ def main(make_figures=None, fast=None):
     if make_figures:
         import matplotlib.pyplot as plt
 
+        # gallery-call: *.png
         fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
         fig.suptitle("6-DoF attitude control: free tumble vs PD torque", fontsize=18)
 
@@ -85,15 +86,19 @@ def main(make_figures=None, fast=None):
 
         for index, label in enumerate(("x", "y", "z")):
             axes[1, 0].plot(time_hr, uncontrolled.omega[:, index], label=f"ω{label}", lw=2)
-            axes[1, 1].plot(time_hr, controlled_x_axis[:, index], label=f"body +X {label}", lw=2)
+            axes[1, 1].plot(
+                time_hr, uncontrolled_x_axis[:, index], label=f"uncontrolled +X {label}", lw=2, linestyle="--"
+            )
+            axes[1, 1].plot(time_hr, controlled_x_axis[:, index], label=f"controlled +X {label}", lw=2)
         axes[1, 0].set_ylabel("uncontrolled ω [rad/s]")
-        axes[1, 1].set_ylabel("controlled body +X in GCRF")
+        axes[1, 1].set_ylabel("body +X in GCRF")
         for ax in axes[1, :]:
             ax.set_xlabel("time [hr]")
             ax.legend()
             ax.grid(True, alpha=0.3)
 
         figure_path = save_demo_figure(fig, "demo_6dof_attitude_control.png", make_figures)
+        # gallery-end
 
     return {
         "title": TITLE,

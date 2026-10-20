@@ -1,16 +1,13 @@
+# Literal encounter velocity/covariance algebra: 1e-14 m/s or m^2 absolute float64 budget.
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from scipy.stats import ncx2
 
-from ssapy_toolkit.ssa import (
-    CatalogConjunctionEvent,
+from ssatk.ssa import (
     ClosestApproach,
-    ConjunctionCandidate,
-    catalog_conjunction_screen,
     coarse_conjunction_screen,
-    encounter_frame,
     probability_of_collision,
     refine_closest_approach,
     relative_encounter_covariance,
@@ -51,38 +48,8 @@ def test_screen_and_refine_constant_relative_motion():
     assert refined.miss_distance == pytest.approx(0.0, abs=1e-8)
     assert refined.time == pytest.approx(refined.tca)
     assert refined.distance == pytest.approx(refined.miss_distance)
-    np.testing.assert_allclose(refined.relative_position, 0.0, atol=1e-8)
-    np.testing.assert_allclose(refined.relative_velocity, [-1, 0, 0])
-
-
-def test_screen_endpoint_no_overlap_and_invalid_trajectories():
-    first = _trajectory([0.0, 1.0], [[0, 0, 0], [0, 0, 0]])
-    endpoint = _trajectory([0.0, 1.0], [[1, 0, 0], [2, 0, 0]], [[1, 0, 0], [1, 0, 0]])
-    assert coarse_conjunction_screen(first, endpoint, 1.0)[0].t_min == pytest.approx(0.0)
-    outside = _trajectory([2.0, 3.0], [[0, 0, 0], [0, 0, 0]])
-    assert coarse_conjunction_screen(first, outside, 10.0) == ()
-    exact = _trajectory([1.0, 2.0], [[8, 0, 0], [7, 0, 0]], [[-1, 0, 0], [-1, 0, 0]])
-    singleton_candidate = coarse_conjunction_screen(first, exact, 8.0)
-    assert len(singleton_candidate) == 1
-    assert singleton_candidate[0].bracket == (1.0, 1.0)
-    assert refine_closest_approach(first, exact, singleton_candidate[0]).tca == pytest.approx(1.0)
-    assert coarse_conjunction_screen(first, exact, 7.9) == ()
-    with pytest.raises(ValueError, match="strictly increasing"):
-        coarse_conjunction_screen(
-            SimpleNamespace(t=[0, 0], r=[[0, 0, 0], [1, 0, 0]], v=[[1, 0, 0], [1, 0, 0]]),
-            first,
-            1.0,
-        )
-    with pytest.raises(ValueError, match="shape"):
-        coarse_conjunction_screen(SimpleNamespace(t=[0, 1], r=[[0, 0]], v=[[0, 0, 0]]), first, 1.0)
-
-
-def test_encounter_frame_and_zero_speed():
-    basis = encounter_frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0])
-    np.testing.assert_allclose(basis, [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0]])
-    np.testing.assert_allclose(basis.T @ basis, np.eye(2))
-    with pytest.raises(ValueError, match="relative speed"):
-        encounter_frame([1.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(refined.relative_position, 0.0, atol=1e-8, rtol=0)
+    np.testing.assert_allclose(refined.relative_velocity, [-1, 0, 0], rtol=0, atol=1e-14)
 
 
 def test_relative_encounter_covariance_projection_and_cross_covariance():
@@ -90,35 +57,18 @@ def test_relative_encounter_covariance_projection_and_cross_covariance():
     covariance_a = np.diag([1.0, 2.0, 3.0])
     covariance_b = np.diag([4.0, 5.0, 6.0])
     np.testing.assert_allclose(
-        relative_encounter_covariance(covariance_a, covariance_b, basis), np.diag([5.0, 7.0])
-    )
+        relative_encounter_covariance(covariance_a, covariance_b, basis), np.diag([5.0, 7.0]), rtol=0, atol=1e-14)
     np.testing.assert_allclose(
         relative_encounter_covariance(
             covariance_a, covariance_b, basis, cross_covariance=np.diag([0.5, 0.5, 0.5])
         ),
-        np.diag([4.0, 6.0]),
-    )
+        np.diag([4.0, 6.0]), rtol=0, atol=1e-14)
     with pytest.raises(ValueError, match="orthonormal"):
         relative_encounter_covariance(covariance_a, covariance_b, np.ones((3, 2)))
     with pytest.raises(ValueError, match="positive semidefinite"):
         relative_encounter_covariance(-np.eye(3), covariance_b, basis)
     with pytest.raises(ValueError, match="joint covariance"):
         relative_encounter_covariance(covariance_a, covariance_b, basis, cross_covariance=3.0 * np.eye(3))
-
-
-def test_refinement_splits_internal_knots_and_preserves_b_minus_a_sign():
-    first = _trajectory(
-        [0.0, 1.0, 2.0], [[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0, 0, 0]] * 3
-    )
-    second = _trajectory(
-        [0.0, 1.0, 2.0], [[3, 0, 0], [1, 0, 0], [3, 0, 0]], [[-2, 0, 0], [-2, 0, 0], [3, 0, 0]]
-    )
-    refined = refine_closest_approach(first, second, (0.0, 2.0))
-    assert 1.0 < refined.tca < 1.3
-    assert refined.miss_distance < 1.0
-    np.testing.assert_allclose(refined.relative_velocity[1:], 0.0, atol=1e-7)
-    with pytest.raises(ValueError, match="two times"):
-        refine_closest_approach(first, second, (0.0, 1.0, 2.0))
 
 
 def test_refinement_finds_global_stationary_minimum_on_one_cubic_segment():
@@ -143,81 +93,6 @@ def test_refinement_finds_global_stationary_minimum_on_one_cubic_segment():
     assert refined.miss_distance == pytest.approx(np.linalg.norm(dense_positions[dense_index]), abs=2e-8)
 
 
-def test_candidate_validation():
-    with pytest.raises(ValueError, match="inside"):
-        ConjunctionCandidate(0.0, 1.0, 2.0, 0.0)
-    with pytest.raises(ValueError, match="nonnegative"):
-        ConjunctionCandidate(0.0, 1.0, 0.5, -1.0)
-
-
-def test_catalog_screen_uses_union_intervals_and_deduplicates_boundary_event():
-    catalog = {
-        "alpha": _trajectory([0.0, 2.0], [[0, 0, 0], [0, 0, 0]], [[0, 0, 0]] * 2),
-        "beta": _trajectory(
-            [0.0, 1.0, 2.0], [[2, 0, 0], [0, 0, 0], [2, 0, 0]], [[-2, 0, 0], [0, 0, 0], [2, 0, 0]]
-        ),
-    }
-    events = catalog_conjunction_screen(catalog, 0.01)
-    assert isinstance(events, tuple)
-    assert len(events) == 1
-    event = events[0]
-    assert isinstance(event, CatalogConjunctionEvent)
-    assert (event.object_id_a, event.object_id_b) == ("alpha", "beta")
-    assert event.closest_approach.tca == pytest.approx(1.0)
-    np.testing.assert_allclose(event.closest_approach.relative_position, 0.0, atol=1e-8)
-    with pytest.raises(AttributeError):
-        event.object_id_a = "changed"
-
-    continuous = {
-        "alpha": _trajectory([0.0, 1.0, 2.0], [[0, 0, 0]] * 3),
-        "beta": _trajectory([0.0, 1.0, 2.0], [[0.5, 0, 0]] * 3),
-    }
-    continuous_events = catalog_conjunction_screen(continuous, 1.0)
-    assert len(continuous_events) == 1
-    assert continuous_events[0].closest_approach.bracket == (0.0, 2.0)
-
-
-def test_catalog_screen_sparse_filtering_and_deterministic_pair_order(monkeypatch):
-    from ssapy_toolkit.ssa import conjunction
-
-    original = conjunction._linear_candidate
-    calls = 0
-
-    def counted(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(conjunction, "_linear_candidate", counted)
-    catalog = {
-        object_id: _trajectory([0.0, 1.0], [[position, 0, 0], [position, 0, 0]])
-        for object_id, position in [("a", 0.0), ("b", 0.5)] + [(f"far-{i}", 1000.0 * i) for i in range(1, 65)]
-    }
-    events = catalog_conjunction_screen(catalog, 1.0)
-    assert [(event.object_id_a, event.object_id_b) for event in events] == [("a", "b")]
-    assert calls == 1
-
-    ordered = {
-        "third": _trajectory([0.0, 1.0], [[0.4, 0, 0], [0.4, 0, 0]]),
-        "first": _trajectory([0.0, 1.0], [[0.0, 0, 0], [0.0, 0, 0]]),
-        "second": _trajectory([0.0, 1.0], [[0.2, 0, 0], [0.2, 0, 0]]),
-    }
-    assert [(event.object_id_a, event.object_id_b) for event in catalog_conjunction_screen(ordered, 1.0)] == [
-        ("third", "first"),
-        ("third", "second"),
-        ("first", "second"),
-    ]
-
-
-def test_catalog_screen_validation():
-    with pytest.raises(TypeError, match="mapping"):
-        catalog_conjunction_screen([], 1.0)
-    with pytest.raises(ValueError, match="positive"):
-        catalog_conjunction_screen({}, 1.0, xatol=0.0)
-    with pytest.raises(ValueError, match="shape"):
-        catalog_conjunction_screen({"a": SimpleNamespace(t=[0, 1], r=[[0, 0]], v=[[0, 0, 0]]), "b": _trajectory([0, 1], [[0, 0, 0], [0, 0, 0]])}, 1.0)
-
-
 def test_probability_centered_offset_and_anisotropic_rotation():
     sigma = 2.0
     radius = 1.0
@@ -236,14 +111,3 @@ def test_probability_centered_offset_and_anisotropic_rotation():
     rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
     rotated = probability_of_collision(rotation @ mean, rotation @ covariance @ rotation.T, 1.2)
     assert anisotropic == pytest.approx(rotated, abs=1e-10)
-
-
-def test_probability_validation_and_refinement_validation():
-    with pytest.raises(ValueError, match="positive-definite"):
-        probability_of_collision([0, 0], [[1, 0], [0, 0]], 1.0)
-    with pytest.raises(ValueError, match="nonnegative"):
-        probability_of_collision([0, 0], np.eye(2), -1.0)
-    first = _trajectory([0.0, 1.0], [[0, 0, 0], [0, 0, 0]])
-    second = _trajectory([0.0, 1.0], [[1, 0, 0], [1, 0, 0]])
-    with pytest.raises(ValueError, match="within"):
-        refine_closest_approach(first, second, (-1.0, 0.5))

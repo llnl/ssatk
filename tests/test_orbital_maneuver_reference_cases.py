@@ -1,3 +1,4 @@
+# The copied initial trajectory position must equal the initial state exactly.
 """Reference checks for orbital maneuver solvers.
 
 These tests use closed-form two-body maneuver equations from standard
@@ -24,11 +25,11 @@ SSAPy/SSATK's Earth constants (``EARTH_MU``, ``EARTH_RADIUS``, ``RGEO``, and
 import numpy as np
 import pytest
 
-from ssapy_toolkit.constants import EARTH_MU, EARTH_RADIUS, RGEO, VGEO
-from ssapy_toolkit.orbital_mechanics._transfer_result import G0, maneuver_burn
-from ssapy_toolkit.orbital_mechanics.misc import plane_change_delta_v
-from ssapy_toolkit.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
-from ssapy_toolkit.orbital_mechanics.transfer_hohmann import transfer_hohmann
+from ssatk.constants import EARTH_MU, EARTH_RADIUS, RGEO, VGEO
+from ssatk.orbital_mechanics._transfer_result import G0, maneuver_burn
+from ssatk.orbital_mechanics.misc import plane_change_delta_v
+from ssatk.orbital_mechanics.transfer_bielliptic import transfer_bielliptic
+from ssatk.orbital_mechanics.transfer_hohmann import transfer_hohmann
 
 
 def _circular_speed(radius, mu=EARTH_MU):
@@ -70,19 +71,19 @@ def test_300km_leo_to_geo_hohmann_matches_textbook_reference():
 
     result = transfer_hohmann(radius_leo, radius_geo, samples=16)
 
-    np.testing.assert_allclose(result["delta_v_magnitudes"], [expected_dv1, expected_dv2], rtol=1e-12)
-    assert result["delta_v_total"] == pytest.approx(expected_total, rel=1e-12)
-    assert result["tof"] == pytest.approx(expected_tof, rel=1e-12)
+    np.testing.assert_allclose(result["delta_v_magnitudes"], [expected_dv1, expected_dv2], rtol=1e-12, atol=0)
+    assert result["delta_v_total"] == pytest.approx(expected_total, rel=1e-12, abs=0)
+    assert result["tof"] == pytest.approx(expected_tof, rel=1e-12, abs=0)
 
-    assert expected_dv1 / 1e3 == pytest.approx(2.426, rel=5e-4)
-    assert expected_dv2 / 1e3 == pytest.approx(1.467, rel=5e-4)
-    assert expected_total / 1e3 == pytest.approx(3.893, rel=5e-4)
-    assert expected_tof / 3600.0 == pytest.approx(5.275, rel=5e-4)
+    assert expected_dv1 / 1e3 == pytest.approx(2.426, rel=5e-4, abs=0)
+    assert expected_dv2 / 1e3 == pytest.approx(1.467, rel=5e-4, abs=0)
+    assert expected_total / 1e3 == pytest.approx(3.893, rel=5e-4, abs=0)
+    assert expected_tof / 3600.0 == pytest.approx(5.275, rel=5e-4, abs=0)
 
     assert result["diagnostics"]["radius1"] == pytest.approx(radius_leo)
     assert result["diagnostics"]["radius2"] == pytest.approx(radius_geo)
-    np.testing.assert_allclose(result["trajectory"]["r"][0], result["initial"]["r"])
-    np.testing.assert_allclose(result["trajectory"]["r"][-1], result["final"]["r"], atol=1e-6)
+    np.testing.assert_array_equal(result["trajectory"]["r"][0], result["initial"]["r"])
+    np.testing.assert_allclose(result["trajectory"]["r"][-1], result["final"]["r"], atol=1e-6, rtol=0)
 
 
 def test_bielliptic_known_high_radius_ratio_beats_hohmann():
@@ -103,12 +104,12 @@ def test_bielliptic_known_high_radius_ratio_beats_hohmann():
         samples_per_arc=8,
     )
 
-    np.testing.assert_allclose(result["delta_v_magnitudes"], expected[:3], rtol=1e-12)
-    assert result["delta_v_total"] == pytest.approx(expected[3], rel=1e-12)
-    assert result["tof"] == pytest.approx(expected[4], rel=1e-12)
+    np.testing.assert_allclose(result["delta_v_magnitudes"], expected[:3], rtol=1e-12, atol=0)
+    assert result["delta_v_total"] == pytest.approx(expected[3], rel=1e-12, abs=0)
+    assert result["tof"] == pytest.approx(expected[4], rel=1e-12, abs=0)
     assert result["delta_v_total"] < hohmann_total
-    assert (hohmann_total - result["delta_v_total"]) == pytest.approx(134.13, rel=5e-3)
-    assert result["delta_v_total"] / 1e3 == pytest.approx(3.912, rel=5e-4)
+    assert (hohmann_total - result["delta_v_total"]) == pytest.approx(134.13, rel=5e-3, abs=0)
+    assert result["delta_v_total"] / 1e3 == pytest.approx(3.912, rel=5e-4, abs=0)
 
 
 def test_geo_plane_change_matches_closed_form_reference():
@@ -119,8 +120,8 @@ def test_geo_plane_change_matches_closed_form_reference():
     delta_i = np.deg2rad(28.5)
     expected = 2.0 * VGEO * np.sin(delta_i / 2.0)
 
-    assert plane_change_delta_v(VGEO, 0.0, delta_i) == pytest.approx(expected, rel=1e-12)
-    assert expected / 1e3 == pytest.approx(1.514, rel=5e-4)
+    assert plane_change_delta_v(VGEO, 0.0, delta_i) == pytest.approx(expected, rel=1e-12, abs=0)
+    assert expected / 1e3 == pytest.approx(1.514, rel=5e-4, abs=0)
 
 
 def test_maneuver_burn_matches_tsiolkovsky_and_constant_thrust_reference():
@@ -147,5 +148,27 @@ def test_maneuver_burn_matches_tsiolkovsky_and_constant_thrust_reference():
     assert burn["delta_v_mag"] == pytest.approx(100.0)
     assert burn["acceleration_mag"] == pytest.approx(0.2)
     assert burn["duration"] == pytest.approx(expected_duration)
-    assert burn["propellant_mass"] == pytest.approx(expected_propellant, rel=1e-12)
-    assert burn["propellant_mass"] == pytest.approx(33.42, rel=5e-4)
+    assert burn["propellant_mass"] == pytest.approx(expected_propellant, rel=1e-12, abs=0)
+    assert burn["propellant_mass"] == pytest.approx(33.42, rel=5e-4, abs=0)
+
+
+@pytest.mark.parametrize("i_target_deg", [52.1, 51.1], ids=["raise", "lower"])
+def test_velocity_then_inclination_burn_obeys_gauss_at_the_node(i_target_deg):
+    # R1 (Gauss's planetary equation di/dt = r cos(u) a_W / h): a 0.5 deg plane
+    # change on a 7000 km circular orbit, burned from the ascending node, costs
+    # v |di| = 65.85 m/s to within 0.2 % (u advances 0.07 rad during the
+    # 66 s burn), and reaches the target inclination in either direction.
+    import ssapy
+    from ssatk.orbital_mechanics.transfer_velocity_and_inclination_continuous import (
+        transfer_velocity_and_inclination_continuous,
+    )
+
+    radius = 7000e3
+    orbit = ssapy.Orbit.fromKeplerianElements(radius, 0.0, np.radians(51.6), 0.0, np.radians(40.0), 0.0, t=0.0, mu=EARTH_MU)
+    result = transfer_velocity_and_inclination_continuous(
+        orbit.r, orbit.v, i_target=np.radians(i_target_deg), a_thrust=1.0, max_time1=1e-3, max_time2=2000.0
+    )
+    h = np.cross(result["final"]["r"], result["final"]["v"])
+    assert np.degrees(np.arccos(h[2] / np.linalg.norm(h))) == pytest.approx(i_target_deg, abs=1e-6)
+    expected = np.sqrt(EARTH_MU / radius) * np.radians(abs(i_target_deg - 51.6))
+    assert result["burns"][1]["delta_v_mag"] == pytest.approx(expected, rel=2e-3, abs=0)

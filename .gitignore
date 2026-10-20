@@ -146,9 +146,6 @@ docs/generated/
 .DS_Store
 *~
 
-# Local per-session agent notes (durable guidance lives in the tracked AGENTS.md)
-AGENTS.local.md
-agents.local.md
 
 # Never commit Space-Track credentials.
 tle_credentials_local.py

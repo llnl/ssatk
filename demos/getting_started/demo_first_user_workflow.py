@@ -6,11 +6,10 @@ import sys
 import numpy as np
 from astropy.time import Time
 
-import ssapy_toolkit as ssatk
-from ssapy_toolkit.plots.orbit_plot import orbit_plot
+import ssatk
+from ssatk.plots.orbit_plot import orbit_plot
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
-FIGDIR = "figures"
 
 
 def main(make_figures=None, fast=None):
@@ -35,14 +34,16 @@ def main(make_figures=None, fast=None):
     r = np.asarray(r, dtype=float).reshape((-1, 3))
 
     if make_figures:
+        # gallery-call: first_user_workflow.jpg
         orbit_plot(
             r,
             t=times,
             view=("xy", "groundtrack", "globe"),
             title="First SSATK workflow: orbit, ground track, and globe",
-            save=f"{FIGDIR}/first_user_workflow.jpg",
+            save=f"first_user_workflow.jpg",
             show=False,
         )
+        # gallery-end
 
     return {"orbit": orbit, "times": times, "r": r, "v": v}
 

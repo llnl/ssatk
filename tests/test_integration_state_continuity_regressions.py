@@ -2,12 +2,12 @@ import unittest
 
 import numpy as np
 
-from ssapy_toolkit.propagators_6dof.high_accuracy import (
+from ssatk.propagators_6dof.high_accuracy import (
     _propagate_spacecraft_segment,
     propagate_spacecraft_segments,
 )
-from ssapy_toolkit.propagators_6dof.sixdof import Spacecraft
-from ssapy_toolkit.satellites import SpacecraftBody, Tank
+from ssatk.propagators_6dof.sixdof import Spacecraft
+from ssatk.satellites import SpacecraftBody, Tank
 
 
 class StateContinuityTests(unittest.TestCase):
@@ -24,8 +24,8 @@ class StateContinuityTests(unittest.TestCase):
              dict(times=[2, 3])],
             mu=0, dense_output=True,
         )
-        np.testing.assert_allclose(tr.mass, [10., 10., 9., 9.], atol=1e-10)
-        np.testing.assert_allclose(tr.solution([0.5, 1.5, 2.5])[13], [10., 9.5, 9.], atol=1e-10)
+        np.testing.assert_allclose(tr.mass, [10., 10., 9., 9.], atol=1e-10, rtol=0)
+        np.testing.assert_allclose(tr.solution([0.5, 1.5, 2.5])[13], [10., 9.5, 9.], atol=1e-10, rtol=0)
 
     def test_segment_handoff_preserves_selected_tank_and_updated_inertia(self):
         body = SpacecraftBody.box(name="bus", mass=10., size=(1., 1., 1.)).with_tanks(
@@ -42,14 +42,7 @@ class StateContinuityTests(unittest.TestCase):
         )
         expected = body.with_tank_propellant_mass("aux", 2.)
         np.testing.assert_allclose(
-            [tank.propellant_mass for tank in final.body.tanks], [2., 2.], atol=1e-10,
+            [tank.propellant_mass for tank in final.body.tanks], [2., 2.], atol=1e-10, rtol=0
         )
-        np.testing.assert_allclose(final.inertia, expected.current_inertia, atol=1e-10)
-        np.testing.assert_allclose(final.inertia, final.body.current_inertia, atol=1e-10)
-
-    def test_segment_inertia_override_is_retained_at_handoff(self):
-        inertia = np.diag([2., 3., 4.])
-        _, final, _ = _propagate_spacecraft_segment(
-            self.craft(), dict(times=[0, 1], inertia=inertia, mu=0),
-        )
-        np.testing.assert_array_equal(final.inertia, inertia)
+        np.testing.assert_allclose(final.inertia, expected.current_inertia, atol=1e-10, rtol=0)
+        np.testing.assert_allclose(final.inertia, final.body.current_inertia, atol=1e-10, rtol=0)

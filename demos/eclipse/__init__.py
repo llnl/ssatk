@@ -1,1 +1,1 @@
-"""Eclipse SSAPy-Toolkit demos."""
+"""Eclipse SSATK demos."""

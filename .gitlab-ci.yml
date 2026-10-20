@@ -19,14 +19,14 @@ stages:
       if [ -f requirements.txt ]; then
         pip install -r requirements.txt
       elif [ -f pyproject.toml ]; then
-        pip install ".[dev]"
+        pip install ".[dev,geomagnetics,atmosphere,propulsion]"
       else
         pip install .
       fi
     - pip install pytest pytest-cov
   script:
     - mkdir -p reports
-    - pytest -q --maxfail=1 --disable-warnings \
+    - pytest -q --disable-warnings \
         --junitxml=reports/junit.xml \
         --cov=. --cov-report=xml:reports/coverage.xml --cov-report=term
   artifacts:
