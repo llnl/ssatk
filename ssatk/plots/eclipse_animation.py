@@ -563,8 +563,8 @@ def generate_peak_3d(event: ReferenceEvent, output_path: str | Path) -> str:
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     from ssatk.coordinates.eclipse_lunar_attitude import moon_attitude_for_event
-    from ssatk.plots.globe_orbit_daynight_plotly import _earth_atmosphere_trace, _earth_mesh, _sun_sphere_traces
-    from ssatk.plots.moon_render import moon_mesh_plotly
+    from ssatk.plots.globe_orbit_daynight_plotly import _earth_atmosphere_trace, _eclipse_earth_mesh as _earth_mesh, _sun_sphere_traces
+    from ssatk.plots.moon_render import _eclipse_moon_mesh_plotly as moon_mesh_plotly
 
     idx=event.peak_index; jd=float(event.jd[idx]); bundle=trace_reference_rays(event.definition,jd,n_azimuth=8)
     fig=make_subplots(rows=1,cols=2,specs=[[{"type":"scene"},{"type":"scene"}]],

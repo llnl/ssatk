@@ -143,7 +143,7 @@ def validate_reference_corpus(
     start: str = "2021-01-01",
     end: str = "2031-01-01",
     mode: str = "all",
-    backend: str = "swisseph",
+    backend: str = "ssapy",
     thresholds: ValidationThresholds | None = None,
 ) -> dict[str, object]:
     """Validate an independent discovery backend against the NASA corpus."""

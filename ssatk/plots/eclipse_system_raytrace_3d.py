@@ -43,11 +43,11 @@ from ssatk.compute.eclipse_state import event_gcrf_to_itrf_km, event_itrf_to_gcr
 from ssatk.plots.globe_orbit_daynight_plotly import (
     _earth_atmosphere_trace,
     _earth_eclipse_shadow_trace,
-    _earth_mesh,
+    _eclipse_earth_mesh as _earth_mesh,
     _sun_sphere_traces,
 )
 from ssatk.compute.eclipse_local_finite_geometry import impact_plane_basis, shadow_axis_world
-from ssatk.plots.moon_render import moon_mesh_plotly
+from ssatk.plots.moon_render import _eclipse_moon_mesh_plotly as moon_mesh_plotly
 from ssatk.compute.eclipse_reference_events import (
     AU_KM,
     EARTH_AXES_KM,
@@ -221,12 +221,9 @@ def _native_to_gcrf(points: np.ndarray, definition_or_event, jd_value: float) ->
                 event_itrf_to_gcrf_km(definition_or_event, values, float(jd_value)),
                 dtype=float,
             )
-        # A bare reference definition is deterministic and must not change
-        # when optional Toolkit/Astropy packages happen to be installed.
-        return np.asarray(
-            itrf_to_gcrf_km(values, float(jd_value), prefer_toolkit=False, prefer_astropy=False),
-            dtype=float,
-        )
+        from ssatk.compute.eclipse_reference_events import reference_itrf_to_gcrf_km
+
+        return reference_itrf_to_gcrf_km(values, float(jd_value))
     return values.copy()
 
 
@@ -241,10 +238,9 @@ def _gcrf_to_native(vector: np.ndarray, definition_or_event, jd_value: float) ->
                 event_gcrf_to_itrf_km(definition_or_event, values, float(jd_value)),
                 dtype=float,
             )
-        return np.asarray(
-            gcrf_to_itrf_km(values, float(jd_value), prefer_toolkit=False, prefer_astropy=False),
-            dtype=float,
-        )
+        from ssatk.compute.eclipse_reference_events import reference_gcrf_to_itrf_km
+
+        return reference_gcrf_to_itrf_km(values, float(jd_value))
     return values.copy()
 
 

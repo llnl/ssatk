@@ -1,7 +1,70 @@
-from __future__ import annotations
+"""C: real public products using installed data, without asset-lookup mocks."""
+from pathlib import Path
 
 import numpy as np
+from PIL import Image
 import pytest
+
+from ssatk.eclipse import EventRequest, ObserverConfig, RenderRequest, build_event, render_product
+from ssatk.io.eclipse_asset_resolver import resolve_asset
+
+
+def test_installed_split_data_kernel():
+    from ssapy.utils import find_file
+
+    resolved = resolve_asset("de430_kernel", policy="strict-data")
+    assert Path(resolved.path).samefile(find_file("de430_1900_2150.bsp"))
+    assert not resolved.git_lfs_pointer
+
+
+@pytest.mark.parametrize("kind", ["solar", "lunar"])
+def test_public_products_with_real_assets(tmp_path, kind):
+    event = build_event(EventRequest(kind=kind, backend="reference", sample_count=17))
+    for product in ("cinematic", "plotly", "scientific-suite"):
+        output = tmp_path / (product if product == "scientific-suite" else product + ".html")
+        render_product(RenderRequest(product, output, event=event, quality="motion"))
+    for name in ("cinematic.html", "plotly.html"):
+        document = (tmp_path / name).read_text(encoding="utf-8")
+        assert "<html" in document.lower()
+        assert len(document) > 1000
+    images = list((tmp_path / "scientific-suite").glob("*.png"))
+    assert images
+    for path in images:
+        with Image.open(path) as image:
+            assert image.width > 0 and image.height > 0
+            assert np.ptp(np.asarray(image)) > 0
+
+
+def test_local_observer_suite_and_demo_with_figures(tmp_path, monkeypatch):
+    monkeypatch.setenv("SSATK_OUTPUT_DIR", str(tmp_path))
+    observer = ObserverConfig(latitude_deg=30.41028, longitude_east_deg=-97.96312)
+    event = build_event(EventRequest(
+        backend="reference", sample_count=17, solar_scope="local", observer=observer
+    ))
+    render_product(RenderRequest("observer-suite", tmp_path / "observer", event=event, quality="motion"))
+    assert list((tmp_path / "observer").glob("*.csv"))
+    from demos.eclipse.demo_eclipse_scientific import main
+
+    result = main(make_figures=True, fast=True)
+    assert len(result["files"]) == 2
+    assert all(Path(path).is_file() for path in result["files"])
+
+
+def test_promotion_cli_reports_blocked_failure(tmp_path, monkeypatch, capsys):
+    import json
+    from ssatk import eclipse_cli
+    from ssatk.compute import eclipse_promotion
+    from ssatk.compute.eclipse_runtime import BackendUnavailableError
+
+    def blocked(*args, **kwargs):
+        raise BackendUnavailableError("strict ephemeris unavailable")
+
+    monkeypatch.setattr(eclipse_promotion, "resolve_backend", blocked)
+    output = tmp_path / "promotion.json"
+    assert eclipse_cli.main(["promote", "--output", str(output)]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["passed"] is False and result["status"] == "blocked"
+    assert json.loads(output.read_text(encoding="utf-8"))["promoted"] is False
 
 
 def test_shared_eclipse_renderer_apis_build_mesh_data(monkeypatch):
@@ -81,19 +144,3 @@ def test_scientific_summary_uses_toolkit_figure_output(monkeypatch, tmp_path):
 
     assert saved == str(requested)
     assert seen["output"] == "eclipse/summary.png"
-
-
-def test_browser_worker_reports_unavailable_chromium(monkeypatch, tmp_path):
-    import json
-
-    from ssatk.plots import eclipse_browser_matrix
-
-    result_path = tmp_path / "result.json"
-    monkeypatch.setattr(eclipse_browser_matrix.shutil, "which", lambda name: None)
-
-    status = eclipse_browser_matrix._worker(
-        tmp_path / "page.html", tmp_path, "smoke", "chromium-default", result_path
-    )
-
-    assert status == 0
-    assert json.loads(result_path.read_text(encoding="utf-8"))["available"] is False

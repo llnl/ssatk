@@ -17,7 +17,6 @@ from ssatk.compute.eclipse_brightness import (
     ephemeris_positions,
     earth_shadow_axis_surface_point,  # compatibility symbol; strict code uses selection-owned transforms
     shadow_axis_surface_point,
-    _gmst_rad,
 )
 from ssatk.compute.eclipse_runtime import (
     BackendSelection,
@@ -45,6 +44,8 @@ from ssatk.compute.eclipse_reference_events import (
     contact_aware_jd,
     itrf_surface_point,
     lunar_reference_state,
+    reference_gcrf_to_itrf_km,
+    reference_itrf_to_gcrf_km,
     solar_besselian_state,
     solar_local_contact_aware_jd,
     solar_local_contacts,
@@ -192,41 +193,13 @@ def backend_selection_from_event(event: ReferenceEvent) -> BackendSelection:
 
 
 def _reference_gcrf_to_itrf_km(points_gcrf_km, jd_utc) -> np.ndarray:
-    """Deterministic reference-frame rotation with no optional-package probe."""
-    points = np.asarray(points_gcrf_km, dtype=float)
-    scalar = points.ndim == 1
-    values = points.reshape(-1, 3)
-    jd = np.asarray(jd_utc, dtype=float)
-    if jd.ndim == 0:
-        jd = np.full(len(values), float(jd))
-    jd = np.broadcast_to(jd.reshape(-1), (len(values),))
-    theta = _gmst_rad(jd)
-    ct, st = np.cos(theta), np.sin(theta)
-    result = np.column_stack([
-        ct*values[:, 0] + st*values[:, 1],
-        -st*values[:, 0] + ct*values[:, 1],
-        values[:, 2],
-    ])
-    return result[0] if scalar else result
+    """Reference GCRF-to-ITRF transform with precession and nutation."""
+    return reference_gcrf_to_itrf_km(points_gcrf_km, jd_utc)
 
 
 def _reference_itrf_to_gcrf_km(points_itrf_km, jd_utc) -> np.ndarray:
-    """Inverse deterministic reference rotation with no optional fallback."""
-    points = np.asarray(points_itrf_km, dtype=float)
-    scalar = points.ndim == 1
-    values = points.reshape(-1, 3)
-    jd = np.asarray(jd_utc, dtype=float)
-    if jd.ndim == 0:
-        jd = np.full(len(values), float(jd))
-    jd = np.broadcast_to(jd.reshape(-1), (len(values),))
-    theta = _gmst_rad(jd)
-    ct, st = np.cos(theta), np.sin(theta)
-    result = np.column_stack([
-        ct*values[:, 0] - st*values[:, 1],
-        st*values[:, 0] + ct*values[:, 1],
-        values[:, 2],
-    ])
-    return result[0] if scalar else result
+    """Inverse reference transform with precession and nutation."""
+    return reference_itrf_to_gcrf_km(points_itrf_km, jd_utc)
 
 
 def _selection_gcrf_to_itrf_km(selection: BackendSelection, points, jd_utc) -> np.ndarray:
@@ -250,8 +223,8 @@ def event_gcrf_to_itrf_km(event: ReferenceEvent, points, jd_utc) -> np.ndarray:
 
     No runtime capability probe or fallback occurs here.  Strict SSAPy and
     SSAPy-core events therefore remain strict throughout rendering, while a
-    reference event remains byte-for-byte deterministic even on a workstation
-    that happens to have Astropy or SSAPy-Toolkit installed.
+    reference event always uses the same Astropy frame chain rather than
+    switching to a less accurate sidereal-angle-only transform.
     """
     return _selection_gcrf_to_itrf_km(backend_selection_from_event(event), points, jd_utc)
 
@@ -412,8 +385,11 @@ def build_event(
         ``global`` uses P1-P4.
     """
     definition = _definition(kind)
+    scope = str(solar_scope).lower()
+    if scope not in {"global", "local"}:
+        raise ValueError("solar_scope must be 'global' or 'local'")
     selection = resolve_backend(backend)
-    local_solar = definition.mode == "solar" and str(solar_scope).lower() == "local"
+    local_solar = definition.mode == "solar" and scope == "local"
     observer_site = _normalize_observer(observer)
     if local_solar and observer_site is None:
         observer_site = _ObserverSpec(

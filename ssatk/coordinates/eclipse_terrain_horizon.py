@@ -1,7 +1,7 @@
 """Data-backed terrestrial horizon profiles for eclipse observers.
 
-The module reads standard SRTM ``.HGT`` tiles, georeferenced rasters supported
-by Rasterio, and Terrarium-encoded PNG tiles.  It computes an azimuth-dependent
+The module reads standard SRTM ``.HGT`` tiles and Terrarium-encoded PNG
+tiles. It computes an azimuth-dependent
 horizon using WGS-84 ECEF geometry, so Earth curvature and observer elevation
 are handled without a flat-Earth approximation.
 
@@ -94,53 +94,6 @@ class SRTMHgtTile:
         return _bilinear(self.data_m, row, col, nodata=self.nodata)
 
 
-@dataclass
-class RasterTerrain:
-    data_m: np.ndarray
-    transform: object
-    crs: object
-    nodata: float | None
-    source: str
-    bounds: object
-
-    @classmethod
-    def from_file(cls, path: str | Path, *, band: int = 1) -> "RasterTerrain":
-        try:
-            import rasterio
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("Rasterio is required for GeoTIFF/DEM terrain input") from exc
-        path = Path(path).expanduser().resolve()
-        with rasterio.open(path) as dataset:
-            data = dataset.read(int(band)).astype(float)
-            return cls(data, dataset.transform, dataset.crs, dataset.nodata, str(path), dataset.bounds)
-
-    def _xy(self, latitude_deg: float, longitude_east_deg: float) -> tuple[float, float]:
-        lon, lat = _wrap_lon(longitude_east_deg), float(latitude_deg)
-        if self.crs is None or str(self.crs).upper() in {"EPSG:4326", "OGC:CRS84"}:
-            return lon, lat
-        try:
-            from rasterio.warp import transform
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("Rasterio coordinate transformation is unavailable") from exc
-        x, y = transform("EPSG:4326", self.crs, [lon], [lat])
-        return float(x[0]), float(y[0])
-
-    def contains(self, latitude_deg: float, longitude_east_deg: float) -> bool:
-        x, y = self._xy(latitude_deg, longitude_east_deg)
-        return self.bounds.left <= x <= self.bounds.right and self.bounds.bottom <= y <= self.bounds.top
-
-    def elevation_m(self, latitude_deg: float, longitude_east_deg: float) -> float:
-        if not self.contains(latitude_deg, longitude_east_deg):
-            return float("nan")
-        try:
-            from rasterio.transform import rowcol
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("Rasterio transform helpers are unavailable") from exc
-        x, y = self._xy(latitude_deg, longitude_east_deg)
-        row, col = rowcol(self.transform, x, y, op=float)
-        return _bilinear(self.data_m, row, col, nodata=self.nodata)
-
-
 @dataclass(frozen=True)
 class TerrariumTile:
     elevation_grid_m: np.ndarray
@@ -207,11 +160,9 @@ def load_terrain(path: str | Path, **kwargs) -> TerrainSource:
     suffix = path.suffix.lower()
     if suffix == ".hgt":
         return SRTMHgtTile.from_file(path)
-    if suffix in {".tif", ".tiff", ".img", ".vrt", ".nc"}:
-        return RasterTerrain.from_file(path, band=int(kwargs.get("band", 1)))
     if suffix == ".png" and {"zoom", "x", "y"}.issubset(kwargs):
         return TerrariumTile.from_file(path, zoom=int(kwargs["zoom"]), x=int(kwargs["x"]), y=int(kwargs["y"]))
-    raise ValueError("terrain input must be .hgt, a Rasterio-supported raster, or a Terrarium PNG with zoom/x/y")
+    raise ValueError("terrain input must be .hgt or a Terrarium PNG with zoom/x/y")
 
 
 def geodetic_to_ecef_m(latitude_deg: float, longitude_east_deg: float, height_m: float) -> np.ndarray:

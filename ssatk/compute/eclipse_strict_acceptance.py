@@ -41,7 +41,7 @@ def _write_markdown(report: Mapping[str, object], path: Path) -> None:
         "## Required destination command",
         "",
         "```bash",
-        "ssapy-eclipse strict-acceptance --require-strict --render --output-dir strict_ssapy_acceptance",
+        "ssatk-eclipse strict-acceptance --require-strict --render --output-dir strict_ssapy_acceptance",
         "```",
         "",
     ])

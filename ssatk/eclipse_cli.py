@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 _STATE_BACKENDS = ("reference", "auto", "ssapy-core", "ssapy")
-_SEARCH_BACKENDS = ("auto", "ssapy", "ssapy-core", "swisseph", "analytic", "catalog")
-_MATERIALIZE_BACKENDS = ("auto", "ssapy", "ssapy-core", "swisseph", "analytic")
+_SEARCH_BACKENDS = ("auto", "ssapy", "ssapy-core", "analytic", "catalog")
+_MATERIALIZE_BACKENDS = ("auto", "ssapy", "ssapy-core", "analytic")
 _QUALITIES = ("motion", "motion_high", "high", "ultra", "cinema")
 
 
@@ -117,7 +117,7 @@ def _resolve_default_output(args) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ssapy-eclipse",
+        prog="ssatk-eclipse",
         description=("Discover, build, validate, and render finite-Sun eclipses with immutable "
                      "ephemeris/frame provenance."),
     )
@@ -180,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate_corpus.add_argument("--start", default="2021-01-01")
     validate_corpus.add_argument("--end", default="2031-01-01")
     validate_corpus.add_argument("--kind", choices=("all", "solar", "lunar"), default="all")
-    validate_corpus.add_argument("--backend", choices=_SEARCH_BACKENDS, default="swisseph")
+    validate_corpus.add_argument("--backend", choices=_SEARCH_BACKENDS, default="ssapy")
     validate_corpus.add_argument("--greatest-threshold-s", type=float, default=15.0)
     validate_corpus.add_argument("--magnitude-threshold", type=float, default=0.0012)
     validate_corpus.add_argument("--lunar-duration-threshold-min", type=float, default=0.35)
@@ -269,13 +269,6 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--licence", default="")
     fetch.add_argument("--overwrite", action="store_true")
 
-    browser = sub.add_parser(
-        "browser-matrix",
-        help="exercise final self-contained HTML products in available WebGL browsers",
-    )
-    browser.add_argument("html", type=Path, nargs="+")
-    browser.add_argument("--output-dir", type=Path, required=True)
-
     attest = sub.add_parser("attest", help="write one unambiguous stage-aware V22.2 release attestation")
     attest.add_argument("--release-root", type=Path, required=True)
     attest.add_argument("--release", required=True)
@@ -357,7 +350,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"promotion_report": str(args.output.expanduser().resolve()),
                               "passed": False, "error": f"{type(exc).__name__}: {exc}"}, indent=2))
             return 2
-        print(json.dumps({"promotion_report": output, "passed": True}, indent=2)); return 0
+        report = json.loads(Path(output).read_text(encoding="utf-8"))
+        passed = bool(report.get("promoted", False))
+        print(json.dumps({
+            "promotion_report": output,
+            "passed": passed,
+            "status": report.get("status"),
+        }, indent=2))
+        return 0 if passed else 1
 
     if args.command == "strict-acceptance":
         from ssatk.compute.eclipse_strict_acceptance import run_strict_acceptance
@@ -499,11 +499,6 @@ def main(argv: list[str] | None = None) -> int:
             licence=args.licence, overwrite=args.overwrite,
         )
         print(json.dumps(record.to_dict(), indent=2)); return 0
-
-    if args.command == "browser-matrix":
-        from ssatk.plots.eclipse_browser_matrix import main as browser_main
-        browser_args = [*(str(path) for path in args.html), "--output-dir", str(args.output_dir)]
-        return int(browser_main(browser_args))
 
     if args.command == "attest":
         from ssatk.io.eclipse_attestation import artifact_record, build_attestation, write_attestation

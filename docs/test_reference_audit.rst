@@ -155,6 +155,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_earth_zonal_harmonics.py,3,R1 R2 R5,Potential-gradient finite differences; SSAPy EGM96 coefficients; J2 limits,Finite difference budget and model constants explicit
    tests/test_eclipse_geometry.py,2,R3 R4,NASA 2024-04-08 Texas totality path; coordinate round trip,150 km and 90 s event bounds; not precision eclipse timing
    tests/test_eclipse_partial_shadow.py,1,R1,Constructed finite-Sun occultation geometry,Boolean geometry case only
+   tests/test_eclipse_integration.py,9,R1 R2 R3,Closed-form overlap and shadow cones; adaptive radial photometry integral; native SSAPy ephemeris adapter; Astropy and NASA frame/path references,Stated per-test tolerances; LUT flux error 0.001; not a precision ephemeris validation
    tests/test_ekf.py,4,R1 C,Conditional-Gaussian mean/covariance; circular orbit; known bias,Synthetic observations; not validation against orbit tracking data
    tests/test_ellipse_fit_helpers.py,5,R1 R2,Focal definition; vis-viva; SSAPy propagation,Conic geometry and boundary conditions
    tests/test_ellipse_inject.py,2,R2,SSAPy independent transfer propagation and arrival velocity,Point-mass transfer only

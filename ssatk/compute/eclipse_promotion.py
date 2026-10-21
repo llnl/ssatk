@@ -204,7 +204,7 @@ def build_ssapy_promotion_report(
         "schema": "ssapy-toolkit.eclipse.ssapy-promotion/2.0",
         "requested_backend": "ssapy",
         "llnl_ssapy_version": _version("llnl-ssapy"),
-        "ssatk_version": _version("ssapy-toolkit"),
+        "ssatk_version": _version("ssatk"),
         "astropy_version": _version("astropy"),
         "llnl_ssapy_data_version": _version("llnl-ssapy-data"),
         "capabilities": caps.to_dict(portable=True),
@@ -228,7 +228,7 @@ def build_ssapy_promotion_report(
                 "reason": "strict LLNL state provider unavailable",
                 "required_interval": ["2024-04-01", "2024-04-15"],
             },
-            "next_command": "ssapy-eclipse promote --require-strict --output ssapy_promotion_report.json",
+            "next_command": "ssatk-eclipse promote --require-strict --output ssapy_promotion_report.json",
         })
         if require_strict:
             raise

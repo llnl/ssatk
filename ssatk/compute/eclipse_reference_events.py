@@ -37,6 +37,28 @@ R_MOON_MEAN_KM = 1737.4
 AU_KM = 149597870.7
 
 
+def reference_itrf_to_gcrf_km(points_itrf_km, jd_utc) -> np.ndarray:
+    """Convert reference Earth-fixed vectors to GCRF, including date precession."""
+    from .eclipse_runtime import astropy_itrf_to_gcrf_km
+
+    return astropy_itrf_to_gcrf_km(points_itrf_km, jd_utc)
+
+
+def reference_gcrf_to_itrf_km(points_gcrf_km, jd_utc) -> np.ndarray:
+    """Inverse of :func:`reference_itrf_to_gcrf_km`."""
+    from .eclipse_runtime import astropy_gcrf_to_itrf_km
+
+    return astropy_gcrf_to_itrf_km(points_gcrf_km, jd_utc)
+
+
+def _apparent_equatorial_to_gcrf(vector, jd_utc: float) -> np.ndarray:
+    import erfa
+    from astropy.time import Time
+
+    tt = Time(jd_utc, format="jd", scale="utc").tt
+    return erfa.pnm06a(tt.jd1, tt.jd2).T @ np.asarray(vector, dtype=float)
+
+
 def datetime_to_jd(value: datetime) -> float:
     """Convert an aware UTC datetime to Julian Date (UTC)."""
     if value.tzinfo is None:
@@ -665,9 +687,9 @@ class LunarReferenceState:
 
 def lunar_reference_state(jd_utc: float) -> LunarReferenceState:
     jd = float(jd_utc)
-    sun_hat = _unit(_LUNAR_SUN_CORRECTION@_approx_sun_equatorial_unit(jd))
-    anti = -sun_hat
-    ra, dec = _unit_to_ra_dec(anti)
+    sun_hat_date = _unit(_LUNAR_SUN_CORRECTION@_approx_sun_equatorial_unit(jd))
+    anti_date = -sun_hat_date
+    ra, dec = _unit_to_ra_dec(anti_date)
     ra_rad = math.radians(ra)
     dec_rad = math.radians(dec)
     east = _unit(np.array([-math.sin(ra_rad), math.cos(ra_rad), 0.0]))
@@ -684,7 +706,12 @@ def lunar_reference_state(jd_utc: float) -> LunarReferenceState:
     rho_deg = float(np.linalg.norm(offset2))
     tangent_world = _unit(offset2[0]*east+offset2[1]*north)
     rho = math.radians(rho_deg)
-    moon_hat = _unit(math.cos(rho)*anti+math.sin(rho)*tangent_world)
+    moon_hat_date = _unit(math.cos(rho)*anti_date+math.sin(rho)*tangent_world)
+    sun_hat = _unit(_apparent_equatorial_to_gcrf(sun_hat_date, jd))
+    anti = -sun_hat
+    moon_hat = _unit(_apparent_equatorial_to_gcrf(moon_hat_date, jd))
+    east = _unit(_apparent_equatorial_to_gcrf(east, jd))
+    north = _unit(_apparent_equatorial_to_gcrf(north, jd))
     moon = _LUNAR_MOON_DISTANCE_KM*moon_hat
     sun = _LUNAR_SUN_DISTANCE_KM*sun_hat
 
@@ -799,8 +826,11 @@ def build_reference_event(kind: str | ReferenceDefinition = "solar",
     if definition.mode == "solar":
         for value in times:
             state = solar_besselian_state(float(value))
-            moon.append(state.moon_itrf_km)
-            sun.append(state.sun_itrf_km)
+            moon_gcrf, sun_gcrf = reference_itrf_to_gcrf_km(
+                [state.moon_itrf_km, state.sun_itrf_km], [value, value]
+            )
+            moon.append(moon_gcrf)
+            sun.append(sun_gcrf)
             central = solar_central_line_wgs84(float(value))
             if central is None:
                 # Geocentric apparent overlap is a useful partial-phase proxy.
@@ -833,7 +863,7 @@ def build_reference_event(kind: str | ReferenceDefinition = "solar",
             **{f"local_{name.lower()}_utc": jd_to_datetime(value).isoformat().replace("+00:00", "Z")
                for name, value in solar_local_contacts().items()},
         }
-        frame = "WGS84 Earth-fixed (Besselian reconstruction)"
+        frame = "GCRF (Besselian reconstruction transformed from true equator of date)"
         backend = "NASA/GSFC Besselian VSOP87/ELP2000-85"
     else:
         for value in times:
@@ -859,7 +889,7 @@ def build_reference_event(kind: str | ReferenceDefinition = "solar",
             "danjon_shadow_enlargement": enlargement,
             "totality_duration_s": 3924.0,
         }
-        frame = "GCRF-like apparent equatorial reference frame"
+        frame = "GCRF"
         backend = "NASA/GSFC contact and Danjon-shadow fit"
     return ReferenceEvent(
         definition=definition,

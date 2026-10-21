@@ -24,7 +24,7 @@ from ssatk.compute.eclipse_reference_events import (
 from ssatk.compute.eclipse_raytrace import bundle_penetrations, tangent_residuals, trace_event_rays
 
 SCHEMA_ID = "ssapy-toolkit.eclipse.event/2.2"
-BackendName = Literal["reference", "auto", "ssapy-core", "ssapy", "swisseph"]
+BackendName = Literal["reference", "auto", "ssapy-core", "ssapy"]
 ProductName = Literal["cinematic", "plotly", "scientific-suite", "observer-suite"]
 
 

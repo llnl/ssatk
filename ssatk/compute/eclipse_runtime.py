@@ -277,14 +277,17 @@ def toolkit_gcrf_to_itrf_km(points_gcrf_km, jd_utc) -> np.ndarray:
     if functions is None:
         raise BackendUnavailableError("ssapy-toolkit coordinate transforms are unavailable")
     gcrf_to_itrf, _, _ = functions
-    points = np.asarray(points_gcrf_km, dtype=float).reshape(-1, 3)
+    input_points = np.asarray(points_gcrf_km, dtype=float)
+    scalar = input_points.ndim == 1
+    points = input_points.reshape(-1, 3)
     jd = np.asarray(jd_utc, dtype=float)
     if jd.ndim == 0:
         jd = np.full(len(points), float(jd))
     jd = np.broadcast_to(jd.reshape(-1), (len(points),))
     gps = jd_utc_to_gps_seconds(jd)
     result = gcrf_to_itrf(points * 1_000.0, gps)
-    return _as_n_by_3(result, len(points), rows_are_points=True) / 1_000.0
+    converted = _as_n_by_3(result, len(points), rows_are_points=True) / 1_000.0
+    return converted[0] if scalar else converted
 
 
 def toolkit_itrf_to_gcrf_km(points_itrf_km, jd_utc) -> np.ndarray:
@@ -292,14 +295,17 @@ def toolkit_itrf_to_gcrf_km(points_itrf_km, jd_utc) -> np.ndarray:
     if functions is None:
         raise BackendUnavailableError("ssapy-toolkit coordinate transforms are unavailable")
     _, _, itrf_to_gcrf = functions
-    points = np.asarray(points_itrf_km, dtype=float).reshape(-1, 3)
+    input_points = np.asarray(points_itrf_km, dtype=float)
+    scalar = input_points.ndim == 1
+    points = input_points.reshape(-1, 3)
     jd = np.asarray(jd_utc, dtype=float)
     if jd.ndim == 0:
         jd = np.full(len(points), float(jd))
     jd = np.broadcast_to(jd.reshape(-1), (len(points),))
     gps = jd_utc_to_gps_seconds(jd)
     result = itrf_to_gcrf(points * 1_000.0, gps)
-    return _as_n_by_3(result, len(points), rows_are_points=True) / 1_000.0
+    converted = _as_n_by_3(result, len(points), rows_are_points=True) / 1_000.0
+    return converted[0] if scalar else converted
 
 
 def astropy_gcrf_to_itrf_km(points_gcrf_km, jd_utc) -> np.ndarray:
@@ -492,7 +498,7 @@ def runtime_capabilities(execute: bool = True) -> RuntimeCapabilities:
         ssapy_ephemeris_healthy=ephem_healthy,
         ssapy_ephemeris_error=ephem_error,
         ssatk_importable=toolkit_importable,
-        ssatk_version=_version("ssapy-toolkit"),
+        ssatk_version=_version("ssatk"),
         toolkit_transform_healthy=transform_healthy,
         toolkit_transform_error=transform_error,
         ssapy_orientation_healthy=orientation_healthy,
@@ -526,8 +532,8 @@ def resolve_backend(mode: BackendMode | str = "auto", *, execute_probe: bool = T
     elif requested == "ssapy":
         if not caps.ssapy_data_strict_ready:
             raise BackendUnavailableError(
-                "backend='ssapy' requires real de430.bsp and moon_pa_de440_200625.bpc "
-                "from llnl-ssapy-data or an SSAPy-Data checkout; Git LFS pointers are rejected. "
+                "backend='ssapy' requires real DE430 and moon_pa_de440_200625.bpc kernels "
+                "from ssa-data-lunar or an explicitly configured data checkout; Git LFS pointers are rejected. "
                 f"{caps.ssapy_data_error or ''}"
             )
         if not caps.ssapy_ephemeris_healthy:
@@ -549,8 +555,8 @@ def resolve_backend(mode: BackendMode | str = "auto", *, execute_probe: bool = T
     elif requested == "ssapy-core":
         if not caps.ssapy_data_strict_ready:
             raise BackendUnavailableError(
-                "backend='ssapy-core' requires real de430.bsp and moon_pa_de440_200625.bpc "
-                "from llnl-ssapy-data or an SSAPy-Data checkout; Git LFS pointers are rejected. "
+                "backend='ssapy-core' requires real DE430 and moon_pa_de440_200625.bpc kernels "
+                "from ssa-data-lunar or an explicitly configured data checkout; Git LFS pointers are rejected. "
                 f"{caps.ssapy_data_error or ''}"
             )
         if not caps.ssapy_ephemeris_healthy:
@@ -581,13 +587,13 @@ def resolve_backend(mode: BackendMode | str = "auto", *, execute_probe: bool = T
 
     if selected == "ssapy":
         ephem = "llnl-ssapy/DE430"
-        frame = "ssapy-toolkit GCRF<->ITRF"
+        frame = "ssatk GCRF<->ITRF"
     elif selected == "ssapy-core":
         ephem = "llnl-ssapy/DE430"
         frame = "Astropy GCRS<->ITRS"
     else:
         ephem = "NASA/GSFC validated reference reconstruction"
-        frame = "reference event frame with deterministic WGS-84 transforms"
+        frame = "Astropy GCRS<->ITRS for NASA reference geometry"
 
     time_input = (
         "UTC Julian Date -> Astropy Time.gps -> numeric GPS seconds"

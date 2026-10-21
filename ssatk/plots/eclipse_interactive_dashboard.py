@@ -370,9 +370,9 @@ def _body_traces(event: ReferenceEvent, jd_value: float, bundle: ReferenceRayBun
     from ssatk.plots.globe_orbit_daynight_plotly import (
         _earth_atmosphere_trace,
         _earth_eclipse_shadow_trace,
-        _earth_mesh,
+        _eclipse_earth_mesh as _earth_mesh,
     )
-    from ssatk.plots.moon_render import moon_mesh_plotly
+    from ssatk.plots.moon_render import _eclipse_moon_mesh_plotly as moon_mesh_plotly
     from ssatk.coordinates.eclipse_lunar_attitude import moon_attitude_for_event
 
     earth = bundle.earth_center_km

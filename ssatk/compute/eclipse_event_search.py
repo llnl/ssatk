@@ -4,11 +4,9 @@ The search layer deliberately separates *discovery* from *rendering*:
 
 * ``ssapy`` / ``ssapy-core`` use LLNL body states and the selected frame
   provider, then solve finite-Sun contact equations numerically.
-* ``swisseph`` is an optional, search-only catalogue/validation bridge.  It is
-  never installed as a required dependency and its provenance is explicit.
 * ``catalog`` exposes only the two bundled NASA/GSFC reference events.
-* ``auto`` prefers strict SSAPy, then the optional Swiss Ephemeris bridge, then
-  the portable analytical discovery model.  The two bundled reference events
+* ``auto`` prefers strict SSAPy, then the portable analytical discovery model.
+  The two bundled reference events
   remain available explicitly through ``backend='catalog'``.
 
 A discovered event can be materialized as the same immutable ``ReferenceEvent``
@@ -185,120 +183,9 @@ def _key(mode: str, jd: float) -> str:
     return f"{mode}_{dt:%Y_%m_%d}"
 
 
-def _load_swe():
-    try:
-        import swisseph as swe
-    except Exception as exc:
-        raise BackendUnavailableError(
-            "The optional Swiss Ephemeris search bridge is unavailable. "
-            "Install pyswisseph under its applicable licence, or use backend='ssapy'."
-        ) from exc
-    return swe
-
-
-def swisseph_available() -> bool:
-    try:
-        _load_swe()
-        return True
-    except BackendUnavailableError:
-        return False
-
-
-def _swe_solar_type(swe, flags: int) -> str:
-    if flags & swe.ECL_ANNULAR_TOTAL:
-        return "hybrid"
-    if flags & swe.ECL_TOTAL:
-        return "total"
-    if flags & swe.ECL_ANNULAR:
-        return "annular"
-    return "partial"
-
-
-def _swe_lunar_type(swe, flags: int) -> str:
-    if flags & swe.ECL_TOTAL:
-        return "total"
-    if flags & swe.ECL_PARTIAL:
-        return "partial-umbral"
-    return "penumbral"
-
-
 def _nonzero_contacts(mapping: Mapping[str, float]) -> dict[str, float]:
     result = {name: float(value) for name, value in mapping.items() if float(value) > 0.0}
     return dict(sorted(result.items(), key=lambda item: item[1]))
-
-
-def _discover_swisseph(start_jd: float, end_jd: float, mode: str) -> list[DiscoveredEclipse]:
-    swe = _load_swe()
-    flags = swe.FLG_MOSEPH
-    records: list[DiscoveredEclipse] = []
-    cursor = float(start_jd) - 1.0e-6
-    while cursor <= end_jd:
-        if mode == "solar":
-            result_flags, times = swe.sol_eclipse_when_glob(
-                cursor, flags, swe.ECL_ALLTYPES_SOLAR, False
-            )
-            maximum = float(times[0])
-            if maximum > end_jd:
-                break
-            if maximum >= start_jd:
-                where_flags, geopos, attr = swe.sol_eclipse_where(maximum, flags)
-                eclipse_type = _swe_solar_type(swe, int(result_flags))
-                contacts = _nonzero_contacts({
-                    "P1": times[2], "U1": times[4], "MAX": times[0],
-                    "U4": times[5], "P4": times[3],
-                    "CENTER_BEGIN": times[6], "CENTER_END": times[7],
-                    "HYBRID_TOTAL_BEGIN": times[8], "HYBRID_TOTAL_END": times[9],
-                })
-                records.append(DiscoveredEclipse(
-                    key=_key("solar", maximum), mode="solar", eclipse_type=eclipse_type,
-                    greatest_jd_utc=maximum, contacts_jd_utc=contacts,
-                    discovery_backend=f"Swiss Ephemeris {getattr(swe, 'version', 'unknown')} / Moshier",
-                    source_label="Optional Swiss Ephemeris global-eclipse search bridge",
-                    central=bool(result_flags & swe.ECL_CENTRAL),
-                    greatest_lon_east_deg=float(geopos[0]),
-                    greatest_lat_deg=float(geopos[1]),
-                    magnitude=float(attr[8]), obscuration=float(attr[2]),
-                    shadow_width_km=abs(float(attr[3])) if eclipse_type != "partial" else None,
-                    saros_series=_optional_int(attr[9]), saros_member=_optional_int(attr[10]),
-                    metadata={
-                        "swisseph_result_flags": int(result_flags),
-                        "swisseph_where_flags": int(where_flags),
-                        "ephemeris_flag": "FLG_MOSEPH",
-                        "licensing_note": "Optional external search bridge; not redistributed or required by this package.",
-                    },
-                ))
-        else:
-            result_flags, times = swe.lun_eclipse_when(
-                cursor, flags, swe.ECL_ALLTYPES_LUNAR, False
-            )
-            maximum = float(times[0])
-            if maximum > end_jd:
-                break
-            if maximum >= start_jd:
-                _, attr = swe.lun_eclipse_how(maximum, (0.0, 0.0, 0.0), flags)
-                contacts = _nonzero_contacts({
-                    "P1": times[6], "U1": times[2], "U2": times[4],
-                    "MAX": times[0], "U3": times[5], "U4": times[3], "P4": times[7],
-                })
-                records.append(DiscoveredEclipse(
-                    key=_key("lunar", maximum), mode="lunar",
-                    eclipse_type=_swe_lunar_type(swe, int(result_flags)),
-                    greatest_jd_utc=maximum, contacts_jd_utc=contacts,
-                    discovery_backend=f"Swiss Ephemeris {getattr(swe, 'version', 'unknown')} / Moshier",
-                    source_label="Optional Swiss Ephemeris global-eclipse search bridge",
-                    central=True, magnitude=float(attr[8]),
-                    saros_series=_optional_int(attr[9]), saros_member=_optional_int(attr[10]),
-                    metadata={
-                        "umbral_magnitude": float(attr[0]),
-                        "penumbral_magnitude": float(attr[1]),
-                        "axis_offset_deg": float(attr[7]),
-                        "swisseph_result_flags": int(result_flags),
-                        "ephemeris_flag": "FLG_MOSEPH",
-                        "licensing_note": "Optional external search bridge; not redistributed or required by this package.",
-                    },
-                ))
-        cursor = maximum + 1.0
-    return records
 
 
 def _catalog_records(start_jd: float, end_jd: float, mode: str) -> list[DiscoveredEclipse]:
@@ -550,8 +437,8 @@ def analytic_positions_gcrf_km(jd_utc: Sequence[float]) -> tuple[np.ndarray, np.
     This compact osculating-element model retains the dominant lunar evection,
     variation, annual equation, latitude, and range perturbations.  It is a
     dependency-free discovery/preview fallback, not a JPL or SSAPy replacement.
-    Returned arrays are ``(sun, moon)`` in kilometres in a mean-equatorial
-    J2000-like frame.
+    Returned arrays are ``(sun, moon)`` in kilometres in GCRF, rotated from
+    the model's mean equator/equinox of date.
     """
     jd = np.asarray(jd_utc, dtype=float).reshape(-1)
     d = jd - 2451543.5
@@ -638,6 +525,13 @@ def analytic_positions_gcrf_km(jd_utc: Sequence[float]) -> tuple[np.ndarray, np.
     sz = sy_ecliptic*np.sin(obliquity)
     sun = np.column_stack([sx, sy, sz])*AU_KM
     moon = np.column_stack([mx, my, mz])*RE_KM
+    import erfa
+    from astropy.time import Time
+
+    tt = Time(jd, format="jd", scale="utc").tt
+    precession = erfa.pmat06(tt.jd1, tt.jd2)
+    sun = np.einsum("nji,nj->ni", precession, sun)
+    moon = np.einsum("nji,nj->ni", precession, moon)
     return sun, moon
 
 
@@ -687,8 +581,8 @@ def discover_eclipses(
     """Discover all eclipses in a UTC interval.
 
     ``backend='auto'`` prefers a healthy strict SSAPy provider, then the
-    optional Swiss Ephemeris bridge, and finally the portable analytical
-    discovery model.  The selected backend is recorded in every result.
+    portable analytical discovery model. The selected backend is recorded in
+    every result.
     """
     start_jd, end_jd = _coerce_jd(start), _coerce_jd(end)
     if not start_jd < end_jd:
@@ -706,38 +600,18 @@ def discover_eclipses(
         except Exception:
             selected = ""
         if not selected:
-            selected = "swisseph" if swisseph_available() else "analytic"
+            selected = "analytic"
     records: list[DiscoveredEclipse] = []
     for mode in modes:
         if selected in {"ssapy", "ssapy-core"}:
             records.extend(_discover_ssapy(start_jd, end_jd, mode, selected))
-        elif selected == "swisseph":
-            records.extend(_discover_swisseph(start_jd, end_jd, mode))
         elif selected == "analytic":
             records.extend(_discover_analytic(start_jd, end_jd, mode))
         elif selected in {"catalog", "reference"}:
             records.extend(_catalog_records(start_jd, end_jd, mode))
         else:
-            raise ValueError("search backend must be auto, ssapy, ssapy-core, swisseph, analytic, or catalog")
+            raise ValueError("search backend must be auto, ssapy, ssapy-core, analytic, or catalog")
     return sorted(records, key=lambda item: item.greatest_jd_utc)
-
-
-def swisseph_positions_gcrf_km(jd_utc: Sequence[float]) -> tuple[np.ndarray, np.ndarray]:
-    """Optional Swiss-Ephemeris geocentric J2000 equatorial positions.
-
-    This function is a catalogue/validation bridge, not a required state
-    backend.  No Swiss Ephemeris code or data are redistributed by this
-    project.
-    """
-    swe = _load_swe()
-    flags = swe.FLG_MOSEPH | swe.FLG_EQUATORIAL | swe.FLG_XYZ | swe.FLG_J2000
-    sun, moon = [], []
-    for value in np.asarray(jd_utc, dtype=float).reshape(-1):
-        sun_au, _ = swe.calc_ut(float(value), swe.SUN, flags)
-        moon_au, _ = swe.calc_ut(float(value), swe.MOON, flags)
-        sun.append(np.asarray(sun_au[:3], dtype=float) * AU_KM)
-        moon.append(np.asarray(moon_au[:3], dtype=float) * AU_KM)
-    return np.asarray(sun), np.asarray(moon)
 
 
 def _contact_aware_times(record: DiscoveredEclipse, n_frames: int) -> np.ndarray:
@@ -771,10 +645,6 @@ def build_discovered_event(
     if requested == "auto":
         if record.discovery_backend.lower().startswith("llnl ssapy"):
             selected = "ssapy"
-        elif "analytical" in record.discovery_backend.lower():
-            selected = "analytic"
-        elif swisseph_available():
-            selected = "swisseph"
         else:
             selected = "analytic"
     if selected in {"ssapy", "ssapy-core"}:
@@ -787,14 +657,6 @@ def build_discovered_event(
         backend_label = resolution.ephemeris_backend
         strict = True
         fallback = ""
-    elif selected == "swisseph":
-        sun, moon = swisseph_positions_gcrf_km(times)
-        swe = _load_swe()
-        state_source = "swisseph"
-        frame_backend = "deterministic GMST/WGS-84 reference transform"
-        backend_label = f"Swiss Ephemeris {getattr(swe, 'version', 'unknown')} Moshier J2000"
-        strict = True
-        fallback = ""
     elif selected == "analytic":
         sun, moon = analytic_positions_gcrf_km(times)
         state_source = "analytic-discovery"
@@ -803,7 +665,7 @@ def build_discovered_event(
         strict = False
         fallback = "portable dependency-free preview; not a JPL/SSAPy ephemeris"
     else:
-        raise ValueError("state_backend must be auto, ssapy, ssapy-core, swisseph, or analytic")
+        raise ValueError("state_backend must be auto, ssapy, ssapy-core, or analytic")
 
     visible, separation = [], []
     if record.mode == "solar":

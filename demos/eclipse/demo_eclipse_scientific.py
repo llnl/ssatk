@@ -12,7 +12,7 @@ def main(make_figures: bool | None = None, fast: bool | None = None, backend: st
     fast = bool(fast)
     minimum_states = 25 if fast else 81
     observer = ObserverConfig(latitude_deg=30.410279649731205, longitude_east_deg=-97.96311785197467)
-    solar = build_event(EventRequest(kind="solar", backend=backend, sample_count=minimum_states, solar_scope="observer", observer=observer))
+    solar = build_event(EventRequest(kind="solar", backend=backend, sample_count=minimum_states, solar_scope="local", observer=observer))
     lunar = build_event(EventRequest(kind="lunar", backend=backend, sample_count=minimum_states))
     solar_validation = validate_event(solar)
     lunar_validation = validate_event(lunar)
@@ -27,8 +27,12 @@ def main(make_figures: bool | None = None, fast: bool | None = None, backend: st
     if make_figures:
         from ssatk.plots.eclipse_scientific_suite import generate_event_scientific_summary
         out = Path("eclipse")
+        # gallery-call: solar_eclipse_summary.png
         solar_path = generate_event_scientific_summary(solar, out / "solar_eclipse_summary.png")
+        # gallery-end
+        # gallery-call: lunar_eclipse_summary.png
         lunar_path = generate_event_scientific_summary(lunar, out / "lunar_eclipse_summary.png")
+        # gallery-end
         result["files"].extend([Path(solar_path), Path(lunar_path)])
     return result
 

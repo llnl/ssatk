@@ -137,25 +137,6 @@ class LunarTopographyGrid:
         return cls(lat, lon, radius, source=f"{label_path} + {image_path}", metadata={"pds_label": label})
 
     @classmethod
-    def from_geotiff(cls, path: str | Path, *, reference_radius_km: float = R_MOON_MEAN_KM) -> "LunarTopographyGrid":
-        path = Path(path).expanduser().resolve()
-        try:
-            import rasterio
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("lunar GeoTIFF loading requires rasterio") from exc
-        with rasterio.open(path) as dataset:
-            values = dataset.read(1).astype(float)
-            if dataset.nodata is not None:
-                values[values == float(dataset.nodata)] = np.nan
-            rows = np.arange(dataset.height)
-            cols = np.arange(dataset.width)
-            lon = np.array([dataset.xy(dataset.height//2, int(c))[0] for c in cols])
-            lat = np.array([dataset.xy(int(r), dataset.width//2)[1] for r in rows])
-            units = str(dataset.tags(1).get("units", "m")).lower()
-        elevation_km = values if units.startswith("km") else values/1000.0
-        return cls(lat, lon, float(reference_radius_km)+elevation_km, source=str(path))
-
-    @classmethod
     def from_file(cls, path: str | Path, **kwargs) -> "LunarTopographyGrid":
         path = Path(path)
         suffix = path.suffix.lower()
@@ -163,9 +144,7 @@ class LunarTopographyGrid:
             return cls.from_npz(path, **kwargs)
         if suffix in {".lbl", ".lab"}:
             return cls.from_pds_img(path, **kwargs)
-        if suffix in {".tif", ".tiff"}:
-            return cls.from_geotiff(path, **kwargs)
-        raise ValueError("lunar topography file must be NPZ, PDS LBL/IMG, or GeoTIFF")
+        raise ValueError("lunar topography file must be NPZ or PDS LBL/IMG")
 
     def limb_profile(
         self,

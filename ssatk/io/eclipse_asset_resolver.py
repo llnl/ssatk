@@ -2,16 +2,16 @@
 
 V22.2 treats image and ephemeris resources as named scientific inputs instead of
 hard-coded files inside the plotting package.  The preferred source is the
-``llnl-ssapy-data`` distribution (``import ssapy_data``), whose files live
-below ``src/ssapy_data/data`` in a source checkout.  A checkout may also be
-selected explicitly through ``SSAPY_DATA_DIR`` or a per-asset override.
+installed ``ssa-data-*`` distributions through :mod:`ssatk.data`. A checkout
+may also be selected explicitly through ``SSAPY_DATA_DIR`` or a per-asset
+override.
 
 Resolution order is deterministic and recorded in every public product:
 
 * explicit caller path or per-asset environment override;
-* installed ``ssapy_data.data_path`` / package resources;
-* configured or discovered SSAPy-Data checkout data directories;
-* legacy ``ssapy.utils.find_file`` compatibility;
+* explicitly configured SSAPy-Data checkout data directories;
+* SSAPy's installed-data lookup through ``ssapy.utils.find_file``;
+* installed packages through ``ssatk.data`` (including zipped resources);
 * packaged offline fallbacks, only when the policy permits them.
 
 Git LFS pointer text is rejected for binary kernels.  Package resources that
@@ -20,16 +20,14 @@ libraries requiring a filesystem path can safely retain the resolved path.
 """
 from __future__ import annotations
 
-from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from hashlib import sha256
-from importlib import import_module, metadata, resources
+from importlib import import_module, metadata
 from pathlib import Path
 from typing import Iterable, Literal
 import json
 import os
-import shutil
 
 AssetPolicy = Literal["data-first", "strict-data", "package-first", "packaged-only"]
 
@@ -71,15 +69,9 @@ class ResolvedAsset:
         if self.source == "packaged-fallback":
             asset_ref = f"package://ssatk.plots/{filename}"
             root_ref = "package://ssatk.plots"
-        elif self.source.startswith("ssapy_data") or self.source in {"SSAPy-Data", "ssapy.utils.find_file"}:
+        elif self.source.startswith("ssapy_data") or self.source in {"ssatk.data", "SSAPy-Data", "ssapy.utils.find_file"}:
             relative = None
-            try:
-                spec = ASSET_SPECS.get(self.logical_name)
-                if spec is not None and spec.aliases:
-                    relative = spec.aliases[0]
-            except Exception:
-                relative = None
-            if relative is None and self.data_root:
+            if self.data_root:
                 try:
                     relative = Path(self.path).resolve().relative_to(Path(self.data_root).resolve()).as_posix()
                 except Exception:
@@ -107,6 +99,7 @@ ASSET_SPECS: dict[str, AssetSpec] = {
         aliases=(
             "eclipse_earth_albedo.png", "eclipse_earth_albedo.jpg", "eclipse_earth_albedo.jpeg",
             "earth.png", "earth.jpg", "earth.jpeg",
+            "earth_day_2048.jpg",
             "Earth_graphics/earth.png",
         ),
         packaged_aliases=("earth_ssapy_full.png", "earth_ssapy_2048.png"),
@@ -130,18 +123,22 @@ ASSET_SPECS: dict[str, AssetSpec] = {
         aliases=("eclipse_quadratic_visible_delta_lut.bin",),
         environment_override="SSAPY_ECLIPSE_PHOTOMETRY_LUT",
         kind="binary-lut",
-        required_for_rendering=True,
+        required_for_rendering=False,
     ),
     "quadratic_visible_delta_lut_metadata": AssetSpec(
         logical_name="quadratic_visible_delta_lut_metadata",
         aliases=("eclipse_quadratic_visible_delta_lut.json",),
         environment_override="SSAPY_ECLIPSE_PHOTOMETRY_LUT_METADATA",
         kind="json",
-        required_for_rendering=True,
+        required_for_rendering=False,
     ),
     "de430_kernel": AssetSpec(
         logical_name="de430_kernel",
-        aliases=("de430.bsp", "kernels/de430.bsp", "ephemerides/de430.bsp"),
+        aliases=(
+            "de430_1900_2150.bsp", "de430.bsp",
+            "kernels/de430_1900_2150.bsp", "kernels/de430.bsp",
+            "ephemerides/de430_1900_2150.bsp", "ephemerides/de430.bsp",
+        ),
         environment_override="SSAPY_DE430_KERNEL",
         kind="spk",
         required_for_strict_ssapy=True,
@@ -229,7 +226,8 @@ def is_git_lfs_pointer(path: str | Path) -> bool:
 
 def _looks_like_image(path: Path) -> bool:
     try:
-        head = path.read_bytes()[:16]
+        with path.open("rb") as handle:
+            head = handle.read(16)
     except OSError:
         return False
     return (
@@ -293,34 +291,6 @@ def discover_data_roots() -> tuple[Path, ...]:
     for name in ("SSAPY_DATA_DIR", "SSAPY_DATA_ROOT", "SSAPY_DATA_REPO", "SSAPY_DATA_PATH"):
         values.extend(_path_list(os.environ.get(name)))
 
-    # Installed package.  ``data_path`` is also queried later for individual
-    # resources; this root is useful for provenance and source checkouts.
-    try:
-        module = import_module("ssapy_data")
-        module_file = getattr(module, "__file__", None)
-        if module_file:
-            values.extend(_data_dir_variants(Path(module_file).resolve().parent))
-        data_root = getattr(module, "DATA_ROOT", None)
-        if data_root:
-            values.extend(_data_dir_variants(data_root))
-    except Exception:
-        pass
-
-    try:
-        ssapy = import_module("ssapy")
-        datadir = getattr(ssapy, "datadir", None)
-        if datadir:
-            values.extend(_data_dir_variants(datadir))
-    except Exception:
-        pass
-
-    # Common workspace layouts with sibling repositories.
-    anchors = [Path.cwd(), Path(__file__).resolve().parent]
-    for anchor in anchors:
-        for parent in (anchor, *anchor.parents[:6]):
-            for name in ("SSAPy-Data", "ssapy-data", "ssapy_data"):
-                values.extend(_data_dir_variants(parent / name))
-
     seen: set[str] = set()
     result: list[Path] = []
     for value in values:
@@ -346,70 +316,39 @@ def _materialize_bytes(data: bytes, filename: str) -> Path:
     return destination.resolve()
 
 
-def _materialize_path(path: Path, filename: str | None = None) -> Path:
-    path = path.expanduser().resolve()
-    # A normal editable/install-tree resource remains valid after the context
-    # manager closes; copy only when it does not have a stable ordinary path.
-    if path.is_file():
-        return path
-    raise FileNotFoundError(path)
-
-
 def _package_api_candidates(spec: AssetSpec) -> Iterable[tuple[Path, str, Path | None]]:
+    """Resolve through SSATK's split-data helper instead of naming one wheel."""
     try:
-        module = import_module("ssapy_data")
+        data_resource = import_module("ssatk.data").data_resource
     except Exception:
         return ()
     result: list[tuple[Path, str, Path | None]] = []
-    data_path = getattr(module, "data_path", None)
-    if callable(data_path):
-        for alias in spec.aliases:
-            try:
-                value = data_path(alias)
-                context = value if hasattr(value, "__enter__") else nullcontext(value)
-                with context as extracted:
-                    source = Path(extracted).expanduser().resolve()
-                    if source.is_file():
-                        # Copy to a stable cache because importlib.resources.as_file
-                        # may remove a temporary extraction after context exit.
-                        stable = _materialize_bytes(source.read_bytes(), source.name)
-                        result.append((stable, "ssapy_data.data_path", source.parent))
-            except Exception:
+    for alias in spec.aliases:
+        try:
+            resource = data_resource(alias)
+            if not resource.is_file():
                 continue
-
-    # Direct Traversable fallback.  Current SSAPy-Data stores resources in
-    # ``ssapy_data/data`` and exposes them through package data.
-    try:
-        root = resources.files("ssapy_data").joinpath("data")
-        for alias in spec.aliases:
-            try:
-                item = root.joinpath(*Path(alias).parts)
-                if item.is_file():
-                    data = item.read_bytes()
-                    result.append((_materialize_bytes(data, Path(alias).name), "ssapy_data.resources", None))
-            except Exception:
-                continue
-    except Exception:
-        pass
+            stable = (resource.resolve() if isinstance(resource, Path)
+                      else _materialize_bytes(resource.read_bytes(), resource.name))
+            result.append((stable, "ssatk.data", stable.parent))
+        except (FileNotFoundError, ModuleNotFoundError):
+            continue
     return tuple(result)
 
 
 def _legacy_find_file_candidates(spec: AssetSpec) -> Iterable[tuple[Path, str, Path | None]]:
-    mapping = {
-        "earth_albedo": ("earth", ".png"),
-        "moon_albedo": ("moon", ".png"),
-        "de430_kernel": ("de430", ".bsp"),
-        "moon_pa_kernel": ("moon_pa_de440_200625", ".bpc"),
-    }
-    if spec.logical_name not in mapping:
-        return ()
-    stem, extension = mapping[spec.logical_name]
     try:
         find_file = import_module("ssapy.utils").find_file
-        value = Path(find_file(stem, ext=extension)).expanduser().resolve()
-        return ((value, "ssapy.utils.find_file", value.parent),)
     except Exception:
         return ()
+    result = []
+    for alias in spec.aliases:
+        try:
+            value = Path(find_file(alias)).expanduser().resolve()
+            result.append((value, "ssapy.utils.find_file", value.parent))
+        except Exception:
+            continue
+    return tuple(result)
 
 
 def asset_candidates(
@@ -431,11 +370,11 @@ def asset_candidates(
         p = Path(os.environ[spec.environment_override]).expanduser().resolve()
         external.append((p, f"environment:{spec.environment_override}", p.parent))
 
-    external.extend(_package_api_candidates(spec))
     for data_root in discover_data_roots():
         for alias in spec.aliases:
             external.append((data_root / alias, "SSAPy-Data", data_root))
     external.extend(_legacy_find_file_candidates(spec))
+    external.extend(_package_api_candidates(spec))
 
     for alias in spec.packaged_aliases:
         packaged.append((PACKAGE_ASSET_DIR / alias, "packaged-fallback", PACKAGE_ASSET_DIR))
@@ -473,6 +412,16 @@ def resolve_asset(
     reject_lfs_pointer: bool = True,
 ) -> ResolvedAsset | None:
     """Resolve one logical asset and return immutable provenance."""
+    spec = ASSET_SPECS[logical_name]
+    override = explicit
+    if override is None and spec.environment_override:
+        override = os.environ.get(spec.environment_override)
+    if override is not None:
+        path = Path(override).expanduser().resolve()
+        if not path.is_file() or is_git_lfs_pointer(path):
+            raise AssetNotFoundError(f"Invalid explicit {logical_name} asset: {path}")
+        if spec.kind == "image" and not _looks_like_image(path):
+            raise ValueError(f"Invalid {logical_name} image: {path}")
     attempted: list[str] = []
     for path, source, root in asset_candidates(logical_name, explicit=explicit, policy=policy):
         attempted.append(str(path))
@@ -496,7 +445,7 @@ def resolve_asset(
     if required:
         raise AssetNotFoundError(
             f"Could not resolve {logical_name!r} with policy={policy!r}. "
-            "Install llnl-ssapy-data or set SSAPY_DATA_DIR to an SSAPy-Data "
+            "Install the required ssa-data-* distributions or set SSAPY_DATA_DIR to an SSAPy-Data "
             f"checkout. Attempted: {attempted}"
         )
     return None
@@ -536,6 +485,10 @@ def audit_assets(*, policy: AssetPolicy = "data-first", portable: bool = False) 
         "$schema": "ssapy-toolkit.eclipse.asset-audit/2.0",
         "policy": policy,
         "llnl_ssapy_data_version": _distribution_version("llnl-ssapy-data"),
+        "split_data_versions": {
+            name: _distribution_version(name) for name in
+            ("ssa-data-core", "ssa-data-lunar", "ssa-data-gravity", "ssa-data-lunar-gravity")
+        },
         "data_roots": (
             [f"ssapy-data-root://{index+1}" for index, _ in enumerate(discover_data_roots())]
             if portable else [str(path) for path in discover_data_roots()]
