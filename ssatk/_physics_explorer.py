@@ -51,7 +51,9 @@ def write_physics_explorer(results, out_root: Path) -> None:
         f'<section><h2>{html.escape(topic["title"])}</h2><p>{html.escape(topic["summary"])}</p>'
         f'<p>{html.escape(topic["limits"])}</p></section>' for topic in ordered
     )
-    page = _PAGE.replace("__TOPIC_DATA__", payload).replace("__NO_SCRIPT__", fallback)
+    # Insert manifest data last so literal template markers in demo titles
+    # cannot be interpreted as another template substitution.
+    page = _PAGE.replace("__NO_SCRIPT__", fallback).replace("__TOPIC_DATA__", payload)
     (out_root / "physics-explorer.html").write_text(page, encoding="utf-8")
 
 
