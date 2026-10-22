@@ -36,6 +36,7 @@ body and component model.
    rendering_modes
    camera_modes
    star_finder
+   eclipse
    coverage_validation
    gamma_heading_validation
    benchmarking_ssatk

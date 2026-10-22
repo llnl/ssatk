@@ -48,6 +48,7 @@ jobs:
           node --check ssatk/plots/satellite_viewer_scene.js
           node --check ssatk/plots/satellite_viewer_smoketest.js
           node --check ssatk/plots/solar_sky.js
+          node --check ssatk/plots/eclipse_cinematic_runtime.js
 
       - name: Run tests
         run: pytest tests

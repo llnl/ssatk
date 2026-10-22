@@ -137,6 +137,25 @@ under `$SSATK_OUTPUT_DIR`), and join the gallery unless the module sets
 `GALLERY_INCLUDE = False`. Validation-only scripts should opt out and be
 covered by `tests/`. Never commit demo output.
 
+## WebGL viewers
+
+- Every WebGL page loads the one vendored three.js, r185, through
+  `ssatk/plots/_threejs.py`. `runtime_loader_html()` embeds
+  `three.module.min.js`, `three.core.min.js` and the `OrbitControls.js` add-on
+  with an import map, or maps them to served URLs. New viewers use it: do not
+  vendor another copy or load three.js from a CDN.
+- Classic viewer scripts go in `<script type="text/x-ssatk-classic">` blocks
+  (`classic_scripts_html`) so their top-level functions stay page globals;
+  module scripts can `import * as THREE from "three"`.
+- The existing viewers turn off three.js colour management and scale light
+  intensities by pi to keep the pre-r152 rendering they were tuned for. New
+  pages may use colour management, but set it in their own scripts.
+- Upgrade three.js for every viewer in one change: copy the unmodified
+  minified builds and the add-on from the npm package after checking its
+  integrity hash, keep each file under 1,000,000 bytes, update
+  `THREE_REVISION`, `NOTICE` and `three_license.txt`, and compare screenshots
+  of each viewer before and after.
+
 ## Known traps
 
 - `ssatk.plots` imports its public modules eagerly when it is imported, so a
