@@ -1,7 +1,7 @@
 # Using SSATK
 
 How to use the Space Situational Awareness Toolkit (SSATK) from code. Rules for
-changing this repository are in [AGENTS.md](AGENTS.md); the full narrative
+changing this repository are in [AGENTS.md](../AGENTS.md); the full narrative
 guide is `docs/usage.rst` and the API reference is `docs/api.rst`.
 
 ## Package identity
@@ -33,13 +33,25 @@ export), `pdf`, `video` (MP4 output), `browser`, `notebook`, `monitoring`,
 - **Frames:** inertial states are GCRF unless a function says otherwise.
 - **Namespace:** `import ssatk` is the entry point. Constants are in
   `ssatk.constants` and at top level (`ssatk.EARTH_MU`, `ssatk.constants.RGEO`).
-  SSAPy objects such as `ssatk.Orbit`, `ssatk.rv`, `ssatk.groundTrack` and
-  `ssatk.AccelKepler` load on first use. Where SSATK and SSAPy share a name,
-  the SSATK one wins; reach SSAPy itself as `ssatk.ssapy`. Wildcard imports are
-  not supported; import modules or names explicitly.
+  Orbit, propagation and force-model objects such as `ssatk.Orbit`,
+  `ssatk.rv`, `ssatk.groundTrack` and `ssatk.AccelKepler` load on first use.
+  Wildcard imports are not supported; import modules or names explicitly.
 - **Output:** plotting helpers and `ssatk.plots.figsave` write relative paths
   under `~/ssatk_output/figures` (override the root with `$SSATK_OUTPUT_DIR`);
   absolute paths are used as given. Caches go to `$SSATK_CACHE` when set.
+
+## Forces and propagators
+
+- Accelerations come from the top-level namespace: `ssatk.AccelKepler`,
+  `ssatk.AccelHarmonic`, `ssatk.AccelThirdBody`, `ssatk.AccelDrag`,
+  `ssatk.AccelSolRad` and `ssatk.AccelEarthRad`, with bodies from
+  `ssatk.get_body("earth")`. Combine them with `+`.
+- `ssatk.KeplerianPropagator()` is two-body, `ssatk.SciPyPropagator(accel)`
+  adapts its step and `ssatk.RK4Propagator(accel, h)` uses a fixed step; pass
+  one to `ssatk.rv(orbit, time, propagator)`.
+- `ssatk.Orbit.fromKeplerianElements` takes angles in radians; the geodetic
+  helpers in `ssatk.coordinates` (`gcrf_to_lonlat`, `gcrf_to_llh`) return
+  degrees.
 
 ## Spacecraft geometry
 
@@ -194,6 +206,7 @@ so demos can skip offline. Do not add data files to this repository.
 | `ssatk-benchmark` | Timing and analytical-validation benchmarks |
 | `ssatk-magnetosphere` | Render the 3-D geomagnetic field and radiation belts |
 | `ssatk-bake-moon` | Bake WebGL Moon normal and horizon textures into the cache |
+| `ssatk-skill` | Install this guide as a coding-agent skill (`--dir`, `--print`, `--package`) |
 
 ## Where to look next
 
