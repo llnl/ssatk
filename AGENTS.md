@@ -1,8 +1,8 @@
 # Working on SSATK
 
 Working rules for changes to this repository. Read this file before changing
-anything, and read [skills.md](skills.md) before writing code that uses the
-package.
+anything, and read [ssatk/skills.md](ssatk/skills.md) before writing code that
+uses the package.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) is authoritative on licensing, layout and
 merge requirements, and all of it applies here except where this file sets a
@@ -24,7 +24,7 @@ the permissions of the person doing the work.
   commented-out code do not belong in files.
 - **Plans, notes and scratch files stay outside the working tree.** If one must
   sit in the checkout, list it in `.git/info/exclude`, not in `.gitignore`.
-- **Working guidance lives in `AGENTS.md` and `skills.md`.** Keep it there
+- **Working guidance lives in `AGENTS.md` and `ssatk/skills.md`.** Keep it there
   rather than in code, docs or new files.
 
 ## Ground rules
