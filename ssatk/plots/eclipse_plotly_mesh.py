@@ -13,7 +13,7 @@ Y, and Z always has the same displayed length.
 """
 from __future__ import annotations
 
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
@@ -127,11 +127,3 @@ def equal_unit_aspect(ranges: Sequence[Sequence[float]]) -> dict[str, float]:
     scale = float(np.max(spans))
     ratios = np.maximum(spans / scale, 1.0e-6)
     return {"x": float(ratios[0]), "y": float(ratios[1]), "z": float(ratios[2])}
-
-
-def radial_extent(vertices: np.ndarray, center: Iterable[float]) -> tuple[float, float]:
-    """Minimum and maximum radius of vertices about ``center``."""
-    values = np.asarray(vertices, dtype=float).reshape(-1, 3)
-    c = np.asarray(tuple(center), dtype=float).reshape(3)
-    radii = np.linalg.norm(values - c, axis=1)
-    return float(np.min(radii)), float(np.max(radii))

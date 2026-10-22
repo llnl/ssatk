@@ -1,92 +1,46 @@
-"""Canonical public API for SSAPy-Toolkit eclipse products.
+"""Public API for SSATK eclipse events and products.
 
-V22.2 keeps this module the only supported public entry point.  Arbitrary
-events discovered by :mod:`event_search` use the same immutable event schema as
-the two bundled reference eclipses.  Legacy renderers are quarantined under
-``ssatk.eclipse_legacy`` and are no longer resolved from the package root.
+Events discovered by :mod:`ssatk.compute.eclipse_event_search` use the same
+``ReferenceEvent`` record as the two bundled reference eclipses, so every
+product renders either.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 import json
 
 import numpy as np
 
-from ssatk.io.eclipse_asset_resolver import audit_assets
-from ssatk.compute.eclipse_state import build_event as _build_event, event_moon_body_to_gcrf
-from ssatk.coordinates.eclipse_lunar_geometry import LunarLimbProfile
-from ssatk.coordinates.eclipse_observer_geometry import ObserverConfig, observer_state, refine_solar_contacts
-from ssatk.compute.eclipse_reference_events import (
-    LUNAR_2025, SOLAR_2024, ReferenceDefinition, ReferenceEvent, jd_to_datetime
-)
 from ssatk.compute.eclipse_raytrace import bundle_penetrations, tangent_residuals, trace_event_rays
+from ssatk.compute.eclipse_reference_events import (
+    LUNAR_2025, SOLAR_2024, ReferenceDefinition, ReferenceEvent, jd_to_datetime,
+)
+from ssatk.compute.eclipse_state import build_event as _build_event, event_moon_body_to_gcrf
+from ssatk.coordinates.eclipse_observer_geometry import ObserverConfig, observer_state, refine_solar_contacts
 
-SCHEMA_ID = "ssapy-toolkit.eclipse.event/2.2"
-BackendName = Literal["reference", "auto", "ssapy-core", "ssapy"]
+SCHEMA_ID = "ssatk.eclipse.event/1"
 ProductName = Literal["cinematic", "plotly", "scientific-suite", "observer-suite"]
 
 
 @dataclass(frozen=True)
 class EventRequest:
-    """Canonical event request.
+    """One bundled eclipse to build.
 
-    ``sample_count`` is a backward-compatible name for the *minimum* number
-    of solver states requested. Exact contact states are always inserted, so
-    the resolved event may contain more states. GUI code should display both
-    ``requested_minimum_state_count`` and ``resolved_state_count``.
+    ``sample_count`` is the minimum number of states; exact contact states
+    are always inserted, so the event may contain more.
     """
 
     kind: str = "solar"
-    backend: BackendName | str = "auto"
+    backend: str = "ssapy"
     sample_count: int = 121
     solar_scope: str = "global"
     observer: ObserverConfig | None = None
-    lunar_limb_profile: LunarLimbProfile | None = None
 
-    @property
-    def minimum_sample_count(self) -> int:
-        return int(self.sample_count)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "$schema": "ssapy-toolkit.eclipse.request/2.2",
-            "kind": str(self.kind),
-            "backend": str(self.backend),
-            "sample_count": int(self.sample_count),
-            "minimum_sample_count": int(self.minimum_sample_count),
-            "sample_count_semantics": "minimum; exact contacts may increase resolved_state_count",
-            "solar_scope": str(self.solar_scope),
-            "observer": None if self.observer is None else self.observer.to_dict(),
-            "lunar_limb_profile": (
-                None if self.lunar_limb_profile is None else self.lunar_limb_profile.to_dict()
-            ),
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "EventRequest":
-        observer = ObserverConfig.from_value(payload.get("observer"))
-        limb_payload = payload.get("lunar_limb_profile")
-        limb = None
-        if isinstance(limb_payload, dict) and limb_payload.get("position_angle_deg") is not None:
-            radius_values = limb_payload.get("radius_km", limb_payload.get("radius_km_values"))
-            if radius_values is None:
-                raise ValueError("serialized lunar limb requires radius_km")
-            limb = LunarLimbProfile(
-                np.asarray(limb_payload["position_angle_deg"], dtype=float),
-                np.asarray(radius_values, dtype=float),
-                source=str(limb_payload.get("source", "serialized lunar limb")),
-            )
-        count = payload.get("minimum_sample_count", payload.get("sample_count", 121))
-        return cls(
-            kind=str(payload.get("kind", "solar")),
-            backend=str(payload.get("backend", "auto")),
-            sample_count=int(count),
-            solar_scope=str(payload.get("solar_scope", "global")),
-            observer=observer,
-            lunar_limb_profile=limb,
-        )
+    def __post_init__(self):
+        if self.solar_scope not in {"global", "local"}:
+            raise ValueError("solar_scope must be 'global' (P1-P4) or 'local' (observer C1-C4)")
 
 
 @dataclass(frozen=True)
@@ -100,40 +54,6 @@ class RenderRequest:
     photometry: str = "quadratic-visible"
     timezone_name: str = "UTC"
 
-    def to_dict(self) -> dict[str, Any]:
-        event_payload = (
-            {"type": "event", "value": event_to_dict(self.event)}
-            if isinstance(self.event, ReferenceEvent)
-            else {"type": "request", "value": self.event.to_dict()}
-        )
-        return {
-            "$schema": "ssapy-toolkit.eclipse.render-request/2.2",
-            "product": str(self.product),
-            "output": str(self.output),
-            "event": event_payload,
-            "quality": str(self.quality),
-            "animate": bool(self.animate),
-            "playback_seconds": self.playback_seconds,
-            "photometry": str(self.photometry),
-            "timezone_name": str(self.timezone_name),
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "RenderRequest":
-        record = dict(payload.get("event", {}))
-        value = dict(record.get("value", {}))
-        event = event_from_dict(value) if record.get("type") == "event" else EventRequest.from_dict(value)
-        return cls(
-            product=str(payload["product"]),
-            output=payload["output"],
-            event=event,
-            quality=str(payload.get("quality", "ultra")),
-            animate=bool(payload.get("animate", False)),
-            playback_seconds=payload.get("playback_seconds"),
-            photometry=str(payload.get("photometry", "quadratic-visible")),
-            timezone_name=str(payload.get("timezone_name", "UTC")),
-        )
-
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -144,21 +64,11 @@ class ValidationResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema": "ssapy-toolkit.eclipse.validation/2.2",
             "passed": self.passed,
             "checks": self.checks,
             "metrics": _json_safe(self.metrics),
             "warnings": list(self.warnings),
         }
-
-
-def _definition_for_key(key: str):
-    normalized = str(key).lower()
-    if normalized in {"solar", "solar_2024", SOLAR_2024.key}:
-        return SOLAR_2024
-    if normalized in {"lunar", "lunar_2025", LUNAR_2025.key}:
-        return LUNAR_2025
-    raise ValueError(f"unsupported built-in eclipse definition {key!r}")
 
 
 def _json_safe(value):
@@ -177,62 +87,25 @@ def _json_safe(value):
     return value
 
 
-def build_event(request: EventRequest | str = EventRequest(), **overrides) -> ReferenceEvent:
-    """Build one immutable event through the canonical request schema."""
-    if isinstance(request, EventRequest):
-        options = {
-            "kind": request.kind,
-            "backend": request.backend,
-            "sample_count": request.sample_count,
-            "solar_scope": request.solar_scope,
-            "observer": request.observer,
-            "lunar_limb_profile": request.lunar_limb_profile,
-        }
-        options.update(overrides)
-        observer = options.pop("observer", None)
-        limb = options.pop("lunar_limb_profile", None)
-        event = _build_event(
-            options.pop("kind"),
-            backend=options.pop("backend"),
-            n_frames=int(options.pop("sample_count")),
-            solar_scope=options.pop("solar_scope"),
-            observer=observer,
-            **options,
-        )
-    else:
-        observer = overrides.pop("observer", None)
-        limb = overrides.pop("lunar_limb_profile", None)
-        if "sample_count" in overrides and "n_frames" not in overrides:
-            overrides["n_frames"] = int(overrides.pop("sample_count"))
-        event = _build_event(request, observer=observer, **overrides)
-    metadata = dict(event.metadata)
-    metadata["canonical_schema"] = SCHEMA_ID
-    metadata["asset_provenance"] = audit_assets(policy="data-first", portable=True)
-    requested_minimum = int(
-        request.minimum_sample_count if isinstance(request, EventRequest)
-        else overrides.get("n_frames", len(event.jd))
+def build_event(request: EventRequest = EventRequest()) -> ReferenceEvent:
+    """Build one event from ``request``."""
+    event = _build_event(
+        request.kind,
+        backend=request.backend,
+        n_frames=int(request.sample_count),
+        solar_scope=request.solar_scope,
+        observer=request.observer,
     )
-    metadata["requested_minimum_state_count"] = requested_minimum
-    metadata["resolved_state_count"] = int(len(event.jd))
-    metadata["sample_count_semantics"] = "minimum; exact contact states are inserted"
-    if observer is not None:
-        metadata["observer_config"] = observer.to_dict() if hasattr(observer, "to_dict") else _json_safe(observer)
-    if limb is not None:
-        metadata["lunar_limb_profile"] = limb.to_dict()
-    from dataclasses import replace
+    metadata = dict(event.metadata)
+    metadata["requested_minimum_state_count"] = int(request.sample_count)
+    if request.observer is not None:
+        metadata["observer_model"] = request.observer.to_dict()
     return replace(event, metadata=metadata)
 
 
 def event_to_dict(event: ReferenceEvent) -> dict[str, Any]:
     return {
         "$schema": SCHEMA_ID,
-        "sampling": {
-            "requested_minimum_state_count": event.metadata.get("requested_minimum_state_count"),
-            "resolved_state_count": int(len(event.jd)),
-            "sample_count_semantics": event.metadata.get(
-                "sample_count_semantics", "minimum; exact contact states are inserted"
-            ),
-        },
         "definition": {
             "key": event.definition.key,
             "mode": event.definition.mode,
@@ -243,8 +116,8 @@ def event_to_dict(event: ReferenceEvent) -> dict[str, Any]:
             "notes": list(event.definition.notes),
         },
         "jd_utc": np.asarray(event.jd, dtype=float).tolist(),
-        "moon_gcrf_km": np.asarray(event.moon_km, dtype=float).tolist(),
-        "sun_gcrf_km": np.asarray(event.sun_km, dtype=float).tolist(),
+        "moon_km": np.asarray(event.moon_km, dtype=float).tolist(),
+        "sun_km": np.asarray(event.sun_km, dtype=float).tolist(),
         "center_visibility": np.asarray(event.center_visibility, dtype=float).tolist(),
         "separation_deg": np.asarray(event.separation_deg, dtype=float).tolist(),
         "frame": event.frame,
@@ -254,40 +127,28 @@ def event_to_dict(event: ReferenceEvent) -> dict[str, Any]:
 
 
 def event_from_dict(payload: dict[str, Any]) -> ReferenceEvent:
-    schema = payload.get("$schema")
-    if schema not in {SCHEMA_ID, "ssapy-toolkit.eclipse.event/2.0.1", "ssapy-toolkit.eclipse.event/2.0", "ssapy-toolkit.eclipse.event/1.9", "ssapy-toolkit.eclipse.event/1.8", "ssapy-toolkit.eclipse.event/1.7"}:
-        raise ValueError(f"unsupported event schema {schema!r}")
-    definition_payload = dict(payload["definition"])
-    try:
-        definition = _definition_for_key(definition_payload["key"])
-    except ValueError:
-        contacts_jd = {
-            str(k): float(v) for k, v in dict(definition_payload.get("contacts_jd_utc", {})).items()
-        }
-        if not contacts_jd:
-            metadata_record = dict(payload.get("metadata", {})).get("event_search_record", {})
-            contacts_jd = {
-                str(k): float(v) for k, v in dict(metadata_record.get("contacts_jd_utc", {})).items()
-            }
-        greatest_jd = float(definition_payload.get(
-            "greatest_jd_utc", contacts_jd.get("MAX", np.asarray(payload["jd_utc"], dtype=float)[0])
-        ))
-        if "MAX" not in contacts_jd:
-            contacts_jd["MAX"] = greatest_jd
+    if payload.get("$schema") != SCHEMA_ID:
+        raise ValueError(f"unsupported event schema {payload.get('$schema')!r}")
+    record = dict(payload["definition"])
+    builtin = {SOLAR_2024.key: SOLAR_2024, LUNAR_2025.key: LUNAR_2025}
+    if record["key"] in builtin:
+        definition = builtin[record["key"]]
+    else:
+        contacts_jd = {str(k): float(v) for k, v in dict(record["contacts_jd_utc"]).items()}
+        greatest_jd = float(record["greatest_jd_utc"])
+        contacts_jd.setdefault("MAX", greatest_jd)
         definition = ReferenceDefinition(
-            key=str(definition_payload["key"]),
-            mode=str(definition_payload["mode"]),
-            title=str(definition_payload.get("title", definition_payload["key"])),
-            source_label=str(definition_payload.get("source_label", "serialized dynamic event")),
+            key=str(record["key"]),
+            mode=str(record["mode"]),
+            title=str(record.get("title", record["key"])),
+            source_label=str(record.get("source_label", "serialized event")),
             contacts_utc={k: jd_to_datetime(v) for k, v in contacts_jd.items()},
             greatest_utc=jd_to_datetime(greatest_jd),
-            notes=tuple(str(v) for v in definition_payload.get("notes", ())),
+            notes=tuple(str(v) for v in record.get("notes", ())),
         )
     jd = np.asarray(payload["jd_utc"], dtype=float)
-    moon = np.asarray(payload["moon_gcrf_km"], dtype=float)
-    sun = np.asarray(payload["sun_gcrf_km"], dtype=float)
-    visible = np.asarray(payload["center_visibility"], dtype=float)
-    separation = np.asarray(payload["separation_deg"], dtype=float)
+    moon = np.asarray(payload["moon_km"], dtype=float)
+    sun = np.asarray(payload["sun_km"], dtype=float)
     if moon.shape != (len(jd), 3) or sun.shape != (len(jd), 3):
         raise ValueError("serialized body states must have shape (N, 3)")
     return ReferenceEvent(
@@ -297,18 +158,9 @@ def event_from_dict(payload: dict[str, Any]) -> ReferenceEvent:
         sun_km=sun,
         frame=str(payload["frame"]),
         backend=str(payload["backend"]),
-        center_visibility=visible,
-        separation_deg=separation,
-        metadata={
-            **dict(payload.get("metadata", {})),
-            **({
-                "requested_minimum_state_count": dict(payload.get("sampling", {})).get("requested_minimum_state_count"),
-                "resolved_state_count": int(len(jd)),
-                "sample_count_semantics": dict(payload.get("sampling", {})).get(
-                    "sample_count_semantics", "minimum; exact contact states are inserted"
-                ),
-            } if payload.get("sampling") else {}),
-        },
+        center_visibility=np.asarray(payload["center_visibility"], dtype=float),
+        separation_deg=np.asarray(payload["separation_deg"], dtype=float),
+        metadata=dict(payload.get("metadata", {})),
     )
 
 
@@ -320,17 +172,16 @@ def export_event_state(event: ReferenceEvent, output: str | Path) -> str:
 
 
 def load_event_state(path: str | Path) -> ReferenceEvent:
-    payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
-    return event_from_dict(payload)
+    return event_from_dict(json.loads(Path(path).expanduser().read_text(encoding="utf-8")))
 
 
 def validate_event(
     event: ReferenceEvent,
     *,
     observer: ObserverConfig | None = None,
-    lunar_limb_profile: LunarLimbProfile | None = None,
     ray_azimuth: int = 24,
 ) -> ValidationResult:
+    """Consistency checks on an event: timeline, states, lunar attitude, and ray paths."""
     jd = np.asarray(event.jd, dtype=float)
     moon = np.asarray(event.moon_km, dtype=float)
     sun = np.asarray(event.sun_km, dtype=float)
@@ -348,60 +199,37 @@ def validate_event(
 
     bundle = trace_event_rays(event, float(event.greatest_jd), n_azimuth=max(8, int(ray_azimuth)))
     penetrations = bundle_penetrations(bundle)
-    residuals = tangent_residuals(bundle)
     checks["no_earth_ray_penetration"] = penetrations["earth"] == 0
     checks["no_moon_ray_penetration"] = penetrations["moon"] == 0
-
     metrics: dict[str, Any] = {
         "event_key": event.definition.key,
         "backend": event.metadata.get("state_source", event.backend),
         "frame_backend": event.metadata.get("frame_backend", event.frame),
         "moon_orientation_backend": event.metadata.get("moon_orientation_backend", "not recorded"),
-        "requested_minimum_state_count": event.metadata.get("requested_minimum_state_count"),
-        "resolved_state_count": int(len(jd)),
-        "sample_count_semantics": event.metadata.get(
-            "sample_count_semantics", "minimum; exact contacts may increase resolved state count"
-        ),
-        "sample_count": int(len(jd)),
+        "state_count": int(len(jd)),
         "moon_attitude_orthogonality_error": orth_error,
         "moon_attitude_determinant": determinant,
         "ray_penetrations": penetrations,
-        "tangent_residuals": residuals,
+        "tangent_residuals": tangent_residuals(bundle),
     }
     warnings: list[str] = []
-
     if observer is not None and event.mode == "solar":
-        obs = observer_state(event, event.greatest_jd, observer, limb_profile=lunar_limb_profile)
-        metrics["observer_at_greatest"] = obs.to_dict()
+        metrics["observer_at_greatest"] = observer_state(event, event.greatest_jd, observer).to_dict()
         try:
-            contacts = refine_solar_contacts(event, observer, limb_profile=lunar_limb_profile)
-            metrics["refined_contacts_jd_utc"] = contacts
-            metrics["observer_eclipse_class"] = (
-                "total-or-annular" if {"C2", "C3"}.issubset(contacts) else "partial"
-            )
-            if {"C2", "C3"}.issubset(contacts):
-                checks["ordered_local_contacts"] = (
-                    contacts["C1"] < contacts["C2"] < contacts["MAX"]
-                    < contacts["C3"] < contacts["C4"]
-                )
-            else:
-                checks["ordered_local_contacts"] = contacts["C1"] < contacts["MAX"] < contacts["C4"]
-        except Exception as exc:
+            contacts = refine_solar_contacts(event, observer)
+        except (RuntimeError, ValueError) as exc:
             checks["ordered_local_contacts"] = False
             warnings.append(f"local contact refinement failed: {type(exc).__name__}: {exc}")
-
-    return ValidationResult(
-        passed=all(checks.values()), checks=checks, metrics=metrics, warnings=tuple(warnings)
-    )
+        else:
+            metrics["refined_contacts_jd_utc"] = contacts
+            order = ("C1", "C2", "MAX", "C3", "C4") if {"C2", "C3"}.issubset(contacts) else ("C1", "MAX", "C4")
+            metrics["observer_eclipse_class"] = "total-or-annular" if len(order) == 5 else "partial"
+            checks["ordered_local_contacts"] = all(contacts[a] < contacts[b] for a, b in zip(order, order[1:]))
+    return ValidationResult(passed=all(checks.values()), checks=checks, metrics=metrics, warnings=tuple(warnings))
 
 
 def render_product(request: RenderRequest) -> str | dict[str, object]:
-    """Render one product from one immutable selected event.
-
-    V22.2 deliberately builds the event once and passes that exact object to
-    every renderer.  In particular, ``scientific-suite`` no longer discards a
-    discovered/serialized event and substitutes the two bundled references.
-    """
+    """Build the requested event once and render one product from it."""
     product = str(request.product).strip().lower()
     event = request.event if isinstance(request.event, ReferenceEvent) else build_event(request.event)
     backend = str(event.metadata.get("state_source", event.backend))
@@ -411,14 +239,9 @@ def render_product(request: RenderRequest) -> str | dict[str, object]:
     if product == "cinematic":
         from ssatk.plots.eclipse_cinematic_light_3d import generate_cinematic_view
         return generate_cinematic_view(
-            event, request.output,
-            animate=request.animate,
-            quality=request.quality,
-            n_frames=len(event.jd),
-            backend=backend,
-            solar_scope=solar_scope,
-            playback_seconds=request.playback_seconds,
-            observer_config=observer,
+            event, request.output, animate=request.animate, quality=request.quality,
+            n_frames=len(event.jd), backend=backend, solar_scope=solar_scope,
+            playback_seconds=request.playback_seconds, observer_config=observer,
             photometry=request.photometry,
         )
     if product == "plotly":
@@ -430,13 +253,12 @@ def render_product(request: RenderRequest) -> str | dict[str, object]:
     if product == "scientific-suite":
         from ssatk.plots.eclipse_scientific_suite import generate_selected_scientific_suite
         return generate_selected_scientific_suite(
-            event, request.output, animate=request.animate,
-            quality=request.quality, playback_seconds=request.playback_seconds,
-            photometry=request.photometry,
+            event, request.output, animate=request.animate, quality=request.quality,
+            playback_seconds=request.playback_seconds, photometry=request.photometry,
         )
     if product == "observer-suite":
         if event.mode != "solar":
-            raise ValueError("observer-suite currently supports solar eclipses")
+            raise ValueError("observer-suite supports solar eclipses")
         if observer is None:
             raise ValueError("observer-suite requires EventRequest.observer")
         from ssatk.plots.eclipse_observer_products import generate_solar_observer_products

@@ -19,7 +19,7 @@ import re
 import numpy as np
 
 from ssatk.coordinates.eclipse_observer_geometry import ObserverConfig, observer_state, refine_solar_contacts
-from ssatk.compute.eclipse_reference_events import SOLAR_2024, R_SUN_KM, R_MOON_MEAN_KM
+from ssatk.compute.eclipse_reference_events import SOLAR_2024, R_SUN_KM
 # ``event_positions_gcrf`` belongs to eclipse_state; keep the import separate
 # to avoid obscuring the state-provider ownership boundary.
 from ssatk.compute.eclipse_state import event_positions_gcrf
@@ -85,7 +85,6 @@ class ObserverCircumstances:
             for key, value in self.contacts_jd_utc.items()
         }
         return {
-            "$schema": "ssapy-toolkit.eclipse.observer-circumstances/2.2",
             "observer": self.observer.to_dict(),
             "classification": self.classification,
             "contacts": contacts,
@@ -353,8 +352,6 @@ def generate_solar_observer_products(
 
         ax_ray = fig.add_subplot(grid[1, :])
         draw_ray_diagram(ax_ray, bundle)
-        ax_ray.set_title("How the Moon's shadow reaches Earth\nFinite-Sun light paths at local maximum",
-                         color="white", fontsize=9.4, pad=5, fontweight="semibold")
 
         ax_earth = fig.add_subplot(grid[2, 0:4]); ax_sky = fig.add_subplot(grid[2, 4:8])
         local_spec = grid[2, 8:19].subgridspec(2, 1, height_ratios=[0.77, 0.23], hspace=0.045)
@@ -497,8 +494,7 @@ def generate_solar_observer_products(
     # so filenames are sufficient and do not leak build-machine paths.  The
     # returned API result still contains resolved paths for GUI convenience.
     manifest_record = {
-        "$schema": "ssapy-toolkit.eclipse.observer-products/2.2",
-        "event_key": event.definition.key,
+                "event_key": event.definition.key,
         "observer": observer.to_dict(),
         "classification": circumstances.classification,
         "path_base": "manifest-directory",

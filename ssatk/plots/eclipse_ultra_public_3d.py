@@ -1,7 +1,7 @@
 """Public-facing ultra-resolution eclipse scenes.
 
-The V13 renderer keeps the validated finite-Sun geometry while correcting the
-WebGL and lighting choices that made earlier "ultra" views unstable:
+The renderer keeps the finite-Sun geometry exact and avoids WebGL and
+lighting choices that make large Plotly scenes unstable:
 
 * local Earth-Moon and heliocentric Sun-Earth-Moon views are separate Plotly
   scenes, so one-AU coordinates never share a WebGL buffer with kilometre-scale
@@ -19,58 +19,44 @@ WebGL and lighting choices that made earlier "ultra" views unstable:
   photosphere-to-surface paths, while exact tangent families and optical
   volumes remain optional diagnostics.
 
-The packaged reference products use the NASA/GSFC validated event definitions.
-When LLNL SSAPy and SSAPy-Toolkit are installed, the existing adapters are used
-for ephemeris diagnostics and GCRF/ITRF orientation transforms.
+Reference states are compared against SSAPy DE430 in the provenance card.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from ssatk.io.eclipse_asset_resolver import resolve_image
-from typing import Iterable, Sequence
-import base64
-import copy
+from typing import Sequence
 import html
-import json
 import math
 
 import numpy as np
 
-from ssatk.compute.eclipse_photometry import quadrature_sample_weight, resolve_limb_darkening
 from ssatk.compute.eclipse_core import sample_spherical_photosphere
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.offline import get_plotlyjs
 
 from ssatk.compute.eclipse_brightness import (
-    available_backends,
-    ephemeris_positions,
     ellipsoid_surface_in_direction,
-    gcrf_to_itrf_km,
-    itrf_to_gcrf_km,
     ray_ellipsoid_intersections,
     ray_sphere_intersections,
 )
-from ssatk.compute.eclipse_state import build_event, event_gcrf_to_itrf_km, event_itrf_to_gcrf_km, resample_event
-from ssatk.plots.globe_orbit_daynight_plotly import (
-    _earth_eclipse_shadow_trace,
+from ssatk.compute.eclipse_runtime import ssapy_ephemeris_positions_km
+from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km
+from ssatk.compute.eclipse_state import build_event, resample_event
+from ssatk.plots.eclipse_bodies import (
     _earth_surface_data,
     _wgs84_vertices,
 )
-from ssatk.compute.eclipse_local_finite_geometry import impact_plane_basis, shadow_axis_world
-from ssatk.plots.moon_render import _moon_surface_data, _moon_unit_mesh
+from ssatk.compute.eclipse_local_finite_geometry import impact_plane_basis
+from ssatk.plots.eclipse_bodies import _moon_surface_data, _moon_unit_mesh
 from ssatk.plots.eclipse_plotly_mesh import equal_unit_aspect, indexed_mesh_chunks, rgb_strings
 from ssatk.plots.eclipse_system_raytrace_3d import (
-    ASSET_DIR,
-    COLORS,
     _build_inertial_state,
     _build_scene_geometry,
     _native_to_gcrf,
     _scene_coordinates,
-    _surface_footprint_trace,
-    _transform_xyz_trace,
 )
 from ssatk.compute.eclipse_reference_events import (
     AU_KM,
@@ -85,9 +71,7 @@ from ssatk.compute.eclipse_reference_events import (
     ReferenceEvent,
     SOLAR_GREATEST_SITE_LAT_DEG,
     SOLAR_GREATEST_SITE_LON_EAST_DEG,
-    build_reference_event,
     jd_to_datetime,
-    solar_central_line_wgs84,
     itrf_surface_point,
     _unit,
 )
@@ -182,52 +166,22 @@ def _impact_basis_gcrf(event: ReferenceEvent, bundle_native) -> tuple[np.ndarray
 
 def _ssapy_audit(event: ReferenceEvent, reference_sun: np.ndarray,
                  reference_moon: np.ndarray) -> dict[str, object]:
-    backends = available_backends()
-    capabilities = event.metadata.get("runtime_capabilities", {})
+    """State provenance, plus the SSAPy DE430 offset of a reference state."""
     result: dict[str, object] = {
-        "llnl_ssapy_available": bool(
-            capabilities.get("llnl_ssapy_importable", backends["llnl_ssapy"])
-        ),
-        "ssatk_available": bool(
-            capabilities.get("ssatk_importable", backends["ssatk"])
-        ),
-        "reference_backend": str(event.backend),
-        "requested_backend": str(event.metadata.get("backend_requested", "reference")),
         "selected_backend": str(event.metadata.get("state_source", "reference")),
+        "ephemeris_backend": str(event.metadata.get("ephemeris_backend", event.backend)),
         "frame_backend": str(event.metadata.get("frame_backend", event.frame)),
-        "fallback_reason": str(event.metadata.get("backend_fallback_reason", "")),
-        "ephemeris_backend": str(event.metadata.get("ephemeris_backend", "not executed")),
     }
-    if result["selected_backend"] in {"ssapy", "ssapy-core"}:
-        result.update({
-            "ssapy_sun_reference_delta_km": float(
-                event.metadata.get("ssapy_sun_reference_max_km", 0.0)
-            ),
-            "ssapy_moon_reference_delta_km": float(
-                event.metadata.get("ssapy_moon_reference_max_km", 0.0)
-            ),
-        })
-        return result
-    if backends["llnl_ssapy"]:
-        try:
-            ephem = ephemeris_positions([event.greatest_jd], backend="ssapy")
-            result.update({
-                "ephemeris_backend": ephem.backend,
-                "ssapy_sun_reference_delta_km": float(
-                    np.linalg.norm(ephem.sun_gcrf_km[0]-reference_sun)
-                ),
-                "ssapy_moon_reference_delta_km": float(
-                    np.linalg.norm(ephem.moon_gcrf_km[0]-reference_moon)
-                ),
-            })
-        except Exception as exc:  # optional dependency must never break rendering
-            result["ephemeris_backend"] = f"failed: {type(exc).__name__}: {exc}"
+    if result["selected_backend"] == "reference":
+        moon, sun = ssapy_ephemeris_positions_km([event.greatest_jd])
+        result["ssapy_sun_reference_delta_km"] = float(np.linalg.norm(sun[0]-reference_sun))
+        result["ssapy_moon_reference_delta_km"] = float(np.linalg.norm(moon[0]-reference_moon))
     return result
 
 
 def build_public_peak_state(kind: str | ReferenceDefinition | ReferenceEvent = "solar",
                             *, ray_azimuth: int = 96,
-                            backend: str = "auto",
+                            backend: str = "ssapy",
                             solar_scope: str = "global",
                             observer: object | None = None) -> PublicPeakState:
     if isinstance(kind, ReferenceEvent):
@@ -330,12 +284,7 @@ def build_public_frame_state(
     audit = (
         _ssapy_audit(event, state.sun_gcrf_km, state.moon_gcrf_km)
         if run_ssapy_audit
-        else {
-            "llnl_ssapy_available": bool(available_backends()["llnl_ssapy"]),
-            "ssatk_available": bool(available_backends()["ssatk"]),
-            "reference_backend": str(event.backend),
-            "ephemeris_backend": "not executed for animation frame",
-        }
+        else {"selected_backend": str(event.metadata.get("state_source", "reference"))}
     )
     return PublicPeakState(
         event=event,
@@ -355,23 +304,14 @@ def _rgb_strings(rgb: np.ndarray) -> list[str]:
     return [f"rgb({r},{g},{b})" for r, g, b in values]
 
 
-def _scene_light_position(peak: PublicPeakState, center_local: np.ndarray) -> dict[str, float]:
-    # Plotly constrains each light-position component to +/-100,000 and
-    # interprets the vector as a distant scene light.  Use the physical Sun
-    # direction but not the body's translated scene coordinate.
-    direction = _unit(peak.sun_local_km-center_local)
-    point = direction*90_000.0
-    return {"x": float(point[0]), "y": float(point[1]), "z": float(point[2])}
-
-
 def _public_earth_mesh(peak: PublicPeakState, quality: PublicQuality) -> list[go.Mesh3d]:
     """Render the exact WGS-84 body with the eclipse baked into irradiance.
 
-    The V12 public view sent the unshaded albedo map to Plotly and placed a
-    second, very large shadow patch just above it.  On some WebGL paths the
-    >65k-vertex overlay folded or detached from the globe, while Plotly's
-    material light double-shaded the surface.  V13 computes day/night and the
-    finite-Sun Moon occultation once in linear light, then draws only the
+    Sending the unshaded albedo map to Plotly with a separate large shadow
+    patch above it fails on some WebGL paths: the >65k-vertex overlay folds
+    or detaches from the globe, and Plotly's material light double-shades the
+    surface.  Day/night and the finite-Sun Moon occultation are therefore
+    computed once in linear light, and only the
     physical ellipsoid.  The indexed surface is split into safe WebGL chunks;
     its coordinates are never rescaled or deformed.
     """
@@ -390,10 +330,7 @@ def _public_earth_mesh(peak: PublicPeakState, quality: PublicQuality) -> list[go
         sun_position_km=state.sun_gcrf_km,
         physical_center_km=(0.0, 0.0, 0.0),
         night_floor=0.0015,
-        texture_path=resolve_image("earth_albedo").path,
         exposure=1.08,
-        view_hat=_unit(state.sun_gcrf_km),
-        specular_strength=0.0,
     )
     vertices = _scene_coordinates(
         data.display_vertices, np.zeros(3), peak.basis_world_from_scene, 1.0,
@@ -431,10 +368,8 @@ def _public_moon_mesh(peak: PublicPeakState, quality: PublicQuality) -> list[go.
         n_lon=quality.body_lon,
         real_sun_position_km=state.sun_gcrf_km,
         ambient_floor=0.002,
-        texture_path=resolve_image("moon_albedo").path,
         view_hat=-_unit(state.moon_gcrf_km),
         exposure=1.10,
-        relief_exaggeration=0.0,
         eclipse_occluder_radius_km=LUNAR_DANJON_EARTH_RADIUS_KM,
         body_to_gcrf=moon_attitude_for_event(peak.event, peak.jd_utc).body_to_gcrf,
     )
@@ -471,9 +406,7 @@ def _atmosphere_shell(peak: PublicPeakState, quality: PublicQuality) -> list[go.
         n_lon=quality.atmosphere_lon,
         time_jd=float(peak.jd_utc),
         sun_position_km=peak.state.sun_gcrf_km,
-        texture_path=resolve_image("earth_albedo").path,
         exposure=1.0,
-        specular_strength=0.0,
     )
     oriented = vertices @ data.rotation_rows
     local = _scene_coordinates(oriented, np.zeros(3), peak.basis_world_from_scene, 1.0)
@@ -500,8 +433,8 @@ def _ray_trace(points: np.ndarray, *, name: str, color: str, glow: str,
                add_glow: bool = False) -> list[go.Scatter3d]:
     """Draw a precision-safe representative ray.
 
-    Thick neon halos made the V12 paths appear wider than the Moon and could
-    hide the exact surface stop.  Scientific rays are now thin by default;
+    Thick halos make the paths look wider than the Moon and hide the exact
+    surface stop, so scientific rays are thin by default;
     an optional restrained halo is available only for presentation views.
     """
     values = np.asarray(points, dtype=float).reshape(-1, 3)
@@ -530,53 +463,6 @@ def _ray_trace(points: np.ndarray, *, name: str, color: str, glow: str,
     return traces
 
 
-def _distributed_surface_indices(points: np.ndarray, normals: np.ndarray,
-                                 sun_hat: np.ndarray, n_samples: int,
-                                 *, preferred: int | None = None,
-                                 center: np.ndarray | None = None) -> list[int]:
-    """Deterministic farthest-point samples on the illuminated hemisphere.
-
-    ``points`` may be absolute GCRF positions.  Sampling their normalized
-    absolute coordinates works for Earth at the geocentric origin but
-    collapses every lunar vertex into almost the same direction because the
-    400,000 km Moon-centre translation dominates its 1,737 km radius.  V13
-    therefore samples body-relative directions explicitly.
-    """
-    pts = np.asarray(points, dtype=float)
-    nrm = np.asarray(normals, dtype=float)
-    mu = nrm @ _unit(sun_hat)
-    candidates = np.where(mu > 0.08)[0]
-    if len(candidates) == 0:
-        candidates = np.arange(len(pts))
-    origin = (np.zeros(3, dtype=float) if center is None
-              else np.asarray(center, dtype=float).reshape(3))
-    relative = pts[candidates]-origin
-    unit = relative / np.maximum(np.linalg.norm(relative, axis=1, keepdims=True), 1e-12)
-    selected_local: list[int] = []
-    if preferred is not None:
-        where = np.where(candidates == int(preferred))[0]
-        if len(where):
-            selected_local.append(int(where[0]))
-    if not selected_local:
-        selected_local.append(int(np.argmax(mu[candidates])))
-    min_d2 = np.sum((unit-unit[selected_local[0]])**2, axis=1)
-    while len(selected_local) < min(int(n_samples), len(candidates)):
-        score = min_d2 + 0.08*np.clip(mu[candidates], 0.0, 1.0)
-        score[selected_local] = -np.inf
-        best = float(np.max(score))
-        # Symmetric surface samples often have mathematically identical
-        # scores.  Subtracting a large translated body centre can perturb
-        # those ties at the 1e-11 level, causing ray identities to swap.
-        # Choose the lowest original vertex index within a tight tolerance
-        # of the optimum so sampling remains stable under translation and
-        # across animation frames.
-        tied = np.where(score >= best-1.0e-9*max(1.0, abs(best)))[0]
-        nxt = int(tied[np.argmin(candidates[tied])])
-        selected_local.append(nxt)
-        min_d2 = np.minimum(min_d2, np.sum((unit-unit[nxt])**2, axis=1))
-    return [int(candidates[index]) for index in selected_local]
-
-
 @dataclass(frozen=True)
 class PhotosphericPathSample:
     """One equal-area sample of the visible solar photosphere."""
@@ -586,26 +472,6 @@ class PhotosphericPathSample:
     weight: float
     disk_radius_fraction: float
     endpoint_body: str
-
-
-def _fibonacci_photosphere_disk(n_samples: int) -> np.ndarray:
-    """Deterministic equal-area samples over the apparent solar disk.
-
-    The first sample is the disk center; the remaining points follow a Vogel
-    spiral and approach the limb.  Unlike the former target-first construction,
-    this spans the complete 1,391,400 km solar diameter instead of a tiny
-    photospheric patch.
-    """
-    n = max(1, int(n_samples))
-    if n == 1:
-        return np.zeros((1, 2), dtype=float)
-    points = np.zeros((n, 2), dtype=float)
-    golden = math.pi*(3.0-math.sqrt(5.0))
-    for index in range(1, n):
-        radius = math.sqrt((index-0.5)/(n-0.5))
-        angle = index*golden
-        points[index] = [radius*math.cos(angle), radius*math.sin(angle)]
-    return points
 
 
 def _disk_basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -626,7 +492,7 @@ def photospheric_target_gcrf(peak: PublicPeakState) -> tuple[np.ndarray, str]:
         lat = float(peak.event.metadata.get("observer_lat_deg", SOLAR_GREATEST_SITE_LAT_DEG))
         lon = float(peak.event.metadata.get("observer_lon_east_deg", SOLAR_GREATEST_SITE_LON_EAST_DEG))
         observer_itrf = itrf_surface_point(lat, lon, 0.0)
-        observer_gcrf = event_itrf_to_gcrf_km(peak.event, observer_itrf, peak.jd_utc)
+        observer_gcrf = itrf_to_gcrf_km(observer_itrf, peak.jd_utc)
         return np.asarray(observer_gcrf, dtype=float), "NASA greatest-eclipse observer"
 
     axis_path = np.asarray(peak.state.shadow_axis_gcrf_km, dtype=float).reshape(-1, 3)
@@ -648,10 +514,10 @@ def _first_earth_hit_for_event(
     # are rotations about the common geocentre, so a direction vector can be
     # rotated directly.
     source_itrf = np.asarray(
-        event_gcrf_to_itrf_km(peak.event, source, peak.jd_utc), dtype=float,
+        gcrf_to_itrf_km(source, peak.jd_utc), dtype=float,
     )
     direction_itrf = _unit(np.asarray(
-        event_gcrf_to_itrf_km(peak.event, direction, peak.jd_utc), dtype=float,
+        gcrf_to_itrf_km(direction, peak.jd_utc), dtype=float,
     ))
     roots = ray_ellipsoid_intersections(
         source_itrf, direction_itrf, np.zeros(3), EARTH_AXES_KM,
@@ -663,7 +529,7 @@ def _first_earth_hit_for_event(
     distance = float(roots[0])
     endpoint_itrf = source_itrf+distance*direction_itrf
     endpoint = np.asarray(
-        event_itrf_to_gcrf_km(peak.event, endpoint_itrf, peak.jd_utc),
+        itrf_to_gcrf_km(endpoint_itrf, peak.jd_utc),
         dtype=float,
     )
     return distance, endpoint
@@ -711,10 +577,10 @@ def sampled_photospheric_path_records(
             xt, yt = 0.86*float(x), 0.86*float(y)
             mu_t = math.sqrt(max(0.0, 1.0-xt*xt-yt*yt))
             direction_gcrf = _unit(mu_t*earth_to_sun+xt*target_u+yt*target_v)
-            direction_itrf = event_gcrf_to_itrf_km(peak.event, direction_gcrf, peak.jd_utc)
+            direction_itrf = gcrf_to_itrf_km(direction_gcrf, peak.jd_utc)
             surface_itrf = ellipsoid_surface_in_direction(direction_itrf, EARTH_AXES_KM)
             targets.append(np.asarray(
-                event_itrf_to_gcrf_km(peak.event, surface_itrf, peak.jd_utc),
+                itrf_to_gcrf_km(surface_itrf, peak.jd_utc),
                 dtype=float,
             ))
     else:
@@ -731,7 +597,6 @@ def sampled_photospheric_path_records(
 
     for (x, y), target in zip(disk, targets):
         rho2 = float(x*x+y*y)
-        mu = math.sqrt(max(0.0, 1.0-rho2))
         source = np.asarray(core_samples.points[len(records)], dtype=float)
         direction = _unit(target-source)
 
@@ -1597,25 +1462,8 @@ def build_cross_section_figure(peak: PublicPeakState) -> go.Figure:
     return fig
 
 
-def _asset_data_uri(path: Path) -> str:
-    mime = "image/png" if path.suffix.lower() == ".png" else "application/octet-stream"
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime};base64,{encoded}"
-
-
 def _backend_card(peak: PublicPeakState) -> str:
     audit = peak.ssapy_diagnostics
-    selected = str(audit.get("selected_backend", "reference"))
-    ssapy_status = (
-        "driving this state" if selected in {"ssapy", "ssapy-core"}
-        else "available and audited" if audit.get("llnl_ssapy_available")
-        else "adapter included; package not installed in this build environment"
-    )
-    toolkit_status = (
-        "driving GCRF↔ITRF transforms" if selected == "ssapy"
-        else "available for GCRF↔ITRF transforms" if audit.get("ssatk_available")
-        else "adapter included; deterministic transform fallback used here"
-    )
     comparison = ""
     if "ssapy_sun_reference_delta_km" in audit:
         comparison = (
@@ -1624,17 +1472,9 @@ def _backend_card(peak: PublicPeakState) -> str:
         )
     return (
         "<b>State provenance</b><br>"
-        f"Requested mode: {html.escape(str(audit.get('requested_backend', 'reference')))}<br>"
-        f"Selected mode: {html.escape(selected)}<br>"
-        f"llnl-ssapy: {html.escape(ssapy_status)}<br>"
-        f"ssapy-toolkit: {html.escape(toolkit_status)}<br>"
+        f"State backend: {html.escape(str(audit.get('selected_backend')))}<br>"
         f"Ephemeris: {html.escape(str(audit.get('ephemeris_backend')))}<br>"
-        f"Frame path: {html.escape(str(audit.get('frame_backend')))}<br>"
-        f"Rendered event state: {html.escape(str(audit.get('reference_backend')))}"
-        + (
-            f"<br>Fallback: {html.escape(str(audit.get('fallback_reason')))}"
-            if audit.get("fallback_reason") else ""
-        )
+        f"Frame path: {html.escape(str(audit.get('frame_backend')))}"
         + comparison
     )
 
@@ -1644,7 +1484,7 @@ def generate_public_ultra_view(
     output_path: str | Path = "eclipse_greatest_public_ultra.html",
     *,
     quality: str = "ultra",
-    backend: str = "auto",
+    backend: str = "ssapy",
     solar_scope: str = "global",
     observer: object | None = None,
 ) -> str:
@@ -1674,8 +1514,6 @@ def generate_public_ultra_view(
                                 "displaylogo": False, "responsive": True,
                             })
     dt = jd_to_datetime(peak.jd_utc)
-    target = "Earth" if peak.event.mode == "solar" else "Moon"
-    occluder = "Moon" if peak.event.mode == "solar" else "Earth"
     backend_card = _backend_card(peak)
     penetrations = bundle_penetrations(peak.state.bundle_native)
     residuals = tangent_residuals(peak.state.bundle_native)
@@ -1685,7 +1523,7 @@ def generate_public_ultra_view(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(peak.event.definition.title)} — SSAPy eclipse scientific Plotly view V22.2</title>
+<title>{html.escape(peak.event.definition.title)} — SSATK finite-Sun eclipse view</title>
 <script>{get_plotlyjs()}</script>
 <style>
 :root {{ color-scheme: dark; --bg:#02040a; --panel:#07101c; --line:#42546b; --text:#f1f6fc; --muted:#9fb0c4; --accent:#6fc8ff; }}
@@ -1711,7 +1549,7 @@ footer {{ padding:18px 26px 28px; color:var(--muted); border-top:1px solid var(-
 </head>
 <body>
 <header>
-<h1>{html.escape(peak.event.definition.title)} — V22.2 scientific Plotly finite-Sun inspection</h1>
+<h1>{html.escape(peak.event.definition.title)} — finite-Sun eclipse geometry</h1>
 <div class="subtitle">Greatest eclipse: {dt.strftime('%Y-%m-%d %H:%M:%S')} UTC. The default view uses exact WGS-84/spherical body geometry, true Earth–Moon separation, and finite-Sun surface irradiance computed before WebGL rendering.</div>
 <div class="badges">
 <span class="badge">{html.escape(str(peak.event.metadata.get('state_source', 'reference')))} state mode</span>
@@ -1719,7 +1557,6 @@ footer {{ padding:18px 26px 28px; color:var(--muted); border-top:1px solid var(-
 <span class="badge">WGS-84 Earth</span>
 <span class="badge">finite solar photosphere</span>
 <span class="badge">explicit backend provenance</span>
-<span class="badge">SSAPy / SSAPy-Toolkit ready — selected backend shown below</span>
 </div>
 </header>
 <nav>
@@ -1757,58 +1594,3 @@ buttons.forEach(btn=>btn.addEventListener('click',()=>{{
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")
     return str(output)
-
-
-def public_metrics(kind: str | ReferenceDefinition | ReferenceEvent = "solar", *, quality: str = "ultra",
-                   backend: str = "auto") -> dict[str, object]:
-    q = _quality(quality)
-    peak = build_public_peak_state(
-        kind, ray_azimuth=q.ray_azimuth, backend=backend,
-    )
-    penetrations = bundle_penetrations(peak.state.bundle_native)
-    residuals = tangent_residuals(peak.state.bundle_native)
-    bounds = _local_bounds(peak)
-    central, blocked, umbra, penumbra = _local_ray_paths(peak, bounds)
-    earth_chunks = _public_earth_mesh(peak, q)
-    moon_chunks = _public_moon_mesh(peak, q)
-    earth_vertices = np.vstack([
-        np.column_stack([trace.x, trace.y, trace.z]) for trace in earth_chunks
-    ])
-    moon_vertices = np.vstack([
-        np.column_stack([trace.x, trace.y, trace.z]) for trace in moon_chunks
-    ])
-    earth_radii = np.linalg.norm(earth_vertices-peak.earth_local_km, axis=1)
-    moon_radii = np.linalg.norm(moon_vertices-peak.moon_local_km, axis=1)
-    sampled_paths = _sampled_photospheric_paths(peak, n_samples=13)
-    return {
-        "event": peak.event.definition.key,
-        "backend_requested": backend,
-        "backend_selected": peak.event.metadata.get("state_source", "reference"),
-        "quality": quality,
-        "body_resolution": [q.body_lat, q.body_lon],
-        "atmosphere_resolution": [q.atmosphere_lat, q.atmosphere_lon],
-        "shadow_resolution": q.shadow_resolution,
-        "ray_azimuth_count": q.ray_azimuth,
-        "earth_mesh_chunks": len(earth_chunks),
-        "moon_mesh_chunks": len(moon_chunks),
-        "maximum_chunk_vertices": int(max(
-            max(len(trace.x) for trace in earth_chunks),
-            max(len(trace.x) for trace in moon_chunks),
-        )),
-        "earth_radius_range_km": [float(np.min(earth_radii)), float(np.max(earth_radii))],
-        "moon_radius_range_km": [float(np.min(moon_radii)), float(np.max(moon_radii))],
-        "sampled_photospheric_paths": len(sampled_paths),
-        "sampled_blocked_paths": int(sum(blocked for _, blocked in sampled_paths)),
-        "sampled_target_reaching_paths": int(sum(not blocked for _, blocked in sampled_paths)),
-        "sun_earth_distance_km": float(np.linalg.norm(peak.state.sun_gcrf_km)),
-        "earth_moon_distance_km": float(np.linalg.norm(peak.state.moon_gcrf_km)),
-        "target_axis_miss_km": peak.axis_impact_km,
-        "ray_penetrations": penetrations,
-        "tangent_residuals": residuals,
-        "local_bounds_km": [list(pair) for pair in bounds],
-        "central_ray_vertices": int(len(central)),
-        "blocked_axis_vertices": int(len(blocked)),
-        "umbra_target_hits": list(peak.state.target_hits["umbra"]),
-        "penumbra_target_hits": list(peak.state.target_hits["penumbra"]),
-        "ssapy_diagnostics": peak.ssapy_diagnostics,
-    }

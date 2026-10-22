@@ -11,9 +11,11 @@ go.Surface), matching the real 3D sphere approach used in the toolkit's
 own layers.py (EarthLayer / SunLayer), not flat markers.
 """
 from __future__ import annotations
-from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
+
+from .rendering import is_low_spec
+from ._body_surfaces import BODY_COLORS
+
+from .rendering import _with_low_spec
 import numpy as np
 import plotly.graph_objects as go
 
@@ -31,9 +33,6 @@ from .plotutils import (
     save_plotly_figure,
 )
 from .scene_primitives import earth_rotation_deg_from_time, stabilize_sphere_poles, sun_position_and_radius
-from .eclipse_brightness_plot import sun_direction_eci
-from .rendering import is_low_spec, _with_low_spec
-from ._body_surfaces import BODY_COLORS
 
 # Needed for the optional Moon-shadow-on-Earth shading (solar eclipse case)
 try:
@@ -46,17 +45,6 @@ except ImportError:
         R_SUN_KM = SUN_NOMINAL_RADIUS_KM
 
 try:
-    from ssatk.compute.eclipse_brightness import (
-        irradiance_fraction,
-        itrf_to_gcrf_km,
-        RP_EARTH_KM,
-    )
-except ImportError:
-    irradiance_fraction = None
-    itrf_to_gcrf_km = None
-    RP_EARTH_KM = 6_356.752314245
-
-try:
     from .moon_render import _vertex_normals
 except ImportError:
     try:
@@ -64,14 +52,27 @@ except ImportError:
     except ImportError:
         _vertex_normals = None
 
-MU_EARTH_KM3S2 = EARTH_MU_KM3_S2
-RE_KM = EARTH_RADIUS_KM
-
+# propagate_eci here is a module-local helper for this file's own demo/
+# self-test use; eclipse_brightness_plot.py's identically-named function is
+# the toolkit's canonical one (eclipse_space_view_plotly.py imports it from
+# there). ssatk.plots flattens every public module-level name into one
+# namespace (see ssatk._namespace), so without this, this module (sorting
+# alphabetically after eclipse_brightness_plot) would silently shadow the
+# canonical function at ssatk.plots.propagate_eci.
 __all__ = [
-    "AU_KM", "BODY_COLORS", "EARTH_MU_KM3_S2", "EARTH_RADIUS_KM",
-    "MU_EARTH_KM3S2", "RE_KM", "R_SUN_KM", "SUN_NOMINAL_RADIUS_KM",
+    "AU_KM",
+    "BODY_COLORS",
+    "EARTH_MU_KM3_S2",
+    "EARTH_RADIUS_KM",
+    "MU_EARTH_KM3S2",
+    "RE_KM",
+    "R_SUN_KM",
+    "SUN_NOMINAL_RADIUS_KM",
     "plot_globe_orbit_daynight_plotly",
 ]
+
+MU_EARTH_KM3S2 = EARTH_MU_KM3_S2
+RE_KM = EARTH_RADIUS_KM
 
 
 def propagate_eci(a_km, e, inc_deg, raan_deg, argp_deg, nu0_deg,
@@ -106,10 +107,13 @@ def propagate_eci(a_km, e, inc_deg, raan_deg, argp_deg, nu0_deg,
     return t_s, np.stack([x, y, z], axis=1), T_s
 
 
+from .eclipse_brightness_plot import sun_direction_eci  # noqa: E402  (one GCRF Sun for all plots)
+
+
 _earth_texture_cache = None
 
 
-def _load_real_earth_texture(n_lat, n_lon, texture_path=None, *, return_source=False):
+def _load_real_earth_texture(n_lat, n_lon):
     """
     Real Earth texture, same source and loading pattern as the toolkit's
     own layers.py EarthLayer / globe_plot.py (ssapy.utils.find_file +
@@ -117,22 +121,19 @@ def _load_real_earth_texture(n_lat, n_lon, texture_path=None, *, return_source=F
     Returns an (n_lat, n_lon, 3) uint8 array, or None if unavailable.
     """
     global _earth_texture_cache
-    if texture_path is None and _earth_texture_cache is not None and _earth_texture_cache.shape[:2] == (n_lat, n_lon):
-        return (_earth_texture_cache, "cached Earth texture") if return_source else _earth_texture_cache
+    if _earth_texture_cache is not None and _earth_texture_cache.shape[:2] == (n_lat, n_lon):
+        return _earth_texture_cache
     try:
-        from PIL import Image
         from ._textures import earth_texture_path
-
-        path = Path(texture_path).expanduser() if texture_path else earth_texture_path()
-        img = Image.open(path).convert("RGB")
+        from PIL import Image
+        img = Image.open(earth_texture_path()).convert("RGB")
         img = img.resize((n_lon, n_lat), Image.LANCZOS)
         _earth_texture_cache = np.array(img)
-        result = (_earth_texture_cache, str(path)) if return_source else _earth_texture_cache
-        return result
+        return _earth_texture_cache
     except Exception as ex:
         print(f"[globe_orbit_daynight_plotly] Real Earth texture not found "
               f"({ex}) — using procedural continents instead.")
-        return (None, "procedural fallback") if return_source else None
+        return None
 
 
 def _smooth(field, sigma=1.0):
@@ -295,249 +296,30 @@ def _procedural_continents(n_lat, n_lon, seed=7):
     return (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
 
 
-
-
-
-
-def _sun_sphere_traces(pos, radius_km, seed=11):
+def _earth_atmosphere_trace(center=(0.0, 0.0, 0.0), radius_scale=1.0):
     """
-    Real granulation-style texture instead of an arbitrary pole-to-equator
-    brightness band (the old `surfacecolor=np.sin(SV)` made the sphere look
-    like it had permanently dark poles and a bright equator ring, tied to
-    an arbitrary axis rather than looking like an actual glowing surface).
-
-    Two things layered together, matching how the real Sun actually looks:
-      1. Procedural granulation — mottled brightness variation from many
-         overlapping blotches at different scales, like solar granulation
-         cells, not a smooth gradient.
-      2. Limb darkening — brightness falls off toward the visible edge as
-         seen from directly "above" each point (this is a real optical
-         effect: you're seeing cooler, less dense gas at a grazing angle
-         near the apparent edge of any self-luminous sphere). Approximated
-         here using the angle between each point's outward normal and the
-         sphere's own polar axis is NOT how real limb darkening works —
-         real limb darkening depends on the *viewer's* direction, which a
-         static per-vertex colour array can't follow as you rotate the
-         plot. This uses a fixed reference direction as a stand-in, which
-         is imperfect but at least reads as "glowing sphere" from a normal
-         viewing angle instead of a banded one.
+    Thin translucent blue glow just outside Earth's surface — real photos
+    from space always show this (Rayleigh-scattered sunlight in the upper
+    atmosphere), and without it a bare rendered sphere reads as an
+    artificial "toy globe" rather than a real planet. Optional companion
+    trace, not baked into _earth_mesh itself since that function's return
+    type (a single trace) is relied on in several places already.
     """
-    n = 64   # higher again (was 48) for smoother granulation and a rounder limb
-    su = np.linspace(0, 2*np.pi, n)
-    sv = np.linspace(0, np.pi, n // 2)
-    SU, SV = np.meshgrid(su, sv)
-    nx, ny, nz = np.cos(SU)*np.sin(SV), np.sin(SU)*np.sin(SV), np.cos(SV)
-    sx = pos[0] + radius_km*nx
-    sy = pos[1] + radius_km*ny
-    sz = pos[2] + radius_km*nz
-
-    rng = np.random.default_rng(seed)
-    granulation = np.zeros_like(SU)
-    for _ in range(40):
-        # Random blotch centres directly in (nx,ny,nz) space (angular
-        # distance via dot product) so blotches wrap seamlessly around
-        # the sphere with no seam at the poles or +-180 longitude.
-        c = rng.normal(size=3); c /= np.linalg.norm(c)
-        dot = nx*c[0] + ny*c[1] + nz*c[2]
-        spread = rng.uniform(0.85, 0.97)   # dot-product threshold, not degrees
-        # Smoothstep instead of a linear clip ramp — a linear ramp between
-        # threshold and 1.0 still has a visible kink where it hits zero;
-        # smoothstep's zero derivative at both ends blends each blotch
-        # into its neighbors with no seam, same fix as the Moon/Earth
-        # procedural fields.
-        t = np.clip((dot - spread) / (1 - spread), 0, 1)
-        smoothstep = t * t * (3 - 2 * t)
-        granulation += smoothstep * rng.uniform(-0.25, 0.25)
-
-    # Reference-direction brightness falloff (imperfect stand-in for real
-    # viewer-relative limb darkening — see docstring)
-    ref = np.array([0.4, 0.4, 0.82]); ref /= np.linalg.norm(ref)
-    limb = np.clip(nx*ref[0] + ny*ref[1] + nz*ref[2], 0, 1) ** 0.35
-    brightness = np.clip(0.55 + 0.45*limb + granulation, 0.15, 1.0)
-
-    traces = [go.Surface(
-        x=sx, y=sy, z=sz,
-        colorscale=[[0, "#7A2E00"], [0.35, "#D9550A"],
-                   [0.65, "#FFA500"], [1, "#FFFBEA"]],
-        surfacecolor=brightness,
-        cmin=0.15, cmax=1.0,
-        showscale=False,
-        lighting=dict(ambient=1.0, diffuse=0.0),
-        name="Sun", hovertemplate="Sun<extra></extra>",
-    )]
-    for glow_scale, glow_op in [(1.4, 0.12), (1.9, 0.05)]:
-        gx = pos[0] + radius_km*glow_scale*nx
-        gy = pos[1] + radius_km*glow_scale*ny
-        gz = pos[2] + radius_km*glow_scale*nz
-        traces.append(go.Surface(
-            x=gx, y=gy, z=gz,
-            colorscale=[[0, "#FFD700"], [1, "#FFD700"]],
-            showscale=False, opacity=glow_op,
-            lighting=dict(ambient=1.0, diffuse=0.0),
-            hoverinfo="skip", showlegend=False, name="Sun glow",
-        ))
-    return traces
-
-
-def _normalize(vector, *, name="vector"):
-    value = np.asarray(vector, dtype=float)
-    norm = np.linalg.norm(value)
-    if not np.isfinite(norm) or norm <= 0.0:
-        raise ValueError(f"{name} must be finite and non-zero")
-    return value / norm
-
-
-def _smoothstep(edge0, edge1, value):
-    t = np.clip((np.asarray(value, dtype=float) - edge0) / (edge1 - edge0), 0.0, 1.0)
-    return t * t * (3.0 - 2.0 * t)
-
-
-def _srgb_to_linear(rgb):
-    value = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
-    return np.where(value <= 0.04045, value / 12.92, ((value + 0.055) / 1.055) ** 2.4)
-
-
-def _linear_to_srgb(rgb):
-    value = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
-    return np.where(value <= 0.0031308, 12.92 * value, 1.055 * value ** (1.0 / 2.4) - 0.055)
-
-
-def _itrf_to_gcrf_rotation(time_jd=None, rotation_deg=0.0):
-    if time_jd is not None:
-        from ssatk.compute.eclipse_runtime import astropy_itrf_to_gcrf_km
-
-        return astropy_itrf_to_gcrf_km(np.eye(3), float(time_jd))
-    angle = float(rotation_deg)
-    angle = np.radians(angle % 360.0)
-    c, s = np.cos(angle), np.sin(angle)
-    return np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]])
-
-
-@lru_cache(maxsize=32)
-def _wgs84_vertices_cached(n_lat, n_lon, altitude_km):
-    n_lat, n_lon = int(n_lat), int(n_lon)
-    if n_lat < 4 or n_lon < 8:
-        raise ValueError("Earth mesh resolution must be at least 4 x 8")
-    if n_lat % 2 == 0:
-        n_lat += 1
-    lat_rows = np.linspace(90.0, -90.0, n_lat)
-    ring_lat = lat_rows[1:-1]
-    lon = np.linspace(-180.0, 180.0, n_lon, endpoint=False)
-    Lon, Lat = np.meshgrid(lon, ring_lat)
-    phi, lam = np.radians(Lat), np.radians(Lon)
-    h = float(altitude_km)
-    a, b = RE_KM, RP_EARTH_KM
-    e2 = 1.0 - (b / a) ** 2
-    sin_phi, cos_phi = np.sin(phi), np.cos(phi)
-    prime = a / np.sqrt(1.0 - e2 * sin_phi ** 2)
-    x = (prime + h) * cos_phi * np.cos(lam)
-    y = (prime + h) * cos_phi * np.sin(lam)
-    z = (prime * (1.0 - e2) + h) * sin_phi
-    vertices = np.vstack([
-        np.stack([x, y, z], axis=-1).reshape(-1, 3),
-        [0.0, 0.0, b + h], [0.0, 0.0, -(b + h)],
-    ])
-    normals = np.vstack([
-        np.stack([cos_phi * np.cos(lam), cos_phi * np.sin(lam), sin_phi], axis=-1).reshape(-1, 3),
-        [0.0, 0.0, 1.0], [0.0, 0.0, -1.0],
-    ])
-    rows = n_lat - 2
-    columns = np.arange(n_lon, dtype=np.int32)
-    next_columns = (columns + 1) % n_lon
-    faces = []
-    for row in range(rows - 1):
-        top, bottom = row * n_lon, (row + 1) * n_lon
-        faces.extend((
-            np.column_stack([top + columns, bottom + columns, bottom + next_columns]),
-            np.column_stack([top + columns, bottom + next_columns, top + next_columns]),
-        ))
-    north = rows * n_lon
-    south = north + 1
-    faces.extend((
-        np.column_stack([np.full(n_lon, north), next_columns, columns]),
-        np.column_stack([np.full(n_lon, south), (rows - 1) * n_lon + columns,
-                         (rows - 1) * n_lon + next_columns]),
-    ))
-    faces = np.vstack(faces).astype(np.int32)
-    p0, p1, p2 = vertices[faces[:, 0]], vertices[faces[:, 1]], vertices[faces[:, 2]]
-    flip = np.einsum("ij,ij->i", np.cross(p1 - p0, p2 - p0), (p0 + p1 + p2) / 3.0) < 0
-    faces[flip, 1], faces[flip, 2] = faces[flip, 2].copy(), faces[flip, 1].copy()
-    lat_v = np.concatenate([Lat.ravel(), [90.0, -90.0]])
-    lon_v = np.concatenate([Lon.ravel(), [0.0, 0.0]])
-    return vertices, normals, faces, lat_rows, lat_v, lon_v
-
-
-def _wgs84_vertices(n_lat, n_lon, *, altitude_km=0.0):
-    return _wgs84_vertices_cached(int(n_lat), int(n_lon), float(altitude_km))
-
-
-@dataclass
-class EarthSurfaceData:
-    display_vertices: np.ndarray
-    physical_vertices_gcrf_km: np.ndarray
-    normals_gcrf: np.ndarray
-    faces: np.ndarray
-    base_rgb_srgb: np.ndarray
-    shaded_rgb_srgb: np.ndarray
-    eclipse_visibility: np.ndarray
-    rotation_rows: np.ndarray
-
-
-def _earth_surface_data(
-    sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
-    shadow_body_center_km=None, shadow_body_radius_km=None, rotation_deg=0.0,
-    time_jd=None, sun_position_km=None, physical_center_km=(0.0, 0.0, 0.0),
-    night_floor=0.05, show_city_lights=False, texture_path=None, exposure=1.0,
-    view_hat=None, specular_strength=0.42,
-):
     if is_low_spec():
-        n_lat, n_lon = min(n_lat, 19), min(n_lon, 36)
-        show_city_lights = False
-    sun_hat = _normalize(sun_hat, name="sun_hat")
-    physical_center = np.asarray(physical_center_km, dtype=float).reshape(3)
-    if sun_position_km is None:
-        sun_absolute = physical_center + sun_hat * AU_KM
-    else:
-        sun_absolute = np.asarray(sun_position_km, dtype=float).reshape(3)
-        sun_hat = _normalize(sun_absolute - physical_center, name="Sun relative position")
-    vertices, body_normals, faces, lat_rows, _, _ = _wgs84_vertices(n_lat, n_lon)
-    rotation = _itrf_to_gcrf_rotation(time_jd, rotation_deg)
-    local = vertices @ rotation
-    normals = body_normals @ rotation
-    physical = physical_center + local
-    display = np.asarray(center, dtype=float).reshape(3) + local * float(radius_scale)
-    texture = (np.broadcast_to(np.asarray(BODY_COLORS["earth"])*255,
-                               (len(lat_rows), int(n_lon), 3)) if is_low_spec()
-               else _load_real_earth_texture(len(lat_rows), int(n_lon)) if texture_path is None
-               else _load_real_earth_texture(len(lat_rows), int(n_lon), texture_path))
-    if texture is None:
-        texture = _procedural_continents(len(lat_rows), int(n_lon))
-    base = np.vstack([
-        texture[1:-1].reshape(-1, 3),
-        texture[0].mean(axis=0, keepdims=True),
-        texture[-1].mean(axis=0, keepdims=True),
-    ]).astype(float) / 255.0
-    direct = np.clip(normals @ sun_hat, 0.0, 1.0)
-    visibility = np.ones(len(display), dtype=float)
-    if shadow_body_center_km is not None and shadow_body_radius_km is not None and irradiance_fraction is not None:
-        shadow_center = np.asarray(shadow_body_center_km, dtype=float).reshape(3)
-        visibility = np.asarray(irradiance_fraction(
-            physical - shadow_center,
-            R_body_km=float(shadow_body_radius_km),
-            R_sun_km=R_SUN_KM,
-            sun_position_km=np.broadcast_to(sun_absolute - shadow_center, physical.shape),
-        ), dtype=float).reshape(-1)
-        visibility = np.clip(visibility, 0.0, 1.0)
-    illumination = float(np.clip(night_floor, 0.0, 0.08)) + direct * visibility
-    shaded = _linear_to_srgb(np.clip(_srgb_to_linear(base) * illumination[:, None] * float(exposure), 0.0, 1.0))
-    return EarthSurfaceData(display, physical, normals, faces, base, shaded, visibility, rotation)
-
-
-def _rgb_strings(rgb, alpha=None):
-    values = np.rint(np.clip(np.asarray(rgb), 0.0, 1.0) * 255.0).astype(np.uint8)
-    if alpha is None:
-        return [f"rgb({r},{g},{b})" for r, g, b in values]
-    return [f"rgba({r},{g},{b},{float(a):.4f})" for (r, g, b), a in zip(values, alpha)]
+        return go.Mesh3d(x=[], y=[], z=[], name="Atmosphere", showlegend=False)
+    n = 40
+    u_, v_ = np.linspace(0, 2*np.pi, n), np.linspace(0, np.pi, n)
+    U, V = np.meshgrid(u_, v_)
+    nx, ny, nz = np.cos(U)*np.sin(V), np.sin(U)*np.sin(V), np.cos(V)
+    R = RE_KM * radius_scale * 1.015
+    X = center[0] + R*nx
+    Y = center[1] + R*ny
+    Z = center[2] + R*nz
+    return go.Surface(
+        x=X, y=Y, z=Z, colorscale=[[0, "#6fa8ff"], [1, "#6fa8ff"]],
+        showscale=False, opacity=0.10, hoverinfo="skip", showlegend=False,
+        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), name="Atmosphere",
+    )
 
 
 def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
@@ -730,107 +512,84 @@ def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.
     )
 
 
-@_with_low_spec
-def _eclipse_earth_mesh(
-    sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
-    shadow_body_center_km=None, shadow_body_radius_km=None, rotation_deg=0.0,
-    time_jd=None, sun_position_km=None, physical_center_km=(0.0, 0.0, 0.0),
-    night_floor=0.05, show_city_lights=False, night_lift_strength=0.0,
-    texture_path=None, exposure=1.0,
-    view_hat=None, specular_strength=0.42,
-):
-    data = _earth_surface_data(
-        sun_hat, n_lat=n_lat, n_lon=n_lon, radius_scale=radius_scale, center=center,
-        shadow_body_center_km=shadow_body_center_km, shadow_body_radius_km=shadow_body_radius_km,
-        rotation_deg=rotation_deg, time_jd=time_jd, sun_position_km=sun_position_km,
-        physical_center_km=physical_center_km,
-        night_floor=max(float(night_floor), 0.08 * float(night_lift_strength)),
-        show_city_lights=show_city_lights, texture_path=texture_path, exposure=exposure,
-        view_hat=view_hat, specular_strength=specular_strength,
-    )
-    return go.Mesh3d(
-        x=data.display_vertices[:, 0], y=data.display_vertices[:, 1], z=data.display_vertices[:, 2],
-        i=data.faces[:, 0], j=data.faces[:, 1], k=data.faces[:, 2],
-        vertexcolor=_rgb_strings(data.shaded_rgb_srgb), flatshading=False,
-        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
-        name="Earth", hoverinfo="skip", showlegend=False,
-    )
+def _sun_sphere_traces(pos, radius_km, seed=11):
+    """
+    Real granulation-style texture instead of an arbitrary pole-to-equator
+    brightness band (the old `surfacecolor=np.sin(SV)` made the sphere look
+    like it had permanently dark poles and a bright equator ring, tied to
+    an arbitrary axis rather than looking like an actual glowing surface).
 
+    Two things layered together, matching how the real Sun actually looks:
+      1. Procedural granulation — mottled brightness variation from many
+         overlapping blotches at different scales, like solar granulation
+         cells, not a smooth gradient.
+      2. Limb darkening — brightness falls off toward the visible edge as
+         seen from directly "above" each point (this is a real optical
+         effect: you're seeing cooler, less dense gas at a grazing angle
+         near the apparent edge of any self-luminous sphere). Approximated
+         here using the angle between each point's outward normal and the
+         sphere's own polar axis is NOT how real limb darkening works —
+         real limb darkening depends on the *viewer's* direction, which a
+         static per-vertex colour array can't follow as you rotate the
+         plot. This uses a fixed reference direction as a stand-in, which
+         is imperfect but at least reads as "glowing sphere" from a normal
+         viewing angle instead of a banded one.
+    """
+    n = 64   # higher again (was 48) for smoother granulation and a rounder limb
+    su = np.linspace(0, 2*np.pi, n)
+    sv = np.linspace(0, np.pi, n // 2)
+    SU, SV = np.meshgrid(su, sv)
+    nx, ny, nz = np.cos(SU)*np.sin(SV), np.sin(SU)*np.sin(SV), np.cos(SV)
+    sx = pos[0] + radius_km*nx
+    sy = pos[1] + radius_km*ny
+    sz = pos[2] + radius_km*nz
 
-def _earth_atmosphere_trace(
-    center=(0.0, 0.0, 0.0), radius_scale=1.0, *, sun_hat=(1.0, 0.0, 0.0),
-    view_hat=None, time_jd=None, rotation_deg=0.0, n_lat=54, n_lon=108,
-    altitude_km=105.0, max_alpha=0.34,
-):
-    if is_low_spec():
-        return go.Mesh3d(x=[], y=[], z=[], name="Atmosphere", showlegend=False)
-    vertices, normals, faces, _, _, _ = _wgs84_vertices(n_lat, n_lon, altitude_km=altitude_km)
-    rotation = _itrf_to_gcrf_rotation(time_jd, rotation_deg)
-    vertices = np.asarray(center, dtype=float).reshape(3) + (vertices @ rotation) * float(radius_scale)
-    normals = normals @ rotation
-    sun_hat = _normalize(sun_hat, name="sun_hat")
-    view_hat = _normalize(view_hat if view_hat is not None else sun_hat, name="view_hat")
-    limb = np.clip(1.0 - np.abs(normals @ view_hat), 0.0, 1.0) ** 2.2
-    day = 0.20 + 0.80 * np.sqrt(np.clip(normals @ sun_hat, 0.0, 1.0))
-    alpha = np.clip(float(max_alpha) * limb * day, 0.0, 0.8)
-    return go.Mesh3d(
-        x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
-        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        vertexcolor=_rgb_strings(np.tile([0.24, 0.56, 1.0], (len(vertices), 1)), alpha),
-        opacity=0.999, flatshading=False, hoverinfo="skip", showlegend=False, name="Atmosphere",
-    )
+    rng = np.random.default_rng(seed)
+    granulation = np.zeros_like(SU)
+    for _ in range(40):
+        # Random blotch centres directly in (nx,ny,nz) space (angular
+        # distance via dot product) so blotches wrap seamlessly around
+        # the sphere with no seam at the poles or +-180 longitude.
+        c = rng.normal(size=3); c /= np.linalg.norm(c)
+        dot = nx*c[0] + ny*c[1] + nz*c[2]
+        spread = rng.uniform(0.85, 0.97)   # dot-product threshold, not degrees
+        # Smoothstep instead of a linear clip ramp — a linear ramp between
+        # threshold and 1.0 still has a visible kink where it hits zero;
+        # smoothstep's zero derivative at both ends blends each blotch
+        # into its neighbors with no seam, same fix as the Moon/Earth
+        # procedural fields.
+        t = np.clip((dot - spread) / (1 - spread), 0, 1)
+        smoothstep = t * t * (3 - 2 * t)
+        granulation += smoothstep * rng.uniform(-0.25, 0.25)
 
+    # Reference-direction brightness falloff (imperfect stand-in for real
+    # viewer-relative limb darkening — see docstring)
+    ref = np.array([0.4, 0.4, 0.82]); ref /= np.linalg.norm(ref)
+    limb = np.clip(nx*ref[0] + ny*ref[1] + nz*ref[2], 0, 1) ** 0.35
+    brightness = np.clip(0.55 + 0.45*limb + granulation, 0.15, 1.0)
 
-def _earth_eclipse_shadow_trace(
-    sun_hat, shadow_body_center_km, shadow_body_radius_km, *, sun_position_km=None,
-    physical_center_km=(0.0, 0.0, 0.0), center=(0.0, 0.0, 0.0), radius_scale=1.0,
-    time_jd=None, rotation_deg=0.0, patch_center_gcrf_km=None, resolution=241,
-    half_angle_deg=35.0, nudge=1.0007, night_floor=0.003,
-):
-    if irradiance_fraction is None:
-        raise RuntimeError("Finite-disc eclipse physics is unavailable")
-    physical_center = np.asarray(physical_center_km, dtype=float).reshape(3)
-    shadow_center = np.asarray(shadow_body_center_km, dtype=float).reshape(3)
-    sun_absolute = (physical_center + _normalize(sun_hat) * AU_KM if sun_position_km is None
-                    else np.asarray(sun_position_km, dtype=float).reshape(3))
-    direction = (_normalize(np.asarray(patch_center_gcrf_km).reshape(3) - physical_center)
-                 if patch_center_gcrf_km is not None
-                 else _normalize(shadow_center - sun_absolute))
-    ref = np.array([0.0, 0.0, 1.0]) if abs(direction[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
-    u = _normalize(np.cross(ref, direction))
-    v = np.cross(direction, u)
-    size = max(25, min(int(resolution), 181))
-    q = np.linspace(-np.tan(np.radians(float(half_angle_deg))), np.tan(np.radians(float(half_angle_deg))), size)
-    qx, qy = np.meshgrid(q, q)
-    directions = direction + qx[..., None] * u + qy[..., None] * v
-    directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
-    axes = np.array([RE_KM, RE_KM, RP_EARTH_KM])
-    local = directions / np.sqrt(np.sum((directions / axes) ** 2, axis=-1))[..., None]
-    rotation = _itrf_to_gcrf_rotation(time_jd, rotation_deg)
-    local_gcrf = local.reshape(-1, 3) @ rotation
-    physical = physical_center + local_gcrf
-    visibility = np.asarray(irradiance_fraction(
-        physical - shadow_center, R_body_km=float(shadow_body_radius_km), R_sun_km=R_SUN_KM,
-        sun_position_km=np.broadcast_to(sun_absolute - shadow_center, physical.shape),
-    ), dtype=float).reshape(-1)
-    normals = (local / (axes * axes)).reshape(-1, 3)
-    normals /= np.linalg.norm(normals, axis=1, keepdims=True)
-    normals = normals @ rotation
-    direct = np.clip(normals @ _normalize(sun_absolute - physical_center), 0.0, 1.0)
-    base = float(np.clip(night_floor, 0.0, 0.08)) + direct
-    shadow = float(np.clip(night_floor, 0.0, 0.08)) + direct * visibility
-    alpha = np.clip(1.0 - np.sqrt(shadow / np.maximum(base, 1e-12)), 0.0, 0.995)
-    display = np.asarray(center, dtype=float).reshape(3) + local_gcrf * float(radius_scale) * float(nudge)
-    ids = np.arange(size * size, dtype=np.int32).reshape(size, size)
-    a, b, c, d = ids[:-1, :-1].ravel(), ids[1:, :-1].ravel(), ids[1:, 1:].ravel(), ids[:-1, 1:].ravel()
-    black = np.zeros((len(display), 3))
-    return go.Mesh3d(
-        x=display[:, 0], y=display[:, 1], z=display[:, 2],
-        i=np.concatenate([a, a]), j=np.concatenate([c, d]), k=np.concatenate([b, c]),
-        vertexcolor=_rgb_strings(black, alpha), opacity=0.999, flatshading=False,
-        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), hoverinfo="skip", showlegend=False,
-        name="Finite-disc eclipse shadow",
-    )
+    traces = [go.Surface(
+        x=sx, y=sy, z=sz,
+        colorscale=[[0, "#7A2E00"], [0.35, "#D9550A"],
+                   [0.65, "#FFA500"], [1, "#FFFBEA"]],
+        surfacecolor=brightness,
+        cmin=0.15, cmax=1.0,
+        showscale=False,
+        lighting=dict(ambient=1.0, diffuse=0.0),
+        name="Sun", hovertemplate="Sun<extra></extra>",
+    )]
+    for glow_scale, glow_op in [(1.4, 0.12), (1.9, 0.05)]:
+        gx = pos[0] + radius_km*glow_scale*nx
+        gy = pos[1] + radius_km*glow_scale*ny
+        gz = pos[2] + radius_km*glow_scale*nz
+        traces.append(go.Surface(
+            x=gx, y=gy, z=gz,
+            colorscale=[[0, "#FFD700"], [1, "#FFD700"]],
+            showscale=False, opacity=glow_op,
+            lighting=dict(ambient=1.0, diffuse=0.0),
+            hoverinfo="skip", showlegend=False, name="Sun glow",
+        ))
+    return traces
 
 
 @_with_low_spec

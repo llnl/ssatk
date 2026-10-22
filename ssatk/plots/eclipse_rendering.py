@@ -25,51 +25,34 @@ from ssatk.compute.eclipse_reference_events import (
     angular_circle_visible_fraction,
     geodetic_from_itrf,
     itrf_surface_point,
-    jd_to_datetime,
     lunar_reference_state,
     solar_besselian_state,
     solar_central_line_wgs84,
     solar_observer_geometry,
     solar_local_contacts,
     _unit,
-    _LUNAR_MOON_DISTANCE_KM,
     _LUNAR_MOON_SD_DEG,
     _LUNAR_P_RADIUS_DEG,
     _LUNAR_U_RADIUS_DEG,
 )
-from ssatk.compute.eclipse_brightness import gcrf_to_itrf_km
-from ssatk.io.eclipse_asset_resolver import resolve_asset, resolve_image
+from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km
+from ssatk._paths import cache_env_dir
+from ssatk.plots._textures import earth_texture_path, moon_texture_path
 from ssatk.compute.eclipse_raytrace import (
     LUNAR_DANJON_EARTH_RADIUS_KM,
     LUNAR_OPTICAL_MOON_RADIUS_KM,
     ReferenceRayBundle,
     solar_footprint_points,
-    solar_footprint_segments,
-    trace_reference_rays,
 )
 
-ASSET_DIR = Path(__file__).resolve().parent
 SOLAR_TOTALITY_DURATION_REFERENCE_S = 268.1
 
-def _resolved_grid_path(logical_name: str, packaged_name: str) -> Path:
-    """Resolve immutable precomputed grids from SSAPy-Data with package fallback."""
-    try:
-        record = resolve_asset(logical_name, policy="data-first", required=False)
-        if record is not None:
-            return Path(record.path)
-    except Exception:
-        pass
-    return ASSET_DIR / packaged_name
 
-SOLAR_TOTALITY_DURATION_GRID_PATH = _resolved_grid_path(
-    "solar_2024_totality_duration_grid", "solar_2024_totality_duration_grid.npz"
-)
-SOLAR_PARTIAL_VISIBILITY_GRID_PATH = _resolved_grid_path(
-    "solar_2024_partial_visibility_grid", "solar_2024_partial_visibility_grid.npz"
-)
-LUNAR_GEOGRAPHIC_VISIBILITY_GRID_PATH = _resolved_grid_path(
-    "lunar_2025_geographic_visibility_grid", "lunar_2025_geographic_visibility_grid.npz"
-)
+def _grid_cache_path(name: str) -> Path:
+    """Derived eclipse grids are expensive to build, so they are cached outside the package."""
+    return Path(cache_env_dir() or Path.home() / ".ssatk") / "eclipse" / f"{name}.npz"
+
+
 
 # Discrete, physically evaluated regions used by the scientific corridor map.
 # Every location inside the corridor reaches complete photospheric coverage;
@@ -133,11 +116,9 @@ def _linear_to_srgb(rgb):
 
 @lru_cache(maxsize=8)
 def _load_texture(name: str) -> np.ndarray:
-    logical = {"earth": "earth_albedo", "moon": "moon_albedo"}.get(name)
-    if logical is None:
+    if name not in {"earth", "moon"}:
         raise ValueError("name must be 'earth' or 'moon'")
-    resolved = resolve_image(logical, policy="data-first", required=True)
-    with Image.open(resolved.path) as image:
+    with Image.open(earth_texture_path() if name == "earth" else moon_texture_path()) as image:
         return np.asarray(image.convert("RGB"), dtype=np.uint8)
 
 
@@ -428,7 +409,6 @@ def solar_site_geometry(jd_utc: float, *, lat_deg: float | None = None,
     return solar_observer_geometry(jd_utc, **kwargs)
 
 
-
 @lru_cache(maxsize=8)
 def _solar_granulation_field(size: int) -> np.ndarray:
     """Deterministic multiscale photospheric texture without periodic banding."""
@@ -551,7 +531,6 @@ def project_ray_bundle_2d(bundle: ReferenceRayBundle):
         q = np.asarray(points)-occ
         return np.column_stack([q@axis, q@u])
     return project, float(np.dot(target-occ, axis)), u
-
 
 
 def draw_ray_diagram(ax, bundle: ReferenceRayBundle):
@@ -705,7 +684,6 @@ def draw_ray_diagram(ax, bundle: ReferenceRayBundle):
                  color="white", fontsize=10.5, pad=39, fontweight="semibold")
 
 
-
 def draw_true_distance_locator(ax, bundle: ReferenceRayBundle):
     """One-dimensional true-distance ruler from the Sun to the Earth-Moon system."""
     sun = bundle.sun_center_km
@@ -794,7 +772,6 @@ def solar_central_path_cached():
         if point is not None:
             lat.append(point[0]); lon.append(point[1])
     return np.asarray(lon), np.asarray(lat)
-
 
 
 @lru_cache(maxsize=1)
@@ -976,7 +953,7 @@ def _build_solar_totality_duration_grid(*, n_cross: int = 13) -> dict[str, np.nd
 @lru_cache(maxsize=1)
 def solar_totality_duration_grid_cached() -> dict[str, np.ndarray]:
     """Load the packaged duration field, rebuilding it only when absent."""
-    path = SOLAR_TOTALITY_DURATION_GRID_PATH
+    path = _grid_cache_path("solar_2024_totality_duration_grid")
     if path.is_file():
         with np.load(path) as payload:
             result = {key: np.asarray(payload[key]) for key in payload.files}
@@ -1047,45 +1024,6 @@ def solar_totality_band_polygons(threshold_percent: float) -> tuple[np.ndarray, 
                 polygons.append(polygon)
             start = None
     return tuple(polygons)
-
-
-def solar_totality_duration_raster_cached(nx: int = 270, ny: int = 152):
-    """Interpolate the physical duration mesh to a regular map raster."""
-    field = solar_totality_duration_grid_cached()
-    x = np.linspace(-160.0, -25.0, int(nx))
-    y = np.linspace(-8.0, 68.0, int(ny))
-    X, Y = np.meshgrid(x, y)
-    points = np.column_stack([field["lon"].ravel(), field["lat"].ravel()])
-    values = field["percent_of_max"].ravel()
-    try:
-        from scipy.interpolate import griddata
-        Z = griddata(points, values, (X, Y), method="linear")
-    except Exception:
-        # Nearest-neighbour fallback keeps the dashboard usable without SciPy.
-        Z = np.full_like(X, np.nan, dtype=float)
-        for row in range(Y.shape[0]):
-            d2 = ((points[:, 0][None, :]-X[row, :, None])**2
-                  +(points[:, 1][None, :]-Y[row, :, None])**2)
-            nearest = np.argmin(d2, axis=1)
-            Z[row] = values[nearest]
-
-    # Linear interpolation fills the convex hull; mask back to the actual
-    # finite-Sun corridor polygon so the color field never spills outside it.
-    corridor = solar_umbra_corridor_cached()
-    polygon = np.column_stack([
-        np.concatenate([corridor["left_lon"], corridor["right_lon"][::-1]]),
-        np.concatenate([corridor["left_lat"], corridor["right_lat"][::-1]]),
-    ])
-    try:
-        from matplotlib.path import Path as MplPath
-        inside = MplPath(polygon).contains_points(
-            np.column_stack([X.ravel(), Y.ravel()]), radius=1.0e-9,
-        ).reshape(X.shape)
-        Z = np.where(inside, Z, np.nan)
-    except Exception:
-        pass
-    return x, y, Z
-
 
 
 def _wgs84_observer_grid(step_deg: float = 0.75):
@@ -1185,7 +1123,7 @@ def _build_solar_partial_visibility_grid(
 @lru_cache(maxsize=1)
 def solar_partial_visibility_grid_cached() -> dict[str, np.ndarray]:
     """Load or build the global 2024 partial-eclipse visibility field."""
-    path = SOLAR_PARTIAL_VISIBILITY_GRID_PATH
+    path = _grid_cache_path("solar_2024_partial_visibility_grid")
     if path.is_file():
         with np.load(path) as payload:
             return {key: np.asarray(payload[key]) for key in payload.files}
@@ -1193,56 +1131,6 @@ def solar_partial_visibility_grid_cached() -> dict[str, np.ndarray]:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **result)
     return result
-
-
-def solar_maximum_local_eclipse(
-    lat_deg: float, lon_east_deg: float, *, time_step_s: float = 20.0,
-) -> dict[str, float]:
-    """Maximum visible solar obscuration and magnitude at one WGS-84 site."""
-    observer = itrf_surface_point(float(lat_deg), float(lon_east_deg), 0.0)
-    normal = observer/np.asarray([RE_KM**2, RE_KM**2, RP_KM**2])
-    normal = _unit(normal, name="observer surface normal")
-    start = SOLAR_2024.contacts_jd["P1"]
-    stop = SOLAR_2024.contacts_jd["P4"]
-    step_jd = float(time_step_s)/86400.0
-    times = np.arange(start, stop+0.25*step_jd, step_jd, dtype=float)
-    times = np.sort(np.unique(np.concatenate([
-        times, np.asarray(list(SOLAR_2024.contacts_jd.values()), dtype=float),
-    ])))
-    best = {
-        "max_obscuration_percent": 0.0,
-        "max_magnitude": 0.0,
-        "max_jd": float("nan"),
-        "max_magnitude_jd": float("nan"),
-        "sun_altitude_deg": float("nan"),
-    }
-    for jd in times:
-        state = solar_besselian_state(float(jd))
-        to_sun = state.sun_itrf_km-observer
-        to_moon = state.moon_itrf_km-observer
-        ds = float(np.linalg.norm(to_sun))
-        dm = float(np.linalg.norm(to_moon))
-        sun_hat = to_sun/ds
-        moon_hat = to_moon/dm
-        a_sun = math.asin(np.clip(R_SUN_KM/ds, 0.0, 1.0))
-        a_moon = math.asin(np.clip(SOLAR_PENUMBRA_OPTICAL_RADIUS_KM/dm, 0.0, 1.0))
-        separation = math.acos(np.clip(np.dot(sun_hat, moon_hat), -1.0, 1.0))
-        altitude = math.asin(np.clip(np.dot(sun_hat, normal), -1.0, 1.0))
-        if altitude < -a_sun:
-            continue
-        visible = float(angular_circle_visible_fraction(a_moon, a_sun, separation))
-        obscuration = 100.0*(1.0-visible)
-        magnitude = max(0.0, (a_sun+a_moon-separation)/(2.0*a_sun))
-        if magnitude > best["max_magnitude"]:
-            best["max_magnitude"] = float(magnitude)
-            best["max_magnitude_jd"] = float(jd)
-        if obscuration > best["max_obscuration_percent"]:
-            best.update(
-                max_obscuration_percent=float(obscuration),
-                max_jd=float(jd),
-                sun_altitude_deg=math.degrees(altitude),
-            )
-    return best
 
 
 def _build_lunar_geographic_visibility_grid(
@@ -1273,7 +1161,7 @@ def _build_lunar_geographic_visibility_grid(
     for jd in times:
         state = lunar_reference_state(float(jd))
         moon_itrf = gcrf_to_itrf_km(
-            state.moon_gcrf_km, float(jd), prefer_toolkit=False,
+            state.moon_gcrf_km, float(jd),
         )
         to_moon = moon_itrf[None, :]-observers
         distance = np.linalg.norm(to_moon, axis=1)
@@ -1316,7 +1204,7 @@ def _build_lunar_geographic_visibility_grid(
 @lru_cache(maxsize=1)
 def lunar_geographic_visibility_grid_cached() -> dict[str, np.ndarray]:
     """Load or build the 2025 lunar-eclipse geographic visibility field."""
-    path = LUNAR_GEOGRAPHIC_VISIBILITY_GRID_PATH
+    path = _grid_cache_path("lunar_2025_geographic_visibility_grid")
     if path.is_file():
         with np.load(path) as payload:
             return {key: np.asarray(payload[key]) for key in payload.files}
@@ -1542,7 +1430,6 @@ def _points_lat_lon(points):
     return np.asarray(lon), np.asarray(lat)
 
 
-
 def _duration_tick_label(seconds: float) -> str:
     value = max(float(seconds), 0.0)
     minutes = int(value // 60.0)
@@ -1606,10 +1493,6 @@ def draw_solar_map(
 
     band_edges = np.asarray(SOLAR_TOTALITY_PERCENT_BAND_EDGES, dtype=float)
     band_colors = tuple(SOLAR_TOTALITY_PERCENT_BAND_COLORS)
-    band_labels = (
-        "0-25%", "25-50%", "50-75%",
-        "75-90%", "90-97.5%", "97.5-100%",
-    )
     band_cmap = ListedColormap(band_colors, name="totality_duration_levels_v5")
     band_norm = BoundaryNorm(band_edges, band_cmap.N, clip=True)
     band_artist = ScalarMappable(norm=band_norm, cmap=band_cmap)
@@ -1733,9 +1616,6 @@ def draw_solar_map(
         label="Shaded totality-duration regions",
     )] + handles
     labels = ["Shaded totality-duration regions"] + labels
-    band_centers = 0.5*(band_edges[:-1]+band_edges[1:])
-    duration_edge_labels = [_duration_tick_label(reference_s*pct/100.0)
-                            for pct in band_edges]
 
     def _band_text(low_pct: float, high_pct: float) -> str:
         low_s = reference_s*low_pct/100.0
@@ -1906,7 +1786,6 @@ def solar_site_visibility_curve(jd_values):
     return np.asarray([solar_site_geometry(float(jd))[-1] for jd in jd_values])
 
 
-
 def draw_light_curve(ax, event: ReferenceEvent, jd_utc: float):
     """Draw a contact-labelled, percent-scale geometric visibility curve."""
     t_hours = (event.jd-event.greatest_jd)*24.0
@@ -1980,7 +1859,6 @@ def draw_light_curve(ax, event: ReferenceEvent, jd_utc: float):
         spine.set_color("#46556a")
     ax.set_title(f"{title}\n{subtitle}", color="white", fontsize=8.55,
                  pad=5, fontweight="semibold")
-
 
 
 def draw_north_indicator(ax, *, label: str = "N"):

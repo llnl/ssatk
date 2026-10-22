@@ -17,7 +17,7 @@ frame for plotting a moving eclipse path on a non-moving Earth texture.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Mapping, Sequence
 import math
@@ -29,34 +29,19 @@ try:
 except Exception:  # pragma: no cover - linear fallback is tested indirectly
     PchipInterpolator = None
 
-RE_KM = 6378.137
-RP_KM = 6356.752314245
+from ssatk.compute.eclipse_core import (
+    circle_overlap_visible_fraction as angular_circle_visible_fraction,
+    ray_ellipsoid_intersections,
+)
+from ssatk.constants import WGS84_A_KM as RE_KM, WGS84_B_KM as RP_KM
+
 EARTH_AXES_KM = np.array([RE_KM, RE_KM, RP_KM], dtype=float)
 R_SUN_KM = 695700.0
 R_MOON_MEAN_KM = 1737.4
 AU_KM = 149597870.7
-
-
-def reference_itrf_to_gcrf_km(points_itrf_km, jd_utc) -> np.ndarray:
-    """Convert reference Earth-fixed vectors to GCRF, including date precession."""
-    from .eclipse_runtime import astropy_itrf_to_gcrf_km
-
-    return astropy_itrf_to_gcrf_km(points_itrf_km, jd_utc)
-
-
-def reference_gcrf_to_itrf_km(points_gcrf_km, jd_utc) -> np.ndarray:
-    """Inverse of :func:`reference_itrf_to_gcrf_km`."""
-    from .eclipse_runtime import astropy_gcrf_to_itrf_km
-
-    return astropy_gcrf_to_itrf_km(points_gcrf_km, jd_utc)
-
-
-def _apparent_equatorial_to_gcrf(vector, jd_utc: float) -> np.ndarray:
-    import erfa
-    from astropy.time import Time
-
-    tt = Time(jd_utc, format="jd", scale="utc").tt
-    return erfa.pnm06a(tt.jd1, tt.jd2).T @ np.asarray(vector, dtype=float)
+# Danjon's rule enlarges Earth's shadow by 1/85, applied (as in the NASA/GSFC
+# predictions) to Earth's mean radius, 0.99834 of equatorial, for oblateness.
+LUNAR_DANJON_FACTOR = 0.99834*(1.0 + 1.0/85.0)
 
 
 def datetime_to_jd(value: datetime) -> float:
@@ -104,37 +89,10 @@ def _poly(coeff: Sequence[float], t: float | np.ndarray) -> np.ndarray:
     return result
 
 
-def _poly_derivative(coeff: Sequence[float], t: float | np.ndarray) -> np.ndarray:
-    t = np.asarray(t, dtype=float)
-    result = np.zeros_like(t, dtype=float)
-    for power, value in enumerate(coeff[1:], start=1):
-        result += power*float(value)*t**(power-1)
-    return result
-
-
 def _ray_ellipsoid_roots(origin, direction,
                          axes_km: np.ndarray = EARTH_AXES_KM) -> np.ndarray:
-    origin = np.asarray(origin, dtype=float).reshape(3)
-    direction = _unit(direction, name="ray direction")
-    # Extended precision avoids losing the ~12,000 km separation between
-    # near/far Earth roots when both roots are ~150 million km from the Sun.
-    ld = np.longdouble
-    axes = np.asarray(axes_km, dtype=ld).reshape(3)
-    q = np.ravel(np.asarray(origin, dtype=ld))/axes
-    v = np.ravel(np.asarray(direction, dtype=ld))/axes
-    aa = np.dot(v, v)
-    bb = ld(2.0)*np.dot(q, v)
-    cc = np.dot(q, q)-ld(1.0)
-    disc = bb*bb-ld(4.0)*aa*cc
-    if disc < 0.0:
-        return np.empty(0, dtype=float)
-    root = np.sqrt(max(disc, ld(0.0)))
-    qroot = -ld(0.5)*(bb+np.copysign(root, bb))
-    if abs(qroot) < ld(1.0e-40):
-        roots = np.array([-bb/(ld(2.0)*aa), -bb/(ld(2.0)*aa)], dtype=ld)
-    else:
-        roots = np.array([qroot/aa, cc/qroot], dtype=ld)
-    return np.sort(np.asarray(roots, dtype=float)[np.isfinite(roots)])
+    roots = ray_ellipsoid_intersections(np.ravel(origin), np.ravel(direction), axes_km)
+    return roots[np.isfinite(roots)]
 
 
 def geodetic_from_itrf(point_km) -> tuple[float, float, float]:
@@ -173,32 +131,6 @@ def itrf_surface_point(lat_deg: float, lon_deg: float, height_km: float = 0.0) -
         (N+height_km)*math.cos(lat)*math.sin(lon),
         (N*(1.0-e2)+height_km)*math.sin(lat),
     ])
-
-
-def angular_circle_visible_fraction(occulter_radius_rad, sun_radius_rad,
-                                    separation_rad) -> np.ndarray:
-    """Visible fraction of a circular solar disk after circular occultation."""
-    r1, r2, d = np.broadcast_arrays(
-        np.asarray(occulter_radius_rad, dtype=float),
-        np.asarray(sun_radius_rad, dtype=float),
-        np.asarray(separation_rad, dtype=float),
-    )
-    visible = np.ones_like(d)
-    no_overlap = d >= r1+r2
-    contained = d <= np.abs(r1-r2)
-    visible = np.where(contained & (r1 >= r2), 0.0, visible)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        annular = 1.0-np.clip((r1/np.maximum(r2, 1.0e-30))**2, 0.0, 1.0)
-    visible = np.where(contained & (r1 < r2), annular, visible)
-    partial = ~(no_overlap | contained)
-    dp = np.where(partial, d, 1.0)
-    a = np.clip((dp*dp+r1*r1-r2*r2)/(2.0*dp*np.maximum(r1, 1e-30)), -1.0, 1.0)
-    b = np.clip((dp*dp+r2*r2-r1*r1)/(2.0*dp*np.maximum(r2, 1e-30)), -1.0, 1.0)
-    term = (-dp+r1+r2)*(dp+r1-r2)*(dp-r1+r2)*(dp+r1+r2)
-    area = r1*r1*np.arccos(a)+r2*r2*np.arccos(b)-0.5*np.sqrt(np.clip(term, 0.0, None))
-    partial_visible = 1.0-area/(math.pi*np.maximum(r2*r2, 1e-30))
-    visible = np.where(partial, partial_visible, visible)
-    return np.clip(visible, 0.0, 1.0)
 
 
 @dataclass(frozen=True)
@@ -356,42 +288,6 @@ def solar_besselian_state(jd_utc: float) -> SolarBesselianState:
     )
 
 
-def solar_central_line_formula(jd_utc: float) -> tuple[float, float]:
-    """NASA/Meeus central-line solution; returns geodetic lat and west lon."""
-    jd = float(jd_utc)
-    t = (jd+_SOLAR_DELTA_T_S/86400.0-_SOLAR_T0_TDT_JD)*24.0
-    X = float(_poly(_SOLAR_BESSEL["x"], t))
-    Y = float(_poly(_SOLAR_BESSEL["y"], t))
-    d = math.radians(float(_poly(_SOLAR_BESSEL["d"], t)))
-    mu = float(_poly(_SOLAR_BESSEL["mu"], t))
-    Xp = float(_poly_derivative(_SOLAR_BESSEL["x"], t))
-    Yp = float(_poly_derivative(_SOLAR_BESSEL["y"], t))
-    omega = 1.0/math.sqrt(1.0-0.006694385*math.cos(d)**2)
-    p = _SOLAR_BESSEL["mu"][1]/57.2957795
-    b = Yp-p*X*math.sin(d)
-    c = Xp+p*Y*math.sin(d)
-    del b, c  # retained in the derivation; central coordinates need only H.
-    y1 = omega*Y
-    b1 = omega*math.sin(d)
-    b2 = 0.99664719*omega*math.cos(d)
-    B2 = 1.0-X*X-y1*y1
-    if B2 < 0.0:
-        raise ValueError("The shadow axis does not intersect Earth at this time")
-    B = math.sqrt(max(B2, 0.0))
-    sin_phi1 = B*b1+y1*b2
-    phi1 = math.asin(np.clip(sin_phi1, -1.0, 1.0))
-    cos_phi1 = math.cos(phi1)
-    sin_H = X/cos_phi1
-    cos_H = (B*b2-y1*b1)/cos_phi1
-    H_deg = math.degrees(math.atan2(sin_H, cos_H))
-    lat = math.degrees(math.atan(1.00336409*math.tan(phi1)))
-    west_lon = mu-H_deg-0.00417807*_SOLAR_DELTA_T_S
-    west_lon = west_lon % 360.0
-    if west_lon > 180.0:
-        west_lon -= 360.0
-    return lat, west_lon
-
-
 def solar_central_line_wgs84(jd_utc: float) -> tuple[float, float, np.ndarray] | None:
     """Intersect the physical Besselian shadow axis with WGS-84 Earth."""
     state = solar_besselian_state(jd_utc)
@@ -507,15 +403,6 @@ def solar_local_contacts(
             )[-1] for value in sample]
             result["MAX"] = float(sample[int(np.argmin(visibility))])
     return result
-
-
-def local_contact_label_at_jd(jd_utc: float, tolerance_s: float = 0.7) -> str | None:
-    for name, value in solar_local_contacts().items():
-        if abs(float(jd_utc)-value)*86400.0 <= tolerance_s:
-            return name
-    if abs(float(jd_utc)-SOLAR_2024.greatest_jd)*86400.0 <= tolerance_s:
-        return "MAX"
-    return None
 
 
 def solar_local_phase_status(jd_utc: float, tolerance_s: float = 0.7) -> str:
@@ -685,11 +572,24 @@ class LunarReferenceState:
     center_sun_visibility: float
 
 
+@lru_cache(maxsize=1)
+def _lunar_tod_to_gcrf() -> np.ndarray:
+    # Precession-nutation changes by well under an arcsecond across the
+    # five-hour eclipse, so one matrix at greatest eclipse serves every state.
+    from ssatk.compute.eclipse_runtime import true_of_date_to_gcrf_matrix
+    return true_of_date_to_gcrf_matrix(LUNAR_2025.greatest_jd)
+
+
 def lunar_reference_state(jd_utc: float) -> LunarReferenceState:
+    """Reference Sun/Moon state for the 2025 lunar eclipse, in GCRF.
+
+    The construction uses NASA's apparent (true equator of date) coordinates
+    and is rotated to GCRF at the end.
+    """
     jd = float(jd_utc)
-    sun_hat_date = _unit(_LUNAR_SUN_CORRECTION@_approx_sun_equatorial_unit(jd))
-    anti_date = -sun_hat_date
-    ra, dec = _unit_to_ra_dec(anti_date)
+    sun_hat = _unit(_LUNAR_SUN_CORRECTION@_approx_sun_equatorial_unit(jd))
+    anti = -sun_hat
+    ra, dec = _unit_to_ra_dec(anti)
     ra_rad = math.radians(ra)
     dec_rad = math.radians(dec)
     east = _unit(np.array([-math.sin(ra_rad), math.cos(ra_rad), 0.0]))
@@ -706,12 +606,7 @@ def lunar_reference_state(jd_utc: float) -> LunarReferenceState:
     rho_deg = float(np.linalg.norm(offset2))
     tangent_world = _unit(offset2[0]*east+offset2[1]*north)
     rho = math.radians(rho_deg)
-    moon_hat_date = _unit(math.cos(rho)*anti_date+math.sin(rho)*tangent_world)
-    sun_hat = _unit(_apparent_equatorial_to_gcrf(sun_hat_date, jd))
-    anti = -sun_hat
-    moon_hat = _unit(_apparent_equatorial_to_gcrf(moon_hat_date, jd))
-    east = _unit(_apparent_equatorial_to_gcrf(east, jd))
-    north = _unit(_apparent_equatorial_to_gcrf(north, jd))
+    moon_hat = _unit(math.cos(rho)*anti+math.sin(rho)*tangent_world)
     moon = _LUNAR_MOON_DISTANCE_KM*moon_hat
     sun = _LUNAR_SUN_DISTANCE_KM*sun_hat
 
@@ -725,6 +620,10 @@ def lunar_reference_state(jd_utc: float) -> LunarReferenceState:
     a_earth = math.asin(np.clip(effective_earth_radius/np.linalg.norm(to_earth), 0.0, 1.0))
     a_sun = math.asin(np.clip(R_SUN_KM/np.linalg.norm(to_sun), 0.0, 1.0))
     visible = float(angular_circle_visible_fraction(a_earth, a_sun, sep))
+    to_gcrf = _lunar_tod_to_gcrf()
+    sun_hat, anti, moon_hat, east, north, moon, sun = (
+        to_gcrf@value for value in (sun_hat, anti, moon_hat, east, north, moon, sun)
+    )
     return LunarReferenceState(
         jd_utc=jd,
         sun_hat_gcrf=sun_hat,
@@ -771,6 +670,32 @@ class ReferenceEvent:
     @property
     def greatest_jd(self) -> float:
         return float(self.metadata.get("local_max_jd", self.definition.greatest_jd))
+
+
+def center_visibility_and_separation(mode: str, sun_km, moon_km) -> tuple[np.ndarray, np.ndarray]:
+    """Geocentric visible solar fraction and separation for each state.
+
+    Solar events measure the Sun-Moon separation seen from Earth's center;
+    lunar events measure the Moon's offset from the anti-solar shadow axis and
+    the Sun's visibility from the Moon's center past a Danjon-enlarged Earth.
+    """
+    sun = np.asarray(sun_km, dtype=float).reshape(-1, 3)
+    moon = np.asarray(moon_km, dtype=float).reshape(-1, 3)
+    if mode == "solar":
+        observer_to_occluder, observer_to_sun = moon, sun
+        occluder_radius = R_MOON_MEAN_KM
+    else:
+        observer_to_occluder, observer_to_sun = -moon, sun-moon
+        occluder_radius = RE_KM*LUNAR_DANJON_FACTOR
+    d_occ = np.linalg.norm(observer_to_occluder, axis=1)
+    d_sun = np.linalg.norm(observer_to_sun, axis=1)
+    cos_sep = np.sum(observer_to_occluder*observer_to_sun, axis=1)/(d_occ*d_sun)
+    sep = np.arccos(np.clip(cos_sep, -1.0, 1.0))
+    visible = angular_circle_visible_fraction(
+        np.arcsin(occluder_radius/d_occ), np.arcsin(R_SUN_KM/d_sun), sep,
+    )
+    separation = np.degrees(sep if mode == "solar" else np.pi-sep)
+    return np.asarray(visible, dtype=float), separation
 
 
 def contact_aware_jd(definition: ReferenceDefinition, n_frames: int = 121) -> np.ndarray:
@@ -826,11 +751,8 @@ def build_reference_event(kind: str | ReferenceDefinition = "solar",
     if definition.mode == "solar":
         for value in times:
             state = solar_besselian_state(float(value))
-            moon_gcrf, sun_gcrf = reference_itrf_to_gcrf_km(
-                [state.moon_itrf_km, state.sun_itrf_km], [value, value]
-            )
-            moon.append(moon_gcrf)
-            sun.append(sun_gcrf)
+            moon.append(state.moon_itrf_km)
+            sun.append(state.sun_itrf_km)
             central = solar_central_line_wgs84(float(value))
             if central is None:
                 # Geocentric apparent overlap is a useful partial-phase proxy.
@@ -863,7 +785,7 @@ def build_reference_event(kind: str | ReferenceDefinition = "solar",
             **{f"local_{name.lower()}_utc": jd_to_datetime(value).isoformat().replace("+00:00", "Z")
                for name, value in solar_local_contacts().items()},
         }
-        frame = "GCRF (Besselian reconstruction transformed from true equator of date)"
+        frame = "ITRF (WGS-84, Besselian reconstruction)"
         backend = "NASA/GSFC Besselian VSOP87/ELP2000-85"
     else:
         for value in times:
@@ -902,7 +824,6 @@ def build_reference_event(kind: str | ReferenceDefinition = "solar",
         separation_deg=np.asarray(separation, dtype=float),
         metadata=metadata,
     )
-
 
 
 def solar_local_contact_aware_jd(
@@ -967,26 +888,3 @@ def build_solar_local_event(
         "local_max_jd": solar_local_contacts(lat_deg, lon_east_deg, height_km).get("MAX", SOLAR_2024.greatest_jd),
     })
     return replace(event, metadata=metadata)
-
-def contact_label_at_jd(definition: ReferenceDefinition, jd: float,
-                        tolerance_s: float = 0.7) -> str | None:
-    for name, value in definition.contacts_jd.items():
-        if abs(float(jd)-value)*86400.0 <= tolerance_s:
-            return name
-    return None
-
-
-def reference_summary(event: ReferenceEvent) -> dict:
-    result = {
-        "key": event.definition.key,
-        "title": event.definition.title,
-        "mode": event.mode,
-        "backend": event.backend,
-        "frame": event.frame,
-        "greatest_utc": event.definition.greatest_utc.isoformat().replace("+00:00", "Z"),
-        "contacts_utc": {k: v.isoformat().replace("+00:00", "Z")
-                         for k, v in event.definition.contacts_utc.items()},
-        "metadata": dict(event.metadata),
-        "frame_count": int(len(event.jd)),
-    }
-    return result

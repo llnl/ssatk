@@ -5,7 +5,8 @@
 
 Run:  python assemble.py
 
-Inlines scene.js, the vendored libraries (three.min.js and satellite.min.js) and
+Inlines scene.js, the vendored libraries (three.js via plots/_threejs.py and
+satellite.min.js) and
 the four Earth textures into a single standalone HTML file. The texture images
 come from the external core data package, with an optional cached 8K NASA
 day map prepared by scripts.prepare_gallery_data, not from this source repository.
@@ -16,6 +17,7 @@ files can sit flat in an existing package folder or in their own subdirectory,
 whichever suits the repo -- no particular directory structure is required.
 """
 
+from ._threejs import classic_scripts_html
 from .rendering import is_low_spec
 
 from .rendering import _with_low_spec
@@ -251,6 +253,8 @@ def _gcrf_state_vectors_to_teme(r, v, t, q=None):
     v_tracks = _vector_track_list(v, "v")
     t_tracks = _time_track_list(t)
     q_tracks = _quaternion_track_list(q) if q is not None else [None] * len(r_tracks)
+    if len(t_tracks) == 1 and len(r_tracks) > 1:
+        t_tracks *= len(r_tracks)
     if len(v_tracks) != len(r_tracks) or len(t_tracks) != len(r_tracks):
         raise ValueError("r, v, and t must contain the same number of tracks")
     if len(q_tracks) == 1 and len(r_tracks) > 1:
@@ -804,9 +808,6 @@ html = """<!DOCTYPE html>
 <!-- Viewer libraries are inlined for full offline operation -- no CDN or
      network dependency. See NOTICE. -->
 <script>
-__THREE_JS__
-</script>
-<script>
 __SATELLITE_JS__
 </script>
 <script>
@@ -819,20 +820,21 @@ const CLOUDS_TEXTURE_DATAURI = "data:image/png;base64,__CLOUDS_B64__";
 const SSAPY_CONSTANTS = __SSAPY_CONSTANTS__;
 const STAR_CATALOG = __STAR_CATALOG__;
 const STATE_VECTOR_TRACKS = __STATE_VECTOR_TRACKS__;
+const SPACECRAFT_MESH_PRESETS = __SPACECRAFT_MESH_PRESETS__;
+const SPACECRAFT_DEFAULT_MESH = __SPACECRAFT_DEFAULT_MESH__;
+const MESH_SCALE = __MESH_SCALE__;
 const PROPAGATOR = __PROPAGATOR__;
 const INITIAL_SIM_TIME_MS = null;
 let BUNDLED_SATELLITE_DATABASE = __SATELLITE_DATABASE__;
 </script>
-<script>
 __SCENE_JS__
-</script>
 </body>
 </html>
 """
 
 @_with_low_spec
 def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
-          propagator="sgp4", camera="overview"):
+          propagator="sgp4", camera="overview", mesh=None, mesh_scale="glyph"):
     """Assemble the self-contained Three.js viewer and write it to disk.
 
     Everything expensive lives here rather than at module level so that
@@ -859,6 +861,13 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         Browser propagation model for TLE-backed entries. Only ``"sgp4"`` is
         supported. State-vector input is displayed by interpolation and is
         not propagated in the browser.
+    mesh : geometry input or None
+        Shared SpacecraftMesh, SpacecraftBody, preset, path, or canonical
+        dictionary. Overrides defaults for catalog entries and state tracks.
+        Per-track mesh dictionaries are accepted in ``state_vectors``.
+    mesh_scale : {"glyph", "physical"}
+        Display exaggeration or physical metre-to-km scale. Mesh coordinates
+        and origins remain unchanged in the embedded canonical payload.
 
     Returns
     -------
@@ -866,6 +875,28 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         The path written.
     """
     propagator = _propagator_name(propagator)
+    if mesh_scale not in {"glyph", "physical"}:
+        raise ValueError("mesh_scale must be 'glyph' or 'physical'")
+    from ssatk.geometry import SpacecraftMesh, coerce_mesh
+
+    state_vectors = [dict(track) for track in (state_vectors or [])]
+    default_mesh = None
+    if mesh is not None:
+        payload = coerce_mesh(mesh).to_dict()
+        default_mesh = payload
+        for track in state_vectors:
+            track["mesh"] = payload
+    for track in state_vectors:
+        if "mesh" in track:
+            track["mesh"] = coerce_mesh(track["mesh"]).to_dict()
+    preset_names = (
+        "starlink", "boxwing", "hst", "jwst", "tess", "chandra", "fermi", "swift",
+        "iss", "tiangong", "gps", "galileo", "glonass", "beidou", "goes", "landsat",
+        "rocket_body", "debris",
+    )
+    mesh_presets = {
+        name: SpacecraftMesh.from_preset(name).to_dict() for name in preset_names
+    }
     from ssatk.plots._textures import viewer_earth_day_path
 
     earth_credit = (
@@ -894,7 +925,6 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     ).replace("<", "\\u003c")
 
     satellite_js = text("satellite.min.js")
-    three_js = text("three.min.js")
     from dataclasses import asdict, replace
     from .camera import _camera_spec
     camera_spec = _camera_spec(camera)
@@ -915,10 +945,12 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         "SSAPY_CONSTANTS": ssapy_constants_json,
         "STAR_CATALOG": stars_json,
         "STATE_VECTOR_TRACKS": state_vectors_json,
+        "SPACECRAFT_MESH_PRESETS": json.dumps(mesh_presets, separators=(",", ":")).replace("<", "\\u003c"),
+        "SPACECRAFT_DEFAULT_MESH": json.dumps(default_mesh, separators=(",", ":")).replace("<", "\\u003c"),
+        "MESH_SCALE": json.dumps(mesh_scale),
         "PROPAGATOR": json.dumps(propagator),
         "SATELLITE_DATABASE": database_json,
-        "SCENE_JS": scene_js,
-        "THREE_JS": three_js,
+        "SCENE_JS": classic_scripts_html(scene_js),
     }
     doc = re.sub(
         r"__([A-Z0-9_]+)__",
@@ -939,7 +971,8 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
 
 @_with_low_spec
 def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
-                     verbose=True, database_path=None, propagator="sgp4", camera="overview"):
+                     verbose=True, database_path=None, propagator="sgp4", camera="overview",
+                     mesh=None, meshes=None, body=None, mesh_scale="glyph"):
     """Write the satellite WebGL viewer from propagated SSAPy state arrays.
 
     ``r`` and ``v`` are the position and velocity arrays returned by
@@ -952,9 +985,25 @@ def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
     them to the spacecraft models.
     ``propagator`` is used only if the bundled/catalog TLE path also needs
     browser-side propagation.
+
+    ``mesh`` or ``body`` supplies one shared body-frame geometry; ``meshes``
+    supplies one per trajectory. Inputs accept SpacecraftMesh, SpacecraftBody,
+    preset names, supported file paths, or canonical mesh dictionaries.
+    ``mesh_scale='glyph'`` exaggerates display size without changing physical
+    geometry; ``'physical'`` renders metre dimensions at their actual km scale.
     """
+    if sum(value is not None for value in (mesh, meshes, body)) > 1:
+        raise ValueError("supply only one of mesh, meshes, or body")
     r, v, t, q = _gcrf_state_vectors_to_teme(r, v, t, q=q)
     state_vectors = _prepare_state_vectors(r, v, t, labels=labels, units=units, q=q)
+    from ssatk.geometry import coerce_mesh
+
+    if meshes is not None:
+        meshes = list(meshes)
+        if len(meshes) != len(state_vectors):
+            raise ValueError("meshes must match the number of state-vector tracks")
+        for track, geometry in zip(state_vectors, meshes):
+            track["mesh"] = coerce_mesh(geometry).to_dict()
     return build(
         out_path=save_path,
         verbose=verbose,
@@ -962,6 +1011,8 @@ def satellite_viewer(r, v, t, *, labels=None, units="m", q=None, save_path=None,
         state_vectors=state_vectors,
         propagator=propagator,
         camera=camera,
+        mesh=body if body is not None else mesh,
+        mesh_scale=mesh_scale,
     )
 
 

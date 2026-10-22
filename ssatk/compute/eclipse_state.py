@@ -1,9 +1,9 @@
-"""Backend-aware eclipse event states and provenance.
+"""Eclipse event states for the two state backends.
 
-Reference contact times remain the public event scaffold.  Body states can be
-provided either by the validated NASA/GSFC reconstruction or by LLNL SSAPy's
-DE430-backed Sun/Moon ephemerides.  In SSAPy modes, every requested UTC sample
-is evaluated directly; no interpolation of the reference body vectors is used.
+Published contact times are the event timeline. Body states come either from
+the NASA/GSFC reconstruction (``reference``) or from SSAPy's DE430 Sun/Moon
+ephemerides (``ssapy``), evaluated directly at every sample. Both backends use
+the same SSATK GCRF/ITRF transforms.
 """
 from __future__ import annotations
 
@@ -13,19 +13,13 @@ import math
 
 import numpy as np
 
-from ssatk.compute.eclipse_brightness import (
-    ephemeris_positions,
-    earth_shadow_axis_surface_point,  # compatibility symbol; strict code uses selection-owned transforms
-    shadow_axis_surface_point,
-)
+from ssatk.compute.eclipse_brightness import shadow_axis_surface_point
 from ssatk.compute.eclipse_runtime import (
     BackendSelection,
-    RuntimeCapabilities,
-    astropy_gcrf_to_itrf_km,
-    astropy_itrf_to_gcrf_km,
+    gcrf_to_itrf_km,
+    itrf_to_gcrf_km,
     resolve_backend,
-    toolkit_gcrf_to_itrf_km,
-    toolkit_itrf_to_gcrf_km,
+    ssapy_ephemeris_positions_km,
 )
 from ssatk.coordinates.eclipse_lunar_attitude import moon_attitude_for_event
 from ssatk.compute.eclipse_reference_events import (
@@ -38,14 +32,14 @@ from ssatk.compute.eclipse_reference_events import (
     SOLAR_UMBRA_OPTICAL_RADIUS_KM,
     ReferenceDefinition,
     ReferenceEvent,
+    RP_KM,
     angular_circle_visible_fraction,
     build_reference_event,
+    center_visibility_and_separation,
     build_solar_local_event,
     contact_aware_jd,
     itrf_surface_point,
     lunar_reference_state,
-    reference_gcrf_to_itrf_km,
-    reference_itrf_to_gcrf_km,
     solar_besselian_state,
     solar_local_contact_aware_jd,
     solar_local_contacts,
@@ -146,92 +140,11 @@ def _event_selection_metadata(selection: BackendSelection) -> dict[str, object]:
         "state_source": selection.selected,
         "ephemeris_backend": selection.ephemeris_backend,
         "frame_backend": selection.frame_backend,
-        "strict_backend": selection.strict,
-        "backend_fallback_reason": selection.fallback_reason or "",
-        "time_input_pipeline": selection.time_input,
-        "runtime_capabilities": selection.capabilities.to_dict(portable=True),
         "moon_orientation_backend": (
-            "llnl-ssapy DE440 binary lunar PCK"
-            if selection.selected in {"ssapy", "ssapy-core"}
-            else "NAIF IAU_MOON 2009 text-PCK fallback"
+            "SSAPy DE440 binary lunar PCK" if selection.selected == "ssapy"
+            else "NAIF IAU_MOON 2009 rotation model"
         ),
     }
-
-
-def backend_selection_from_event(event: ReferenceEvent) -> BackendSelection:
-    """Reconstruct the selected backend from immutable event provenance.
-
-    Rendering an already-built event must not re-probe the machine or silently
-    change state drivers.  This is especially important for serialized events,
-    worker processes, and tests using an injected SSAPy-compatible provider.
-    """
-    metadata = event.metadata
-    caps_dict = dict(metadata.get("runtime_capabilities", {}))
-    defaults = RuntimeCapabilities(
-        llnl_ssapy_importable=False, llnl_ssapy_version=None,
-        astropy_importable=False, astropy_version=None,
-        ssapy_ephemeris_healthy=False, ssapy_ephemeris_error="not recorded",
-        ssatk_importable=False, ssatk_version=None,
-        toolkit_transform_healthy=False, toolkit_transform_error="not recorded",
-    )
-    caps = RuntimeCapabilities(**{
-        field: caps_dict.get(field, getattr(defaults, field))
-        for field in defaults.__dataclass_fields__
-    })
-    requested = str(metadata.get("backend_requested", "reference"))
-    selected = str(metadata.get("state_source", "reference"))
-    return BackendSelection(
-        requested=requested,
-        selected=selected,
-        ephemeris_backend=str(metadata.get("ephemeris_backend", event.backend)),
-        frame_backend=str(metadata.get("frame_backend", event.frame)),
-        strict=bool(metadata.get("strict_backend", requested in {"ssapy", "ssapy-core"})),
-        fallback_reason=str(metadata.get("backend_fallback_reason", "")) or None,
-        time_input=str(metadata.get("time_input_pipeline", "not recorded")),
-        capabilities=caps,
-    )
-
-
-def _reference_gcrf_to_itrf_km(points_gcrf_km, jd_utc) -> np.ndarray:
-    """Reference GCRF-to-ITRF transform with precession and nutation."""
-    return reference_gcrf_to_itrf_km(points_gcrf_km, jd_utc)
-
-
-def _reference_itrf_to_gcrf_km(points_itrf_km, jd_utc) -> np.ndarray:
-    """Inverse reference transform with precession and nutation."""
-    return reference_itrf_to_gcrf_km(points_itrf_km, jd_utc)
-
-
-def _selection_gcrf_to_itrf_km(selection: BackendSelection, points, jd_utc) -> np.ndarray:
-    if selection.selected == "ssapy":
-        return toolkit_gcrf_to_itrf_km(points, jd_utc)
-    if selection.selected == "ssapy-core":
-        return astropy_gcrf_to_itrf_km(points, jd_utc)
-    return _reference_gcrf_to_itrf_km(points, jd_utc)
-
-
-def _selection_itrf_to_gcrf_km(selection: BackendSelection, points, jd_utc) -> np.ndarray:
-    if selection.selected == "ssapy":
-        return toolkit_itrf_to_gcrf_km(points, jd_utc)
-    if selection.selected == "ssapy-core":
-        return astropy_itrf_to_gcrf_km(points, jd_utc)
-    return _reference_itrf_to_gcrf_km(points, jd_utc)
-
-
-def event_gcrf_to_itrf_km(event: ReferenceEvent, points, jd_utc) -> np.ndarray:
-    """Transform with the immutable frame backend recorded on ``event``.
-
-    No runtime capability probe or fallback occurs here.  Strict SSAPy and
-    SSAPy-core events therefore remain strict throughout rendering, while a
-    reference event always uses the same Astropy frame chain rather than
-    switching to a less accurate sidereal-angle-only transform.
-    """
-    return _selection_gcrf_to_itrf_km(backend_selection_from_event(event), points, jd_utc)
-
-
-def event_itrf_to_gcrf_km(event: ReferenceEvent, points, jd_utc) -> np.ndarray:
-    """Inverse transform owned by the backend recorded on ``event``."""
-    return _selection_itrf_to_gcrf_km(backend_selection_from_event(event), points, jd_utc)
 
 
 def _interpolate_serialized_positions(event: ReferenceEvent, jd_utc: float) -> tuple[np.ndarray, np.ndarray]:
@@ -266,7 +179,6 @@ def _interpolate_serialized_positions(event: ReferenceEvent, jd_utc: float) -> t
 
 def resample_event(event: ReferenceEvent, jd_utc: Sequence[float]) -> ReferenceEvent:
     """Return the same immutable event evaluated on a new in-range timeline."""
-    from ssatk.compute.eclipse_reference_events import angular_circle_visible_fraction, R_MOON_MEAN_KM
     values = np.asarray(jd_utc, dtype=float).reshape(-1)
     positions = [_interpolate_serialized_positions(event, float(value))
                  if bool(event.metadata.get("dynamic_event", False))
@@ -274,22 +186,12 @@ def resample_event(event: ReferenceEvent, jd_utc: Sequence[float]) -> ReferenceE
                  for value in values]
     sun = np.asarray([item[0] for item in positions])
     moon = np.asarray([item[1] for item in positions])
-    visible, separation = [], []
-    for sun_i, moon_i in zip(sun, moon):
-        if event.mode == "solar":
-            ds, dm = float(np.linalg.norm(sun_i)), float(np.linalg.norm(moon_i))
-            sep = math.acos(np.clip(np.dot(sun_i/ds, moon_i/dm), -1.0, 1.0))
-            visible.append(float(angular_circle_visible_fraction(
-                math.asin(R_MOON_MEAN_KM/dm), math.asin(R_SUN_KM/ds), sep)))
-            separation.append(math.degrees(sep))
-        else:
-            to_earth, to_sun = -moon_i, sun_i-moon_i
-            de, ds = float(np.linalg.norm(to_earth)), float(np.linalg.norm(to_sun))
-            sep = math.acos(np.clip(np.dot(to_earth/de, to_sun/ds), -1.0, 1.0))
-            visible.append(float(angular_circle_visible_fraction(
-                math.asin(RE_KM*1.01/de), math.asin(R_SUN_KM/ds), sep)))
-            separation.append(math.degrees(math.pi-sep))
-    return replace(event, jd=values, sun_km=sun, moon_km=moon,
+    visible, separation = (
+        solar_visibility_and_separation(values, sun, moon) if event.mode == "solar"
+        else center_visibility_and_separation("lunar", sun, moon)
+    )
+    # event_positions_gcrf returns GCRF even for ITRF-stored reference solar states.
+    return replace(event, jd=values, sun_km=sun, moon_km=moon, frame="GCRF",
                    center_visibility=np.asarray(visible), separation_deg=np.asarray(separation))
 
 
@@ -298,16 +200,14 @@ def event_positions_gcrf(event: ReferenceEvent, jd_utc: float) -> tuple[np.ndarr
     if bool(event.metadata.get("dynamic_event", False)):
         return _interpolate_serialized_positions(event, float(jd_utc))
     source = str(event.metadata.get("state_source", "reference"))
-    if source in {"ssapy", "ssapy-core"}:
-        ephem = ephemeris_positions([float(jd_utc)], backend="ssapy")
-        return ephem.sun_gcrf_km[0], ephem.moon_gcrf_km[0]
+    if source == "ssapy":
+        moon, sun = ssapy_ephemeris_positions_km([float(jd_utc)])
+        return sun[0], moon[0]
 
     if event.mode == "solar":
         state = solar_besselian_state(float(jd_utc))
         points = np.asarray([state.sun_itrf_km, state.moon_itrf_km], dtype=float)
-        gcrf = event_itrf_to_gcrf_km(
-            event, points, np.asarray([jd_utc, jd_utc], dtype=float)
-        )
+        gcrf = itrf_to_gcrf_km(points, float(jd_utc))
         return np.asarray(gcrf[0], dtype=float), np.asarray(gcrf[1], dtype=float)
     state = lunar_reference_state(float(jd_utc))
     return np.asarray(state.sun_gcrf_km, dtype=float), np.asarray(state.moon_gcrf_km, dtype=float)
@@ -342,28 +242,31 @@ def _observer_visibility(
     return visible, math.degrees(separation)
 
 
-def _lunar_center_visibility(
-    moon_gcrf_km: np.ndarray,
-    sun_gcrf_km: np.ndarray,
-    effective_earth_radius_km: float,
-) -> tuple[float, float]:
-    to_earth = -np.asarray(moon_gcrf_km, dtype=float)
-    to_sun = np.asarray(sun_gcrf_km, dtype=float)-moon_gcrf_km
-    de = float(np.linalg.norm(to_earth))
-    ds = float(np.linalg.norm(to_sun))
-    separation = math.acos(np.clip(np.dot(_unit(to_earth), _unit(to_sun)), -1.0, 1.0))
-    earth_ang = math.asin(np.clip(effective_earth_radius_km/de, 0.0, 1.0))
-    sun_ang = math.asin(np.clip(R_SUN_KM/ds, 0.0, 1.0))
-    visible = float(angular_circle_visible_fraction(earth_ang, sun_ang, separation))
-    # Lunar plots conventionally report offset from the anti-solar shadow axis.
-    shadow_offset = math.degrees(math.pi-separation)
-    return visible, shadow_offset
+def solar_visibility_and_separation(times, sun_km, moon_km, *, observer_itrf_km=None):
+    """Visible solar fraction and Sun-Moon separation seen from the ground.
+
+    A fixed observer is used when ``observer_itrf_km`` is given; otherwise each
+    state is seen from the point where the shadow axis meets the WGS-84
+    surface, or from Earth's center while the axis misses Earth.
+    """
+    visible, separation = [], []
+    for value, sun_i, moon_i in zip(np.asarray(times, dtype=float), sun_km, moon_km):
+        if observer_itrf_km is not None:
+            observer_gcrf = itrf_to_gcrf_km(observer_itrf_km, float(value))
+        else:
+            moon_itrf, sun_itrf = gcrf_to_itrf_km(np.asarray([moon_i, sun_i]), float(value))
+            hit_itrf = shadow_axis_surface_point(moon_itrf, sun_itrf, target_axes_km=(RE_KM, RE_KM, RP_KM))
+            observer_gcrf = np.zeros(3) if hit_itrf is None else itrf_to_gcrf_km(hit_itrf, float(value))
+        vis, sep = _observer_visibility(np.asarray(observer_gcrf), moon_i, sun_i)
+        visible.append(vis)
+        separation.append(sep)
+    return np.asarray(visible), np.asarray(separation)
 
 
 def build_event(
     kind: str | ReferenceDefinition = "solar",
     *,
-    backend: str = "auto",
+    backend: str = "ssapy",
     n_frames: int = 121,
     jd: Sequence[float] | None = None,
     solar_scope: str = "global",
@@ -374,22 +277,16 @@ def build_event(
     Parameters
     ----------
     backend
-        ``reference`` uses the validated NASA/GSFC reconstruction.
-        ``auto`` selects a healthy full LLNL runtime, then SSAPy core with
-        Astropy frames, then the reference state.
-        ``ssapy`` is fail-fast and requires both LLNL SSAPy and Toolkit.
-        ``ssapy-core`` is fail-fast and requires SSAPy ephemerides; Astropy is
-        used for terrestrial frames.
+        ``ssapy`` evaluates SSAPy DE430 Sun/Moon states at every sample;
+        ``reference`` replays the NASA/GSFC Besselian elements (solar) or
+        published circumstances (lunar).
     solar_scope
         ``local`` uses the NASA greatest-eclipse site C1-C4 timeline;
         ``global`` uses P1-P4.
     """
     definition = _definition(kind)
-    scope = str(solar_scope).lower()
-    if scope not in {"global", "local"}:
-        raise ValueError("solar_scope must be 'global' or 'local'")
     selection = resolve_backend(backend)
-    local_solar = definition.mode == "solar" and scope == "local"
+    local_solar = definition.mode == "solar" and str(solar_scope).lower() == "local"
     observer_site = _normalize_observer(observer)
     if local_solar and observer_site is None:
         observer_site = _ObserverSpec(
@@ -453,72 +350,25 @@ def build_event(
     else:
         times = np.asarray(jd, dtype=float)
 
-    ephem = ephemeris_positions(times, backend="ssapy")
-    sun = np.asarray(ephem.sun_gcrf_km, dtype=float)
-    moon = np.asarray(ephem.moon_gcrf_km, dtype=float)
-    visible: list[float] = []
-    separation: list[float] = []
-
+    moon, sun = ssapy_ephemeris_positions_km(times)
     reference = build_reference_event(definition, jd=times)
-    reference_sun = []
-    reference_moon = []
-    for value in times:
-        rs, rm = event_positions_gcrf(
-            replace(reference, metadata={**dict(reference.metadata), "state_source": "reference"}),
-            float(value),
-        )
-        reference_sun.append(rs)
-        reference_moon.append(rm)
-    reference_sun_arr = np.asarray(reference_sun)
-    reference_moon_arr = np.asarray(reference_moon)
-
     if definition.mode == "solar":
-        if local_solar:
-            assert observer_site is not None
-        fixed_observer_itrf = itrf_surface_point(
+        observer_itrf = itrf_surface_point(
             observer_site.latitude_deg if observer_site is not None else SOLAR_GREATEST_SITE_LAT_DEG,
             observer_site.longitude_east_deg if observer_site is not None else SOLAR_GREATEST_SITE_LON_EAST_DEG,
             observer_site.elevation_km if observer_site is not None else 0.0,
         )
-        for value, sun_i, moon_i in zip(times, sun, moon):
-            if local_solar:
-                observer_gcrf = _selection_itrf_to_gcrf_km(
-                    selection, fixed_observer_itrf, float(value)
-                )
-            else:
-                moon_itrf, sun_itrf = _selection_gcrf_to_itrf_km(
-                    selection,
-                    np.asarray([moon_i, sun_i], dtype=float),
-                    np.asarray([value, value], dtype=float),
-                )
-                hit_itrf = shadow_axis_surface_point(
-                    moon_itrf, sun_itrf, target_axes_km=(RE_KM, RE_KM, 6_356.752314245),
-                )
-                hit = (
-                    None if hit_itrf is None else
-                    _selection_itrf_to_gcrf_km(selection, hit_itrf, float(value))
-                )
-                observer_gcrf = np.zeros(3) if hit is None else np.asarray(hit, dtype=float)
-            vis, sep = _observer_visibility(np.asarray(observer_gcrf), moon_i, sun_i)
-            visible.append(vis)
-            separation.append(sep)
+        visible_arr, separation_arr = solar_visibility_and_separation(
+            times, sun, moon, observer_itrf_km=observer_itrf if local_solar else None,
+        )
     else:
-        enlargement = float(reference.metadata.get("danjon_shadow_enlargement", 1.02))
-        effective_radius = RE_KM*enlargement
-        for sun_i, moon_i in zip(sun, moon):
-            vis, sep = _lunar_center_visibility(moon_i, sun_i, effective_radius)
-            visible.append(vis)
-            separation.append(sep)
+        visible_arr, separation_arr = center_visibility_and_separation("lunar", sun, moon)
 
     metadata = dict(reference.metadata)
     metadata.update(_event_selection_metadata(selection))
     metadata.update({
         "solar_scope": "local" if local_solar else "global",
         "reference_contact_scaffold": definition.source_label,
-        "ssapy_sun_reference_rms_km": float(np.sqrt(np.mean(np.sum((sun-reference_sun_arr)**2, axis=1)))),
-        "ssapy_moon_reference_rms_km": float(np.sqrt(np.mean(np.sum((moon-reference_moon_arr)**2, axis=1)))),
-        "ssapy_sun_reference_max_km": float(np.max(np.linalg.norm(sun-reference_sun_arr, axis=1))),
-        "ssapy_moon_reference_max_km": float(np.max(np.linalg.norm(moon-reference_moon_arr, axis=1))),
     })
     if local_solar:
         assert observer_site is not None
@@ -543,13 +393,9 @@ def build_event(
         jd=np.asarray(times, dtype=float),
         moon_km=moon,
         sun_km=sun,
-        frame="GCRF (LLNL SSAPy DE430 state)",
-        backend=(
-            "llnl-ssapy/DE430 + ssapy-toolkit"
-            if selection.selected == "ssapy"
-            else "llnl-ssapy/DE430 + Astropy frames"
-        ),
-        center_visibility=np.asarray(visible, dtype=float),
-        separation_deg=np.asarray(separation, dtype=float),
+        frame="GCRF",
+        backend=selection.ephemeris_backend,
+        center_visibility=visible_arr,
+        separation_deg=separation_arr,
         metadata=metadata,
     )

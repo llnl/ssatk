@@ -129,7 +129,7 @@ def iau_moon_attitude(jd_utc: float) -> LunarAttitude:
 
 def moon_attitude_for_event(event, jd_utc: float) -> LunarAttitude:
     selected = str(event.metadata.get("state_source", "reference"))
-    if selected in {"ssapy", "ssapy-core"}:
+    if selected == "ssapy":
         from ssatk.compute.eclipse_runtime import ssapy_body_to_gcrf_matrices
 
         matrix = np.asarray(ssapy_body_to_gcrf_matrices(float(jd_utc), "moon"), dtype=float)
@@ -137,37 +137,7 @@ def moon_attitude_for_event(event, jd_utc: float) -> LunarAttitude:
         return LunarAttitude(
             jd_utc=float(jd_utc),
             body_to_gcrf=matrix,
-            source="LLNL SSAPy DE440 Moon principal-axis orientation",
+            source="SSAPy DE440 Moon principal-axis orientation",
             time_argument="UTC JD -> Astropy GPS seconds -> SSAPy MoonOrientation",
         )
     return iau_moon_attitude(float(jd_utc))
-
-
-def body_vector_longitude_latitude(body_to_gcrf: np.ndarray, vector_gcrf) -> tuple[float, float]:
-    matrix = np.asarray(body_to_gcrf, dtype=float)
-    vector = np.asarray(vector_gcrf, dtype=float).reshape(3)
-    body = matrix.T @ vector
-    norm = float(np.linalg.norm(body))
-    if norm <= 0.0 or not np.isfinite(norm):
-        raise ValueError("vector must be finite and nonzero")
-    body /= norm
-    return math.degrees(math.atan2(body[1], body[0])), math.degrees(math.asin(np.clip(body[2], -1.0, 1.0)))
-
-
-def lunar_subpoints(event, jd_utc: float, sun_gcrf_km, moon_gcrf_km) -> dict[str, float | str | None]:
-    attitude = moon_attitude_for_event(event, jd_utc)
-    moon = np.asarray(moon_gcrf_km, dtype=float)
-    sun = np.asarray(sun_gcrf_km, dtype=float)
-    earth_lon, earth_lat = body_vector_longitude_latitude(attitude.body_to_gcrf, -moon)
-    sun_lon, sun_lat = body_vector_longitude_latitude(attitude.body_to_gcrf, sun - moon)
-    return {
-        "source": attitude.source,
-        "time_argument": attitude.time_argument,
-        "subearth_lon_deg": float(earth_lon),
-        "subearth_lat_deg": float(earth_lat),
-        "subsolar_lon_deg": float(sun_lon),
-        "subsolar_lat_deg": float(sun_lat),
-        "pole_ra_deg": attitude.pole_ra_deg,
-        "pole_dec_deg": attitude.pole_dec_deg,
-        "prime_meridian_deg": attitude.prime_meridian_deg,
-    }

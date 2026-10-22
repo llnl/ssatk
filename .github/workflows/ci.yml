@@ -49,8 +49,6 @@ jobs:
           node --check ssatk/plots/satellite_viewer_smoketest.js
           node --check ssatk/plots/solar_sky.js
           node --check ssatk/plots/eclipse_cinematic_runtime.js
-          node --check ssatk/plots/eclipse_three_core.js
-          node --input-type=module --check < ssatk/plots/eclipse_three_module.min.js
 
       - name: Run tests
         run: pytest tests
@@ -65,7 +63,6 @@ jobs:
           scripts/tests/test_moon_plot_rendering.py
           scripts/tests/test_cislunar_framing.py
           scripts/tests/test_orbit_occultation.py
-          scripts/tests/test_eclipse_rendering.py
 
       - name: Run analytical validation profile
         if: matrix.python-version == '3.13'
