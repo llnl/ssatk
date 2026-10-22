@@ -428,7 +428,8 @@ def make_planet_traces(
     Parameters
     ----------
     name     : planet name (key in _COLOR_FN)
-    pos_au   : (x, y, z) heliocentric position in AU
+    pos_au   : array_like, shape (3,)
+        Heliocentric (x, y, z) position in AU.
     scale_au : multiplier on the physical radius (1.0 = physical scale)
     show_label : add a text label above the sphere
     n        : sphere mesh resolution (default 50)

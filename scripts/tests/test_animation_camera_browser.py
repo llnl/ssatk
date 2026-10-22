@@ -106,7 +106,7 @@ def test_plotly_follow_keeps_moving_target_at_image_center(tmp_path):
         np.testing.assert_allclose(centroids[0], centroids[1], rtol=0, atol=1)
 
 
-def test_browser_replaced_and_reordered_targets_do_not_leave_a_stale_subject():
+def test_browser_replaced_and_reordered_targets_do_not_leave_a_stale_subject(tmp_path):
     """C: object identity, not its display name, controls tracking and tangent reuse.
 
     Runs the shipped controller and Three.js in Chrome without a network or
@@ -114,6 +114,8 @@ def test_browser_replaced_and_reordered_targets_do_not_leave_a_stale_subject():
     direction; reordering still-visible objects must preserve the selection.
     """
     from selenium import webdriver
+    from selenium.webdriver.support.ui import WebDriverWait
+    from ssatk.plots._threejs import runtime_loader_html
     from ssatk.plots.build_satellite_viewer import text
 
     options = webdriver.ChromeOptions()
@@ -123,8 +125,10 @@ def test_browser_replaced_and_reordered_targets_do_not_leave_a_stale_subject():
     for arg in ("--headless=new", "--no-sandbox", "--disable-dev-shm-usage"):
         options.add_argument(arg)
     with webdriver.Chrome(options=options) as driver:
-        driver.get("about:blank")
-        driver.execute_script(text("three.min.js"))
+        page = tmp_path / "three.html"
+        page.write_text(f"<html><body>{runtime_loader_html()}</body></html>", encoding="utf-8")
+        driver.get(page.as_uri())
+        WebDriverWait(driver, 20).until(lambda d: d.execute_script("return !!window.THREE"))
         result = driver.execute_script(text("animation_camera.js") + """
             const shot = new SSATKAnimationCamera(new THREE.PerspectiveCamera(),
                 {mode:'chase',target:0,elevation:25,azimuth:35,turns:1},[0,0,1],10);

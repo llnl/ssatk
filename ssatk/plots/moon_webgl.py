@@ -62,6 +62,7 @@ is 0 deg selenographic longitude, matching the texture. Pass
 
 from __future__ import annotations
 
+from ssatk.plots._threejs import RUNTIME_FILES, runtime_loader_html
 from ssatk.plots.rendering import is_low_spec
 
 from ssatk.plots.rendering import _with_low_spec
@@ -102,23 +103,17 @@ def cache_dir():
     return os.path.join(os.path.expanduser("~"), ".ssatk", "moon")
 
 
-_THREE_FILES = ("three.min.js", "OrbitControls.js")
-
-
 def ensure_three(directory=None):
-    """Return local URLs for the packaged three.js runtime."""
-    d = os.path.expanduser(directory) if directory else cache_dir()
+    """Return served URLs for the packaged three.js runtime (see ``_threejs``).
+
+    ``directory`` is accepted for compatibility; the runtime always comes from
+    the installed package.
+    """
     urls = {}
-    for name in _THREE_FILES:
-        local = os.path.join(d, name)
-        packaged = os.path.join(os.path.dirname(__file__), name)
-        if not os.path.exists(local) and os.path.exists(packaged):
-            local = packaged
-        if not os.path.exists(local):
-            raise FileNotFoundError(
-                f"moon_webgl: missing packaged runtime {name}"
-            )
-        urls[name] = f"/runtime/{name}" if local == packaged else f"/cache/{name}"
+    for name in RUNTIME_FILES:
+        if not os.path.exists(os.path.join(os.path.dirname(__file__), name)):
+            raise FileNotFoundError(f"moon_webgl: missing packaged runtime {name}")
+        urls[name] = f"/runtime/{name}"
     return urls
 
 
@@ -386,9 +381,10 @@ _HTML = """<!DOCTYPE html>
   </div>
 </aside>
 
-{three_script}
-{orbit_script}
-<script>
+<script type="text/x-ssatk-classic">
+// three.js applies sRGB colour management (r152+); the Moon shading below was
+// tuned without it, so colours and textures pass through unconverted.
+THREE.ColorManagement.enabled = false;
 const LOW_SPEC = {low_spec};
 const META   = {meta};
 const ORBITS = {orbit};
@@ -428,6 +424,7 @@ camera.up.set(0,0,1);
 
 const renderer = new THREE.WebGLRenderer({canvas:document.getElementById('c'),
                                           antialias:true});
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 
@@ -1170,7 +1167,9 @@ addEventListener('resize', () => {
 
   renderer.render(scene, camera);
 })(performance.now());
-</script></body></html>
+</script>
+{three_loader}
+</body></html>
 """
 
 
@@ -1384,8 +1383,8 @@ def _resolve_orbit_positions(r, t, r_frame, orbit, propagator,
     })]
 
 
-def _viewer_page_assets(directory, runtime_urls, embed_assets):
-    """Build script tags and texture URLs for served or portable HTML."""
+def _viewer_page_assets(directory, embed_assets):
+    """Build the three.js loader and texture URLs for served or portable HTML."""
     texture_names = (
         "moon_albedo.jpg",
         "moon_normal.png",
@@ -1397,30 +1396,7 @@ def _viewer_page_assets(directory, runtime_urls, embed_assets):
     if is_low_spec():
         texture_names = ()
     if not embed_assets:
-        return (
-            f'<script src="{runtime_urls["three.min.js"]}"></script>',
-            f'<script src="{runtime_urls["OrbitControls.js"]}"></script>',
-            {name: f"cache/{name}" for name in texture_names},
-        )
-
-    runtime_paths = {}
-    for name in _THREE_FILES:
-        local = os.path.join(directory, name)
-        if not os.path.exists(local):
-            packaged = os.path.join(os.path.dirname(__file__), name)
-            if os.path.exists(packaged):
-                local = packaged
-        if not os.path.exists(local):
-            raise FileNotFoundError(
-                f"moon_webgl: portable export needs local {name}; "
-                "install the package asset or provide a cached runtime"
-            )
-        runtime_paths[name] = local
-
-    def inline_script(path):
-        with open(path, encoding="utf-8") as handle:
-            source = handle.read().replace("</script>", "<\\/script>")
-        return f"<script>\n{source}\n</script>"
+        return runtime_loader_html(base_url="/runtime"), {name: f"cache/{name}" for name in texture_names}
 
     asset_urls = {}
     for name in texture_names:
@@ -1429,12 +1405,7 @@ def _viewer_page_assets(directory, runtime_urls, embed_assets):
         with open(path, "rb") as handle:
             encoded = base64.b64encode(handle.read()).decode("ascii")
         asset_urls[name] = f"data:{mime};base64,{encoded}"
-
-    return (
-        inline_script(runtime_paths["three.min.js"]),
-        inline_script(runtime_paths["OrbitControls.js"]),
-        asset_urls,
-    )
+    return runtime_loader_html(), asset_urls
 
 
 def _starfield_payload(epoch=None):
@@ -1527,9 +1498,8 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
             subtitle = ("LOLA relief · Lommel-Seeliger · "
                         f"{meta['n_az']} bearing horizon shadows")
 
-    three = ensure_three(d)
-    three_script, orbit_script, asset_urls = _viewer_page_assets(
-        d, three, bool(embed_assets))
+    ensure_three()
+    three_loader, asset_urls = _viewer_page_assets(d, bool(embed_assets))
     star_epoch = t
     if star_epoch is None and orbit is not None:
         star_epoch = getattr(orbit, "t", None)
@@ -1556,8 +1526,7 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
     camera_script = Path(__file__).with_name("animation_camera.js").read_text()
     doc = _HTML
     for key, val in (("{title}", title),
-                     ("{three_script}", three_script),
-                     ("{orbit_script}", orbit_script),
+                     ("{three_loader}", three_loader),
                      ("{subtitle}", subtitle),
                      ("{meta}", json.dumps(meta)),
                      ("{orbit}", json.dumps(tracks)),
@@ -1606,7 +1575,7 @@ def _handler(html_path, cache_path):
             p = self.path.split("?", 1)[0].split("#", 1)[0]
             return p in ("/", "/index.html") or (
                 p.startswith("/cache/") and os.path.basename(p) == p[7:]
-            ) or p in {f"/runtime/{name}" for name in _THREE_FILES}
+            ) or p in {f"/runtime/{name}" for name in RUNTIME_FILES}
 
         def translate_path(self, path):
             p = path.split("?", 1)[0].split("#", 1)[0]
