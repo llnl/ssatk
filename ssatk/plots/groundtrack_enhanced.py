@@ -54,7 +54,7 @@ from matplotlib.patches import Circle
 import warnings
 
 from astropy.time import Time
-from astropy.coordinates import GCRS, ITRS, get_sun
+from astropy.coordinates import EarthLocation, GCRS, ITRS, get_sun
 import astropy.units as u
 
 from ssatk.constants import EARTH_MU_KM3_S2, EARTH_RADIUS_KM, SUN_RADIUS_KM
@@ -220,9 +220,9 @@ def _elevation_deg(sat_ecef_km, site_ecef_km, site_lat_deg, site_lon_deg):
 
 
 def _site_ecef(lat_deg, lon_deg, alt_km=0.0):
-    lat, lon = np.radians(lat_deg), np.radians(lon_deg)
-    r = RE_KM + alt_km
-    return np.array([r*np.cos(lat)*np.cos(lon), r*np.cos(lat)*np.sin(lon), r*np.sin(lat)])
+    # Site latitude is geodetic, consistent with the mapped ground track.
+    site = EarthLocation.from_geodetic(lon_deg * u.deg, lat_deg * u.deg, alt_km * u.km)
+    return np.array([coordinate.to_value(u.km) for coordinate in site.geocentric])
 
 
 # ── Continents ───────────────────────────────────────────────────────────────

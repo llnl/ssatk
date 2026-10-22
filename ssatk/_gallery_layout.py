@@ -34,6 +34,7 @@ GALLERY_GROUPS = (
         "sensor_coverage/demo_satellite_viewer",
         "orbit_visualization/demo_groundtrack_plot",
         "orbit_visualization/demo_groundtrack_enhanced",
+        "orbit_visualization/demo_groundtrack_cape_canaveral",
         "orbit_visualization/demo_moon_plot",
         "orbit_visualization/demo_moon_webgl",
         "space_environment/demo_earth_sun_plot",

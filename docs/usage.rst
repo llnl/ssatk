@@ -63,6 +63,44 @@ Figure helpers already write inside the output root's ``figures`` directory.
 Pass ``"my_plot.png"`` or an intentional subfolder such as ``"benchmarks/plot.png"``;
 do not add another ``"figures/"`` prefix.
 
+Presentation reference galleries
+--------------------------------
+
+When auditing a presentation against the runnable demos, preserve its original
+figures separately so that a historical screenshot is not mistaken for a new
+simulation. From a repository checkout, export a local PowerPoint deck with:
+
+.. code-block:: bash
+
+   python scripts/export_presentation_gallery.py \
+       --deck /path/to/presentation.pptx --output /path/to/gallery/references
+
+The standalone page preserves referenced images, animated GIFs and MP4 videos,
+deduplicates repeated media, and records slide numbers and SHA256 hashes in
+``manifest.json``. It labels these as archived source visuals, not independently
+validated simulation results. The deck and exported media remain external to
+the source repository; this command does not download or publish them.
+
+An optional ``--catalog catalog.json`` groups related visuals and links existing
+examples. Each group has ``id``, ``title``, ``media`` (exported filenames),
+``note``, and ``examples`` (objects with ``label`` and local relative ``href``).
+For example:
+
+.. code-block:: json
+
+   {"title": "Seminar figures", "groups": [
+     {"id": "groundtrack", "title": "Ground access", "media": ["image1.png"],
+      "note": "Historical figure; the linked demo uses synthetic orbit data.",
+      "examples": [{"label": "Current demo", "href": "../index.html"}]}
+   ]}
+
+The Cape Canaveral example is runnable with
+``python -m demos.orbit_visualization.demo_groundtrack_cape_canaveral``. It uses
+SSAPy's circular two-body orbit at 408 km above the WGS84 equatorial radius and
+51.6 degrees inclination, samples one period at no more than 10-second intervals,
+and plots day/night, eclipse state and access above a 10-degree elevation mask.
+It is a synthetic site-pass example, not an ISS tracking prediction.
+
 The globe demo includes two 30-second views of a synthetic Walker-delta shell:
 1,584 satellites in 72 planes, 550 km altitude and 53-degree inclination, over
 two orbital periods. These are design trajectories, not live Starlink positions.
