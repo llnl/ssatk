@@ -41,6 +41,48 @@ export), `pdf`, `video` (MP4 output), `browser`, `notebook`, `monitoring`,
   under `~/ssatk_output/figures` (override the root with `$SSATK_OUTPUT_DIR`);
   absolute paths are used as given. Caches go to `$SSATK_CACHE` when set.
 
+## Spacecraft geometry
+
+Use `ssatk.geometry.SpacecraftMesh` as the canonical geometry type; the
+`ssatk.plots.spacecraft_view.SpacecraftMesh` name is a compatibility alias.
+Vertices are body-frame metres. Mesh construction preserves the supplied
+origin and scale and does not normalize them.
+
+```python
+from ssatk.geometry import SpacecraftMesh, convert_mesh
+
+mesh = SpacecraftMesh.from_file("vehicle.obj")
+mesh = SpacecraftMesh.from_file("vehicle.step", units="mm")
+mesh.export("vehicle.obj")
+convert_mesh("vehicle.stl", "vehicle.ply", units="mm")
+```
+
+`from_file(path, scale=None, units=None, linear_deflection=.1,
+angular_deflection=.5)` reads OBJ directly. `units` accepts exactly one of
+`m`, `cm`, `mm`, `in`, or `ft`, and cannot be combined with `scale`. STL,
+PLY, OFF, GLTF, GLB, and 3MF require the optional `ssatk[mesh]` extra
+(`trimesh`). STEP, STP, IGES, and IGS require optional `ssatk[cad]`
+(`cadquery-ocp`); OpenCascade reads CAD in internal millimetres, so the
+default CAD conversion is `.001` to SI metres.
+Neither loader promises SolidWorks, Inventor, CATIA, or FBX inputs. Export
+those formats externally to neutral CAD or mesh. `export()` writes OBJ or
+trimesh mesh formats, not CAD. RGB can be retained when supplied by a backend;
+textures and PBR materials are not preserved.
+
+`mesh.to_dict()` and `SpacecraftMesh.from_dict()` use
+`ssatk.spacecraft_mesh.v1`, with `units="m"` and `frame="body"`. For dynamics,
+`SpacecraftBody.from_file(path, mass=..., inertia=..., **...)` keeps physical
+properties as explicit caller inputs; omitted inertia uses a uniform
+bounding-box estimate. Geometry import does not infer mass, inertia, material,
+optical coefficients, or self-occlusion physics.
+
+`spacecraft_view` accepts one shared `mesh=` or `body=`. `satellite_viewer`
+accepts one shared model through `mesh=`/`body=` or one model per orbit through
+`meshes=`; these choices are exclusive. Its default `mesh_scale="glyph"`
+exaggerates display size, while `"physical"` uses metre dimensions. WebGL
+presets come from the same Python presets as `spacecraft_view`; LOD glyphs are
+display-only.
+
 ## Module map
 
 | Module | Use it for |

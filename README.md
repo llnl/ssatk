@@ -14,6 +14,16 @@ state vectors to figures:
 - plotting orbits, ground tracks, eclipses, sensor coverage and the
   magnetosphere, including an interactive WebGL satellite viewer.
 
+Spacecraft geometry is represented by the canonical
+`ssatk.geometry.SpacecraftMesh`: body-frame metres are preserved exactly, with
+no automatic normalization or origin shift. `SpacecraftMesh.from_file()` reads
+OBJ directly; STL/PLY/OFF/GLTF/GLB/3MF use optional `trimesh`, while STEP/STP/
+IGES/IGS use optional OpenCascade (`cadquery-ocp`) tessellation. Use
+`SpacecraftMesh.export()` or `convert_mesh()` for OBJ and other mesh outputs;
+CAD export is not provided. Proprietary SolidWorks, Inventor, CATIA, and FBX
+files should be exported externally to a neutral CAD or mesh format. RGB may
+survive when supported by the backend; textures and PBR materials do not.
+
 ```bash
 python -m pip install ssatk
 ```
@@ -66,6 +76,8 @@ Optional extras:
 | `ssatk[static]` | Static image export of interactive figures (`kaleido`) |
 | `ssatk[video]` | MP4 output (`opencv-python`, `imageio-ffmpeg`) |
 | `ssatk[notebook]` | IPython display and ipyvolume Earth/Moon meshes |
+| `ssatk[mesh]` | Mesh import/export formats (`trimesh`) |
+| `ssatk[cad]` | Neutral CAD tessellation (`trimesh`, `cadquery-ocp`) |
 | `ssatk[pdf]` | Appending pages to existing PDF plots (`pypdf`) |
 | `ssatk[browser]` | Browser capture of HTML figures (`selenium`) |
 | `ssatk[monitoring]` | Process memory reporting (`psutil`) |
@@ -111,6 +123,7 @@ figures are written as self-contained HTML.
 | **Observables** | Lambertian and faceted brightness and visual magnitudes, Earth-shadow illumination | `ssatk.compute` |
 | **Data I/O** | CCSDS CDM (KVN 1.0) and OMM (XML 2.0), TLE/3LE parsing, HDF5/NPZ/CSV/JSON with extension-based `ssatk_save`/`ssatk_read` | `ssatk.io` |
 | **Visualization** | Four-panel orbit views, ground tracks, textured globes, cislunar dashboards, eclipse and sensor field-of-view scenes, magnetosphere and Van Allen belts, GIF/MP4 animation, and a WebGL satellite viewer that applies supplied attitude quaternions | `ssatk.plots` (`orbit_plot`, `satellite_viewer`) |
+| **Spacecraft geometry** | Body-frame mesh import/export, canonical JSON schema, Python presets, offline attitude views, and shared/per-orbit WebGL models | `ssatk.geometry` (`SpacecraftMesh`, `convert_mesh`) |
 | **Launch and propulsion** | Launch sites, gravity-turn ascent, engine catalogues, thrust-curve models | `ssatk.launch`, `ssatk.engines` |
 | **Benchmarking** | Timing dashboard and an analytical validation profile | `ssatk-benchmark` |
 

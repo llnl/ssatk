@@ -535,6 +535,28 @@ class SpacecraftBody:
             reference_area=max((facet.area for facet in facets), default=1.0),
         )
 
+    @classmethod
+    def from_file(
+        cls, path, *, mass: float, name: str | None = None,
+        inertia: ArrayLike | None = None, scale=None, units=None,
+        linear_deflection=0.1, angular_deflection=0.5, **facet_kwargs,
+    ) -> SpacecraftBody:
+        """Import geometry; mass/inertia and surface properties remain user inputs.
+
+        CAD tessellation is not a mass-property calculation or a self-shadowing
+        model. Omitted inertia uses the existing uniform bounding-box estimate.
+        """
+        from .geometry import SpacecraftMesh
+
+        mesh = SpacecraftMesh.from_file(
+            path, scale=scale, units=units, linear_deflection=linear_deflection,
+            angular_deflection=angular_deflection,
+        )
+        return cls.from_mesh(
+            vertices=mesh.vertices, faces=mesh.triangles, name=name or str(path), mass=mass,
+            inertia=inertia, **facet_kwargs,
+        )
+
 
 def rectangular_prism_inertia(mass: float, size: ArrayLike) -> np.ndarray:
     """Return diagonal inertia for a uniform rectangular prism."""
@@ -643,22 +665,11 @@ def mesh_facets(
 def load_obj_facets(path, **kwargs) -> tuple[Facet, ...]:
     """Load a Wavefront OBJ mesh as body-frame facets."""
 
-    vertices = []
-    faces = []
-    with open(path, encoding="utf-8") as handle:
-        for line in handle:
-            fields = line.strip().split()
-            if not fields or fields[0].startswith("#"):
-                continue
-            if fields[0] == "v" and len(fields) >= 4:
-                vertices.append([float(fields[1]), float(fields[2]), float(fields[3])])
-            elif fields[0] == "f" and len(fields) >= 4:
-                face = []
-                for token in fields[1:]:
-                    raw = int(token.split("/")[0])
-                    face.append(raw - 1 if raw > 0 else len(vertices) + raw)
-                faces.append(face)
-    return mesh_facets(vertices, faces, **kwargs)
+    from .geometry import SpacecraftMesh
+
+    scale = kwargs.pop("scale", 1.0)
+    mesh = SpacecraftMesh.from_obj(path, scale=scale)
+    return mesh_facets(mesh.vertices, mesh.faces, **kwargs)
 
 
 def reaction_wheel_triplet(

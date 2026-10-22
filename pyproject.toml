@@ -50,6 +50,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mesh = ["trimesh>=4.0", "lxml>=4.9"]
+cad = ["trimesh>=4.0", "lxml>=4.9", "cadquery-ocp>=7.7"]
+
 monitoring = [
   "psutil",
 ]
