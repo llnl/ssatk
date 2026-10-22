@@ -61,17 +61,17 @@ def main(make_figures=None, fast=None):
     if not make_figures:
         return outputs
 
-    # gallery-call: solar_2024_04_08_scientific_summary.png
+    # gallery-call: solar_2024_04_08_scientific_summary.png | solar_2024_04_08_greatest_interactive_3d.html
     solar_suite = render_product(RenderRequest(
         product="scientific-suite", output=figpath("eclipse/solar_2024"), event=solar, quality=quality,
     ))
     # gallery-end
-    # gallery-call: lunar_2025_03_14_scientific_summary.png
+    # gallery-call: lunar_2025_03_14_*
     lunar_suite = render_product(RenderRequest(
         product="scientific-suite", output=figpath("eclipse/lunar_2025"), event=lunar, quality=quality,
     ))
     # gallery-end
-    # gallery-call: solar_2024_04_08_32p776700N_96p797000W_full_eclipse_map.png
+    # gallery-call: solar_2024_04_08_32p776700N_96p797000W_*
     observer = render_product(RenderRequest(
         product="observer-suite", output=figpath("eclipse/solar_2024_dallas"),
         event=EventRequest(kind="solar", backend="reference", sample_count=samples,
@@ -91,7 +91,7 @@ def main(make_figures=None, fast=None):
         event=EventRequest(kind="lunar", backend="ssapy", sample_count=samples), quality=quality,
     ))
     # gallery-end
-    # gallery-call: solar_2026_08_12_scientific_summary.png
+    # gallery-call: solar_2026_08_12_*
     discovered_suite = render_product(RenderRequest(
         product="scientific-suite", output=figpath("eclipse/solar_2026_discovered"), event=discovered,
         quality=quality,
