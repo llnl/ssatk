@@ -313,14 +313,23 @@ def limb_darkened_visibility_fraction(
         return np.where(valid, result, 1.0)
 
     rho, weights = _radial_quadrature(int(quadrature_order))
-    reshape = (1,) * r_occ.ndim + (len(rho),)
-    rho_view = rho.reshape(reshape)
-    mu = np.sqrt(np.clip(1.0 - rho_view * rho_view, 0.0, 1.0))
-    radial_weight = weights.reshape(reshape) * rho_view * model.intensity(mu)
-    blocked = _blocked_ring_fraction(rho_view, q[..., None], s[..., None])
-    total_flux = np.sum(radial_weight, axis=-1)
-    visible_flux = np.sum(radial_weight * (1.0 - blocked), axis=-1)
-    result = np.where(active, visible_flux / np.maximum(total_flux, np.finfo(float).tiny), result)
+    # Split at occultation boundaries and smooth their square-root endpoints.
+    angle = np.pi*rho/2.0
+    nodes = np.sin(angle)**2
+    weights = weights*np.pi*np.sin(angle)*np.cos(angle)
+    qa, sa = q[active], s[active]
+    edges = np.stack([
+        np.zeros_like(qa), np.clip(np.abs(sa-qa), 0.0, 1.0),
+        np.clip(sa+qa, 0.0, 1.0), np.ones_like(qa),
+    ], axis=-1)
+    spans = np.diff(edges, axis=-1)
+    rings = edges[:, :-1, None] + spans[..., None]*nodes
+    mu = np.sqrt(np.clip(1.0-rings*rings, 0.0, 1.0))
+    radial_weight = weights*spans[..., None]*rings*model.intensity(mu)
+    blocked = _blocked_ring_fraction(rings, qa[:, None, None], sa[:, None, None])
+    blocked_flux = np.sum(radial_weight*blocked, axis=(-2, -1))
+    total_flux = np.sum(weights*nodes*model.intensity(np.sqrt(1.0-nodes*nodes)))
+    result[active] = 1.0-blocked_flux/total_flux
     return np.clip(np.where(valid, result, 1.0), 0.0, 1.0)
 
 

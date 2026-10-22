@@ -68,6 +68,10 @@ references:
   polar limb are predicted late.
 * The eclipse Sun matches Astropy's apparent Sun within 0.5 arcsec, and the
   reference backends match Astropy GCRS within 5 arcsec.
+* The 2024-04-08 greatest-eclipse ground point is within 0.001 deg of NASA's
+  (reference backend) and 0.03 deg (SSAPy backend).
+* Limb-darkened visible flux matches an independent adaptive radial
+  integral within 2e-7.
 
 Observer contacts are refined against the WGS-84 surface. Terrain affects the
 horizon only when the observer supplies a horizon profile.
