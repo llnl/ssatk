@@ -37,6 +37,7 @@ GALLERY_GROUPS = (
         "orbit_visualization/demo_groundtrack_cape_canaveral",
         "orbit_visualization/demo_moon_plot",
         "orbit_visualization/demo_moon_webgl",
+        "orbit_visualization/demo_cislunar_catalog",
         "space_environment/demo_earth_sun_plot",
         "space_environment/demo_solar_view_plot",
     )),
@@ -88,6 +89,7 @@ GALLERY_GROUPS = (
     GalleryGroup("environment", "Space environment",
                  "Visualize Earth's magnetic field and radiation belts.", (
         "space_environment/demo_magfield_plot",
+        "space_environment/demo_magnetosphere_external",
         "space_environment/demo_van_allen",
     )),
     GalleryGroup("analysis", "Dashboards and uncertainty",
