@@ -114,9 +114,15 @@ demo; a strict build cannot publish that failure. Re-run data preparation
 after updating an older gallery cache.
 
 The map dimensions describe the source texture, not the final figure's
-resolution. Matplotlib and Plotly surface colors still sample their specified
-mesh grids; increasing texture resolution does not increase the mesh or
-output pixel count. Raster camera views retain the full map for texel lookup.
+resolution. Shared Matplotlib gallery spheres intersect each output pixel's
+camera ray with the physical sphere and sample the full map there. This removes
+polygon edges and constant-color tiles, including during camera motion, while
+retaining the existing orbit-occultation handling. Plotly body surfaces use at
+least 360 longitude by 180 latitude cells even when a fast demo requests a
+coarser sphere. Larger requested meshes are retained. Shared Plotly bodies
+sample the full map at vertices and interpolate colors across triangles.
+Raster camera views retain the full map for texel lookup. Texture and mesh
+dimensions do not increase the output pixel count.
 The Earth source is downsampled from 21600 × 10800 to the gallery's 8K map;
 the Moon color map retains its native NASA source dimensions.
 

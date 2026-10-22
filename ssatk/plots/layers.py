@@ -28,7 +28,7 @@ layer.add_to_mpl(ax, orbit_state, traj)
 
 from __future__ import annotations
 
-from .rendering import gallery_max_textures, is_low_spec, low_spec_mode
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec, low_spec_mode
 from ._body_surfaces import BodySurface, body_mesh_plotly, body_rotation
 
 import abc
@@ -449,6 +449,9 @@ class EarthLayer(BaseLayer):
         self.low_spec = is_low_spec(low_spec)
         self.n_lat = min(n_lat, 19) if self.low_spec else n_lat
         self.n_lon = min(n_lon, 37) if self.low_spec else n_lon
+        if gallery_max_textures():
+            self.n_lat = body_mesh_resolution(self.n_lat-1, plotly=True)+1
+            self.n_lon = max(self.n_lon, 2*body_mesh_resolution(0, plotly=True)+1)
         self.radius_scale = radius_scale   # visual size multiplier; doesn't move position
         self.rotation_deg = earth_rotation_deg_from_time(time) if rotation_deg is None else float(rotation_deg)
         self._tex: Optional[np.ndarray] = None  # (H, W, 3) uint8
@@ -481,6 +484,13 @@ class EarthLayer(BaseLayer):
     def add_to_mpl(self, ax, orbit_state, traj=None, satellite=None, **kw):
         if not _HAS_MPL:
             return []
+        if gallery_max_textures():
+            angle = np.radians(self.rotation_deg)
+            rotation = np.array([[np.cos(angle), -np.sin(angle), 0.],
+                                 [np.sin(angle), np.cos(angle), 0.], [0., 0., 1.]])
+            surface = BodySurface(ax, "earth", RE_KM*self.radius_scale, rotation=rotation, zorder=1)
+            self._artists_mpl = [surface.artist]
+            return self._artists_mpl
         self._load_texture()
         X, Y, Z = self._sphere_xyz(RE_KM*self.radius_scale)
         if self._tex is not None:

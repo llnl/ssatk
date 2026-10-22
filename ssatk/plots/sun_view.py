@@ -41,7 +41,7 @@ comment above _EARTH_DAYNIGHT_COLORSCALE for details.)
 
 from __future__ import annotations
 
-from .rendering import is_low_spec, low_spec_mode
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec, low_spec_mode
 from ._body_surfaces import body_mesh_plotly, body_rotation
 
 import os
@@ -552,6 +552,9 @@ class EarthShadingLayer:
         self.radius = radius_km
         self.nu = nu
         self.nv = nv
+        if gallery_max_textures():
+            self.nv = body_mesh_resolution(nv-1, plotly=True)+1
+            self.nu = max(nu, 2*body_mesh_resolution(0, plotly=True))
         self.rotation_deg = (earth_rotation_deg_from_time(time)
                              if rotation_deg is None else float(rotation_deg))
 

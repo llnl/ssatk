@@ -122,9 +122,16 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
     ax_ground.legend(handles=legend_elements, loc="lower left", fontsize=fontsize)
 
     # ITRF 3D
-    body = ax_itrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color="blue", alpha=1.0, linewidth=0)
-    from .occultation import _register_body
-    _register_body(ax_itrf, body, np.zeros(3), EARTH_RADIUS/1e3)
+    from .rendering import gallery_max_textures
+    if gallery_max_textures():
+        from ._body_surfaces import BodySurface, body_rotation
+        epoch = float(np.asarray(t_gps[0]).reshape(-1)[0])
+        BodySurface(ax_itrf, "earth", EARTH_RADIUS/1e3,
+                    rotation=body_rotation("earth", epoch, frame="itrf"))
+    else:
+        body = ax_itrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color="blue", alpha=1.0, linewidth=0)
+        from .occultation import _register_body
+        _register_body(ax_itrf, body, np.zeros(3), EARTH_RADIUS/1e3)
     for i, (x_gt, y_gt, z_gt) in enumerate(zip(x_gts, y_gts, z_gts)):
         ax_itrf.plot(x_gt / 1e3, y_gt / 1e3, z_gt / 1e3, color=colors[i], linewidth=2.5)
         ax_itrf.scatter(x_gt[0] / 1e3, y_gt[0] / 1e3, z_gt[0] / 1e3, color=colors[i], marker="*", s=120)
@@ -136,9 +143,13 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
     ax_itrf.tick_params(axis="both", labelsize=fontsize - 2)
 
     # GCRF 3D
-    body = ax_gcrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color="blue", alpha=1.0, linewidth=0)
-    from .occultation import _register_body
-    _register_body(ax_gcrf, body, np.zeros(3), EARTH_RADIUS/1e3)
+    if gallery_max_textures():
+        BodySurface(ax_gcrf, "earth", EARTH_RADIUS/1e3,
+                    rotation=body_rotation("earth", epoch, frame="gcrf"))
+    else:
+        body = ax_gcrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color="blue", alpha=1.0, linewidth=0)
+        from .occultation import _register_body
+        _register_body(ax_gcrf, body, np.zeros(3), EARTH_RADIUS/1e3)
     for i, r_i in enumerate(r):
         x, y, z = r_i[:, 0], r_i[:, 1], r_i[:, 2]
         ax_gcrf.plot(x / 1e3, y / 1e3, z / 1e3, color=colors[i], linewidth=2.5)

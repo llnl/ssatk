@@ -219,6 +219,14 @@ def _scatter_projected(ax, points, *, view, color, marker, label, size=42, zorde
 
 def _plot_earth(ax, view="xy"):
     radius_km = EARTH_RADIUS / 1e3
+    from ssatk.plots.rendering import gallery_max_textures
+    if gallery_max_textures():
+        from ssatk.plots._body_surfaces import BodySurface, body_disc
+        if view == "3d":
+            BodySurface(ax, "earth", radius_km, zorder=0)
+        else:
+            body_disc(ax, "earth", radius_km, view=view)
+        return
     if view == "3d":
         theta = np.linspace(0.0, 2.0 * np.pi, 48)
         phi = np.linspace(0.0, np.pi, 24)

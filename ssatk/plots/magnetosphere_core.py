@@ -16,7 +16,7 @@ minimal environment.
 
 from __future__ import annotations
 
-from .rendering import gallery_max_textures, is_low_spec
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec
 
 
 from pathlib import Path
@@ -278,6 +278,9 @@ def _build_earth_mesh(texture_path, n_lon=480, n_lat=240, sun_shading=False,
     """
     if is_low_spec():
         n_lon, n_lat = min(n_lon, 37), min(n_lat, 19)
+    elif gallery_max_textures():
+        n_lat = body_mesh_resolution(n_lat-1, plotly=True)+1
+        n_lon = max(n_lon, 2*body_mesh_resolution(0, plotly=True)+1)
     a, b = WGS84_A_KM, WGS84_B_KM
     e2   = 1.0 - (b * b) / (a * a)
 

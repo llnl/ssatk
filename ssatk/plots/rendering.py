@@ -21,6 +21,17 @@ def gallery_max_textures():
     return _os.environ.get("SSATK_GALLERY_MAX_TEXTURES", "") == "1"
 
 
+def body_mesh_resolution(latitude_cells, *, plotly=False):
+    """Keep fast gallery demos above the body-surface geometry floor.
+
+    Matplotlib sorts individual polygons on the CPU; Plotly can use a denser
+    GPU mesh. Larger caller-supplied meshes are retained in either backend.
+    """
+    if gallery_max_textures():
+        return max(latitude_cells, 180 if plotly else 90)
+    return latitude_cells
+
+
 def is_low_spec(low_spec=None):
     """Resolve presentation settings, with full textures required in galleries."""
     value = _override.get() if low_spec is None else low_spec
