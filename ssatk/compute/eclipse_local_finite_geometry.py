@@ -34,11 +34,12 @@ import numpy as np
 from ssatk.compute.eclipse_reference_events import (
     EARTH_AXES_KM,
     R_MOON_MEAN_KM,
-    solar_central_line_wgs84,
     _unit,
 )
 from ssatk.compute.eclipse_raytrace import (
     ReferenceRayBundle,
+    _first_earth_hit,
+    _first_earth_hit_gcrf,
 )
 
 
@@ -121,9 +122,14 @@ def shadow_axis_world(bundle: ReferenceRayBundle, jd_value: float) -> np.ndarray
     if bundle.mode == "solar":
         occluder = np.asarray(bundle.moon_center_km, dtype=float)
         start = occluder + axis * float(bundle.solid_occluder_radius_km)
-        center = solar_central_line_wgs84(float(jd_value))
-        if center is not None:
-            end = np.asarray(center[2], dtype=float)
+        # Reference solar bundles are Earth-fixed; SSAPy and discovered
+        # events are GCRF, so the ellipsoid is solved in the bundle's frame.
+        hit = (
+            _first_earth_hit(start, axis) if bundle.frame.startswith("WGS84")
+            else _first_earth_hit_gcrf(start, axis, float(jd_value))
+        )
+        if hit is not None:
+            end = np.asarray(hit[1], dtype=float)
         else:
             distance = max(
                 float(np.dot(bundle.earth_center_km - start, axis)), 0.0

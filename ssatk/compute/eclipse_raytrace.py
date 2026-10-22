@@ -383,7 +383,7 @@ def trace_reference_rays(kind: str | ReferenceDefinition, jd_utc: float,
             origin, direction, moon, target_radius
         )
         occ_name, target_name = "Earth", "Moon"
-        frame = "GCRF-like apparent equatorial"
+        frame = "GCRF"
         metadata = {
             "solid_earth_radius_km": RE_KM,
             "danjon_effective_earth_radius_km": LUNAR_DANJON_EARTH_RADIUS_KM,

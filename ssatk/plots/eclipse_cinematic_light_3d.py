@@ -33,6 +33,7 @@ import numpy as np
 from ssatk.compute.eclipse_brightness import illumination_fraction, irradiance_fraction
 from ssatk.compute.eclipse_photometry_lut import build_delta_lut
 from ssatk.plots._textures import earth_texture_path, moon_texture_path
+from ssatk.plots._threejs import import_map_html
 from ssatk.compute.eclipse_core import resolve_limb_darkening
 from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km
 from ssatk.compute.eclipse_state import build_event as build_backend_event, event_moon_body_to_gcrf
@@ -63,8 +64,7 @@ from ssatk.compute.eclipse_reference_events import (
 from ssatk.compute.eclipse_raytrace import LUNAR_DANJON_EARTH_RADIUS_KM
 
 UNIT_KM = 1_000.0
-THREE_DIR = Path(__file__).resolve().parent
-RUNTIME_JS = THREE_DIR / "eclipse_cinematic_runtime.js"
+RUNTIME_JS = Path(__file__).resolve().parent / "eclipse_cinematic_runtime.js"
 
 # A stable Earth-centered reference is useful in the system and Earth views:
 # it gives the body scale an orbital context without pretending to be part of
@@ -152,10 +152,6 @@ def _definition(kind: str | ReferenceDefinition | ReferenceEvent) -> ReferenceDe
     return SOLAR_2024 if str(kind).lower().startswith("solar") else LUNAR_2025
 
 
-def _data_uri(path: Path, mime: str) -> str:
-    return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
-
-
 def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str, dict[str, object]]:
     """Embed a texture as an in-memory WebP derivative of the installed PNG/JPEG."""
     from PIL import Image
@@ -170,24 +166,6 @@ def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str,
         image.save(buffer, format="WEBP", quality=int(quality), method=6)
     uri = "data:image/webp;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
     return uri, {"source_name": Path(path).name, "embedded_bytes": len(buffer.getvalue())}
-
-
-def _three_module_uri() -> str:
-    module_path = THREE_DIR / "eclipse_three_module.min.js"
-    core_path = THREE_DIR / "eclipse_three_core.js"
-    if not module_path.is_file() or not core_path.is_file():
-        raise FileNotFoundError(
-            "Vendored Three.js runtime is incomplete; expected flat eclipse_three_* assets in ssatk/plots"
-        )
-    core_uri = _data_uri(core_path, "text/javascript")
-    module = module_path.read_text(encoding="utf-8")
-    old = 'from"./three.core.min.js"'
-    if old not in module:
-        raise RuntimeError("Unexpected Three.js module layout; core import not found")
-    module = module.replace(old, f'from"{core_uri}"')
-    return "data:text/javascript;base64," + base64.b64encode(
-        module.encode("utf-8")
-    ).decode("ascii")
 
 
 def _rotation_rows_itrf_to_scene(state: PublicPeakState) -> np.ndarray:
@@ -754,7 +732,7 @@ def build_cinematic_payload(
 
 
 def _page_html(payload: dict[str, object]) -> str:
-    three_uri = _three_module_uri()
+    three_import_map = import_map_html()
     runtime = RUNTIME_JS.read_text(encoding="utf-8")
     earth_uri, earth_asset = _texture_uri(earth_texture_path(), max_width=4096, quality=88)
     moon_uri, moon_asset = _texture_uri(moon_texture_path(), max_width=4096, quality=90)
@@ -817,8 +795,9 @@ h1{{font-size:20px;line-height:1.15;margin:0 0 5px}}.subtitle{{font-size:12.5px;
 <div class="section"><h2>Simulation qualification</h2><div class="legend">Earth and Moon are fully opaque. The visible beams are quadrature samples distributed across the complete apparent solar disc; their weights sum to one. The body shader evaluates either geometric uniform-disc overlap or the limb-darkened flux model independently at every fragment, using an exact analytic overlap plus a high-resolution precomputed radiometric correction texture. Contact geometry remains uniform-disc and is not changed by the display photometry selection. Beam thickness, bloom, and flare size are explanatory display aids. The atmosphere, corona, and beams are the only translucent layers. A dedicated body-depth and body-mask pass prevents them from appearing through a solid body.</div></div>
 </div></div>
 <div id="bottom"><button id="play" aria-label="Play or pause">Play</button><input id="timeline" aria-label="Elapsed physical event time" type="range" min="0" value="0" step="1"><span id="timeLabel"></span><b id="phase"></b></div>
+{three_import_map}
 <script type="module">
-import * as THREE from "{three_uri}";
+import * as THREE from "three";
 const CONFIG={payload_json};
 const EARTH_TEXTURE_URI="{earth_uri}";
 const MOON_TEXTURE_URI="{moon_uri}";
