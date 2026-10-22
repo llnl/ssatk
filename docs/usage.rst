@@ -93,12 +93,14 @@ Run ``python -m demos.orbit_visualization.demo_cislunar_catalog`` to regenerate
 four distinct morphology candidates from the
 `public LLNL cislunar catalog <https://gdo-cislunar.llnl.gov/>`_: L4-like,
 L5-like, retrograde lunar (DRO-like), and prograde lunar. Each is screened over
-4,321 hourly GCRF position/velocity samples (180 days). The atlas shows all
-180 days for L4/L5 and 30 days for the faster lunar loops; the evidence figure
-shows the complete screening interval. Earth--Moon rotating coordinates use
-instantaneous Earth--Moon distance units (LD). Body radii and texture orientations
-are shown at the published 1980-01-01 TT start epoch. The epoch and hourly cadence
-are explicit in provenance because these HDF5 arrays lack timestamps.
+4,321 hourly GCRF position/velocity samples (180 days). All four complete arcs
+appear together in one large dark scene rendered by
+``ssatk.plots.orbit_plot(view="cislunar_3d", c="black")``, with a family legend
+and mapped Earth/Moon bodies at physical scale. The plot uses Moon-centered
+Earth--Moon rotating axes in SSATK's GEO distance units; classification metrics
+in the provenance use instantaneous Earth--Moon distance units (LD). Body map
+orientations use the published 1980-01-01 TT start epoch. The epoch and hourly
+cadence are explicit in provenance because these HDF5 arrays lack timestamps.
 
 These are finite-arc morphology labels, not certified periodic families or
 stability claims. The selection streams one million descriptive records,
