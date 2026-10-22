@@ -24,6 +24,9 @@ def _try_load_earth():
         from ssatk.plots.plotutils import load_earth_file
         return load_earth_file()
     except (FileNotFoundError, OSError):
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
         return None
 
 def _ensure_ffmpeg_path():

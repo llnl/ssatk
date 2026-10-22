@@ -855,7 +855,7 @@ function buildEarth() {
   // Anisotropic filtering retains detail at grazing angles near the limb.
   // Three.js also resizes textures to the GPU's maxTextureSize if necessary.
   [dayTex, nightTex, specTex].forEach(t => {
-    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   });
 
   const geom = new THREE.SphereGeometry(R_EARTH_KM, 256, 128);
@@ -941,7 +941,7 @@ function buildClouds() {
   if (LOW_SPEC) { cloudsGroup = new THREE.Group(); return; }
   const loader = new THREE.TextureLoader();
   const cloudTex = loader.load(CLOUDS_TEXTURE_DATAURI);
-  cloudTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  cloudTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   // Mipmaps are safe here now: the texture itself was reprocessed so every
   // pixel's RGB sits near true cloud-white, with only the alpha channel
   // varying to encode cloud shape. Previously, "transparent" pixels held a

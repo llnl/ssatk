@@ -9,7 +9,7 @@ import warnings
 import numpy as np
 from PIL import Image
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 
 BODY_COLORS = {"earth": (0.10, 0.31, 0.54), "moon": (1., 1., 1.)}
 
@@ -19,28 +19,36 @@ def texture_path(body):
         return None
     from ._textures import earth_texture_path, moon_texture_path, viewer_earth_day_path
     try:
+        if gallery_max_textures():
+            return earth_texture_path() if body == "earth" else moon_texture_path()
         if body == "earth" and viewer_earth_day_path().is_file():
             return viewer_earth_day_path()
         return earth_texture_path() if body == "earth" else moon_texture_path()
     except FileNotFoundError as exc:
+        if gallery_max_textures():
+            raise
         warnings.warn(f"{exc} Rendering a plain {body.title()} sphere.", UserWarning, stacklevel=2)
         return None
 
 
 @lru_cache(maxsize=16)
-def _read_map(path, width, height):
+def _read_map(path, width, height, modified=None, raw=False):
     with Image.open(path) as image:
-        return np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BOX)) / 255.
+        rgb = np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BOX))
+        return rgb if raw else rgb / 255.
 
 
 def surface_map(body, width, height, path=None):
     """RGB texels, or a constant colour without any texture I/O in low mode."""
     if is_low_spec():
         return np.broadcast_to(BODY_COLORS[body], (height, width, 3)).copy()
-    path = texture_path(body) if path is None else path
+    path = texture_path(body) if path is None or gallery_max_textures() else path
     if path is None:
         return np.broadcast_to(BODY_COLORS[body], (height, width, 3)).copy()
-    return _read_map(str(path), width, height).copy()
+    from pathlib import Path
+    path = Path(path)
+    modified = path.stat().st_mtime_ns
+    return _read_map(str(path), width, height, modified).copy()
 
 
 def body_rotation(body, time=None, frame="gcrf"):
@@ -154,12 +162,20 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy", *, r
         lat = np.arcsin(np.clip(normals[..., 2], -1, 1))
         # Bilinear texel lookup avoids magnifying nearest-neighbour blocks.
         from scipy.ndimage import map_coordinates
-        width, height = 4096, 2048
-        rgb = surface_map(body, width, height)
+        full = gallery_max_textures()
+        width, height = (8192, 4096) if full else (4096, 2048)
+        if full:
+            path = texture_path(body)
+            rgb = _read_map(str(path), width, height, path.stat().st_mtime_ns, raw=True)
+        else:
+            rgb = surface_map(body, width, height)
         col = (lon+np.pi)/(2*np.pi)*width-.5
         row = np.clip((np.pi/2-lat)/np.pi*height-.5, 0, height-1)
         mapped = np.stack([map_coordinates(rgb[..., channel], [row, col], order=1,
-                                           mode="grid-wrap") for channel in range(3)], axis=-1)
+                                           output=np.float64, mode="grid-wrap")
+                           for channel in range(3)], axis=-1)
+        if full:
+            mapped /= 255.
         image = ax.imshow(mapped, origin="lower", interpolation="bilinear",
                           extent=(center[a]-radius, center[a]+radius,
                                   center[b]-radius, center[b]+radius), zorder=2)

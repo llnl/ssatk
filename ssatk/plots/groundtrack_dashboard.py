@@ -137,7 +137,9 @@ def groundtrack_dashboard(
         from .plotutils import load_earth_file
         ax_ground.imshow(load_earth_file(), extent=[-180, 180, -90, 90], aspect='auto', zorder=-1)
     except Exception:
-        pass
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
 
     colors = plt.cm.tab10(np.linspace(0, 1, n_orbits))
     ground_handles = []

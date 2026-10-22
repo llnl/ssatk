@@ -103,7 +103,9 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
         from .plotutils import load_earth_file
         ax_ground.imshow(load_earth_file(), extent=[-180, 180, -90, 90], aspect="auto", zorder=-1)
     except Exception:
-        pass
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
 
     colors = plt.cm.tab10(np.linspace(0, 1, len(r)))
     for i, (lon, lat) in enumerate(zip(lons, lats)):

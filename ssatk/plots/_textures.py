@@ -13,12 +13,52 @@ fallback here.
 from __future__ import annotations
 
 from pathlib import Path
+from functools import lru_cache
 
 EARTH_TEXTURE_NAMES = ("earth.png", "earth_day_2048.jpg")
+GALLERY_TEXTURE_SIZE = (8192, 4096)
+
+
+@lru_cache(maxsize=8)
+def _check_gallery_texture(path, modified, length):
+    from PIL import Image
+
+    with Image.open(path) as image:
+        if image.size != GALLERY_TEXTURE_SIZE:
+            raise ValueError(
+                f"Gallery texture {path} is {image.width} x {image.height}; "
+                "expected 8192 x 4096. Rebuild with "
+                "python -m scripts.prepare_gallery_data."
+            )
+        # JPEG's verify() does not decode the raster; load it once so a
+        # truncated 8K file cannot pass the gate and break an exported viewer.
+        image.load()
+
+
+def require_gallery_texture(path, body):
+    """Reject missing, damaged, or stale lower-resolution gallery maps.
+
+    Validation is cached by file identity so replacing a cached image is
+    checked again. This function never downloads or modifies data.
+    """
+    path = Path(path)
+    try:
+        stat = path.stat()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"Gallery {body.title()} texture is missing: {path}. "
+            "Run python -m scripts.prepare_gallery_data before building the gallery."
+        ) from exc
+    _check_gallery_texture(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+    return path
 
 
 def moon_texture_path() -> Path:
-    """Installed north-up lunar photomosaic; no implicit network downloads."""
+    """Prepared 8K gallery albedo, otherwise the installed lunar photomosaic."""
+    from .rendering import gallery_max_textures
+    if gallery_max_textures():
+        from ssatk.io.moon_maps import cache_dir
+        return require_gallery_texture(Path(cache_dir()) / "moon_albedo.jpg", "moon")
     from ssapy.utils import find_file
     try:
         return Path(find_file("moon", ext=".png"))
@@ -45,6 +85,9 @@ def viewer_earth_day_path() -> Path:
 def earth_texture_path() -> Path:
     """Return a filesystem path to the best available Earth day texture.
 
+    Gallery rendering requires the prepared 8192 x 4096 NASA map and never
+    falls back to a smaller installed image. No downloads occur here.
+
     Search order: ``earth.png`` via :func:`ssapy.utils.find_file` (working
     directory, then installed data packages), then ``earth_day_2048.jpg``
     from the installed split data packages.
@@ -54,6 +97,9 @@ def earth_texture_path() -> Path:
     FileNotFoundError
         If neither texture is installed.
     """
+    from .rendering import gallery_max_textures
+    if gallery_max_textures():
+        return require_gallery_texture(viewer_earth_day_path(), "earth")
     try:
         from ssapy.utils import find_file
 

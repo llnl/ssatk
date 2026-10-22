@@ -87,12 +87,12 @@ published unless an exporter explicitly includes them in its output.
 
 ``scripts.prepare_gallery_data`` downloads checksummed NASA SVS LOLA elevation
 and LROC color products and bakes the Moon viewer's maps. Normals retain the
-5760 × 2880 elevation grid; gallery color and horizon maps are 4096 × 2048 and
+5760 × 2880 elevation grid; gallery color and horizon maps are 8192 × 4096 and
 720 × 360 respectively. The latter is a rendering approximation for terrain
 shadows. The texture colors are intended for visualization, not radiometry.
 Credit: `NASA's Scientific Visualization Studio <https://svs.gsfc.nasa.gov/4720/>`_.
 
-It also prepares the satellite viewer's **8192 × 4096** Earth day texture from
+It also prepares the gallery's **8192 × 4096** Earth day texture from
 NASA's **21600 × 10800** Blue Marble Next Generation map. This is 16 times the
 pixel count of the packaged 2048 × 1024 texture. The January 2004 composite
 includes shaded topography; it does not depict current weather or terrain
@@ -104,11 +104,28 @@ added to the source repository. To prepare just this texture, run
 ``python -c "from scripts.prepare_gallery_data import prepare_earth_texture; prepare_earth_texture()"``
 from a source checkout.
 
-The viewer embeds the cached day map in its standalone HTML. Without that
-cache it keeps the packaged 2K fallback, with no implicit network download.
+Every gallery demo uses these prepared **8192 × 4096** Earth and Moon color
+maps, including fast-mode runs, static maps, spacecraft cameras, Plotly
+scenes, and browser viewers. The runner sets ``SSATK_GALLERY_MAX_TEXTURES=1``
+for each demo and its child processes, then restores the caller's setting.
+This policy overrides low-spec rendering and disables lower-resolution and
+plain-sphere fallbacks. Missing, corrupt, or stale 4K maps fail the affected
+demo; a strict build cannot publish that failure. Re-run data preparation
+after updating an older gallery cache.
+
+The map dimensions describe the source texture, not the final figure's
+resolution. Matplotlib and Plotly surface colors still sample their specified
+mesh grids; increasing texture resolution does not increase the mesh or
+output pixel count. Raster camera views retain the full map for texel lookup.
+The Earth source is downsampled from 21600 × 10800 to the gallery's 8K map;
+the Moon color map retains its native NASA source dimensions.
+
+The satellite viewer embeds the complete cached day map in its standalone
+HTML. Outside gallery mode it keeps the packaged 2K fallback when the cache
+is absent, with no implicit network download.
 Night lights, clouds and the ocean specular mask remain at 2048 × 1024.
-Earth, clouds and atmosphere use 256 × 128 sphere segments, with up to 8×
-anisotropic texture filtering. Three.js reduces oversized textures to the
+Earth, clouds and atmosphere use 256 × 128 sphere segments, with the GPU's
+maximum supported anisotropic texture filtering. Three.js reduces oversized textures to the
 browser GPU's supported maximum; an 8K texture requires about 171 MiB of GPU
 storage including RGBA mipmaps. These are visualization settings, not changes
 to Earth's physical radius or orbit calculations.

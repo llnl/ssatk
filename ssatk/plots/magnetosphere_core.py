@@ -16,7 +16,7 @@ minimal environment.
 
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 
 
 from pathlib import Path
@@ -153,6 +153,9 @@ def _resolve_texture_path(texture_path, allow_download=False):
     ``allow_download=True`` to fetch NASA Blue Marble into the cache when no
     packaged texture is installed.
     """
+    if gallery_max_textures():
+        from ._textures import earth_texture_path
+        return earth_texture_path()
     if texture_path is False or str(texture_path).lower() in ("none", "off", "flat"):
         return None
     if texture_path is not None and str(texture_path).lower() != "auto":
@@ -168,6 +171,8 @@ def _resolve_texture_path(texture_path, allow_download=False):
 
         return earth_texture_path()
     except FileNotFoundError:
+        if gallery_max_textures():
+            raise
         pass
     cached = _texture_cache_dir() / "earth_texture.jpg"
     if cached.exists() and cached.stat().st_size > 50_000:
@@ -226,6 +231,8 @@ def _load_texture_rgb(texture_path):
             return None
         return np.array(_PIL_Image.open(p).convert('RGB'), dtype=np.uint8)
     except Exception as e:
+        if gallery_max_textures():
+            raise
         print(f"  texture load failed: {e}", flush=True)
         return None
 

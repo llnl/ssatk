@@ -227,6 +227,7 @@ def _site_ecef(lat_deg, lon_deg, alt_km=0.0):
 
 # ── Continents ───────────────────────────────────────────────────────────────
 _earth_texture_cache = None
+_earth_texture_cache_path = None
 
 
 def _load_earth_texture():
@@ -236,18 +237,23 @@ def _load_earth_texture():
     Returns an (H, W, 3) uint8 array in equirectangular projection
     (lon -180..180, lat +90..-90 top-to-bottom), or None if unavailable.
     """
-    global _earth_texture_cache
+    global _earth_texture_cache, _earth_texture_cache_path
     if is_low_spec():
         return np.array([[[26, 79, 138]]], dtype=np.uint8)
-    if _earth_texture_cache is not None:
-        return _earth_texture_cache
+    from .rendering import gallery_max_textures
     try:
-        from PIL import Image as _PILImage
         from ._textures import earth_texture_path
-        img = _PILImage.open(earth_texture_path()).convert("RGB")
+        path = earth_texture_path()
+        if _earth_texture_cache is not None and _earth_texture_cache_path == str(path):
+            return _earth_texture_cache
+        from PIL import Image as _PILImage
+        img = _PILImage.open(path).convert("RGB")
         _earth_texture_cache = np.asarray(img)
+        _earth_texture_cache_path = str(path)
         return _earth_texture_cache
     except Exception as ex:
+        if gallery_max_textures():
+            raise
         print(f"[groundtrack_enhanced] real Earth texture load failed: {ex}")
         return None
 

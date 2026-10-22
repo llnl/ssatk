@@ -1,8 +1,9 @@
 """Shared presentation settings; never change trajectories or physical scales.
 
 Use ``with low_spec_mode(): ...`` for a batch of plots, or set
-``SSATK_LOW_SPEC=1`` before running a gallery. Supported plotting entry points
+``SSATK_LOW_SPEC=1`` before running a standalone demo. Supported plotting entry points
 also accept ``low_spec=True``. The default is textured rendering.
+Published galleries require the prepared maximum-resolution body maps.
 """
 from contextlib import contextmanager as _contextmanager
 from contextvars import ContextVar as _ContextVar
@@ -15,13 +16,20 @@ __all__ = ["low_spec_mode", "set_low_spec_mode", "is_low_spec"]
 _override = _ContextVar("ssatk_low_spec", default=None)
 
 
+def gallery_max_textures():
+    """Whether this process is rendering a gallery with required 8K body maps."""
+    return _os.environ.get("SSATK_GALLERY_MAX_TEXTURES", "") == "1"
+
+
 def is_low_spec(low_spec=None):
-    """Resolve an explicit boolean, context setting, then SSATK_LOW_SPEC."""
+    """Resolve presentation settings, with full textures required in galleries."""
     value = _override.get() if low_spec is None else low_spec
+    if value is not None and not isinstance(value, bool):
+        raise TypeError("low_spec must be True, False, or None")
+    if gallery_max_textures():
+        return False
     if value is None:
         return _os.environ.get("SSATK_LOW_SPEC", "").strip().lower() in {"1", "true", "yes", "on"}
-    if not isinstance(value, bool):
-        raise TypeError("low_spec must be True, False, or None")
     return value
 
 

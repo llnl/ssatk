@@ -5,7 +5,7 @@ All rotations act on column vectors.
 """
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 from ._body_surfaces import BODY_COLORS
 
 import numpy as np
@@ -31,7 +31,7 @@ def earth_surface(resolution=180):
     if is_low_spec():
         colors = np.broadcast_to(BODY_COLORS["earth"], (height, width, 3))
     else:
-        path = viewer_earth_day_path()
+        path = earth_texture_path() if gallery_max_textures() else viewer_earth_day_path()
         if not path.is_file():
             path = earth_texture_path()
         with Image.open(path) as image:
