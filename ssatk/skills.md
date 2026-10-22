@@ -206,6 +206,7 @@ so demos can skip offline. Do not add data files to this repository.
 | `ssatk-benchmark` | Timing and analytical-validation benchmarks |
 | `ssatk-magnetosphere` | Render the 3-D geomagnetic field and radiation belts |
 | `ssatk-bake-moon` | Bake WebGL Moon normal and horizon textures into the cache |
+| `ssatk-eclipse` | Discover, build, validate and render finite-Sun solar and lunar eclipses (`search`, `materialize`, `build`, `validate`, `render`) |
 | `ssatk-skill` | Install this guide as a coding-agent skill (`--dir`, `--print`, `--package`) |
 
 ## Where to look next

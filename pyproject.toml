@@ -138,7 +138,7 @@ packages = { find = { where = ["."], include = ["ssatk*", "demos*"] } }
 demos = ["README.md"]
 "demos.benchmarks" = ["README.md", "orekit/*.java", "orekit/*.xml"]
 ssatk = ["skills.md"]
-"ssatk.plots" = ["*.js"]
+"ssatk.plots" = ["*.js", "three_license.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -156,3 +156,4 @@ ssatk-benchmark = "ssatk.benchmark:main"
 ssatk-magnetosphere = "ssatk.plots.magfield_plot_3d:main"
 ssatk-bake-moon = "ssatk.io.moon_maps:cli"
 ssatk-skill = "ssatk.agent_skill:main"
+ssatk-eclipse = "ssatk.eclipse_cli:main"
