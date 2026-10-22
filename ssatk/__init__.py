@@ -89,6 +89,7 @@ _TOOLKIT_SUBMODULE_NAMES = frozenset(
         "environment",
         "environment_eop",
         "environment_space_weather",
+        "geometry",
         "hpc",
         "io",
         "launch",

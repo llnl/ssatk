@@ -1205,669 +1205,85 @@ function applyQuaternionOrientation(obj3d, position, quaternion) {
   obj3d.position.copy(position);
 }
 
-// ---------------------------------------------------------------------------
-// Realistic per-type satellite models -- built from primitives, but each
-// with a genuinely distinct, recognizable silhouette rather than one
-// generic "box + 2 panels" stand-in for everything. All built in the same
-// local frame as orbitFrame(): local X = ram/velocity direction, local Y =
-// orbit-normal-ish, local Z = nadir (toward Earth).
-// ---------------------------------------------------------------------------
+const SPACECRAFT_MESH_SCALE = typeof MESH_SCALE !== 'undefined' && MESH_SCALE === 'physical' ? 'physical' : 'glyph';
 
-function buildISSModel(size) {
-  const group = new THREE.Group();
-  const trussMat = new THREE.MeshPhongMaterial({ color: 0xcfd4da, shininess: 25, specular: 0x222222 });
-  const panelMat = buildPanelMaterial(0x0d1b3a, 35, 0x334466, 5, 2); // paddle: long in X/Z, thin in Y
-  const moduleMat = new THREE.MeshPhongMaterial({ color: 0xe0dbc8, shininess: 15, specular: 0x111111 });
-  const radiatorMat = new THREE.MeshPhongMaterial({ color: 0xf2f4f6, shininess: 70, specular: 0xffffff });
-
-  // Long main truss along local Y -- the real ISS's integrated truss structure
-  const truss = new THREE.Mesh(new THREE.BoxGeometry(size * 0.045, size * 1.0, size * 0.045), trussMat);
-  group.add(truss);
-
-  // 4 pairs of solar array paddles (8 total, matching the real ISS) spaced
-  // along the truss, each pair extending outward in +/-X
-  const paddleGeom = new THREE.BoxGeometry(size * 0.46, size * 0.018, size * 0.20);
-  [-0.42, -0.20, 0.20, 0.42].forEach(yFrac => {
-    [1, -1].forEach(side => {
-      const paddle = new THREE.Mesh(paddleGeom, panelMat);
-      paddle.position.set(side * size * 0.26, yFrac * size, 0);
-      group.add(paddle);
-    });
-  });
-
-  // White radiator panels near the center -- a real, distinctive ISS
-  // feature (thermal control radiators) that reads very differently from
-  // the dark solar arrays and was missing before.
-  const radiatorGeom = new THREE.BoxGeometry(size * 0.015, size * 0.30, size * 0.13);
-  [1, -1].forEach(side => {
-    const rad = new THREE.Mesh(radiatorGeom, radiatorMat);
-    rad.position.set(side * size * 0.16, 0, size * 0.10);
-    group.add(rad);
-  });
-
-  // Pressurized module cluster near the center (Unity/Destiny/Zvezda-style)
-  const mod1 = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.05, size * 0.05, size * 0.34, 12), moduleMat);
-  mod1.rotation.z = Math.PI / 2;
-  mod1.position.set(0, 0, size * 0.07);
-  group.add(mod1);
-  const mod2 = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.042, size * 0.042, size * 0.22, 12), moduleMat);
-  mod2.rotation.x = Math.PI / 2;
-  mod2.position.set(size * 0.02, size * 0.09, size * 0.07);
-  group.add(mod2);
-
-  // Small equipment/handrail greebles on the module cluster -- real ISS
-  // modules are covered in this kind of detail, and a bare cylinder reads
-  // as too clean/simple by comparison.
-  addGreebles(group, moduleMat, size * 0.30, size * 0.10, size * 0.10, 6, 'iss-greebles');
-
-  // Status/beacon lights, a small "this is an active machine" detail
-  addIndicatorLight(group, size, new THREE.Vector3(size * 0.06, 0, size * 0.12), 0xff3b30);
-  addIndicatorLight(group, size, new THREE.Vector3(-size * 0.06, 0, size * 0.12), 0x30d158);
-
-  return group;
-}
-
-function buildHubbleModel(size) {
-  const group = new THREE.Group();
-  const tubeMat = new THREE.MeshPhongMaterial({ color: 0xcfc9a8, shininess: 45, specular: 0x555540 });
-  const panelMat = buildPanelMaterial(0x0e1c3d, 30, 0x334466, 3, 5);
-
-  // Main telescope tube, long along local X (Hubble's iconic cylindrical body)
-  const tube = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.09, size * 0.09, size * 0.85, 24), tubeMat);
-  tube.rotation.z = Math.PI / 2;
-  group.add(tube);
-
-  // 2 solar panels extending from local Y+/-, mounted mid-body
-  const panelGeom = new THREE.BoxGeometry(size * 0.30, size * 0.02, size * 0.46);
-  const panelA = new THREE.Mesh(panelGeom, panelMat);
-  panelA.position.set(0, size * 0.34, 0);
-  group.add(panelA);
-  const panelB = new THREE.Mesh(panelGeom, panelMat);
-  panelB.position.set(0, -size * 0.34, 0);
-  group.add(panelB);
-
-  // small aft antenna boom
-  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.018, size * 0.018, size * 0.16, 8), tubeMat);
-  antenna.rotation.z = Math.PI / 2;
-  antenna.position.set(-size * 0.3, 0, size * 0.1);
-  group.add(antenna);
-
-  return group;
-}
-
-function buildStarlinkModel(size) {
-  const group = new THREE.Group();
-  const busMat = new THREE.MeshPhongMaterial({ color: 0x1a1c22, shininess: 55, specular: 0x666666 });
-  const panelMat = buildPanelMaterial(0x0c1830, 25, 0x334466, 6, 3);
-
-  // Very flat, wide "flat-packed" bus -- Starlink's distinctive silhouette
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 0.5, size * 0.34, size * 0.035), busMat);
-  group.add(bus);
-
-  // ONE solar panel wing from a single side only (not a mirrored pair --
-  // this is the real, recognizable difference from most other satellites)
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(size * 0.02, size * 0.62, size * 0.34), panelMat);
-  panel.position.set(0, size * 0.48, 0);
-  group.add(panel);
-
-  return group;
-}
-
-function buildGPSModel(size) {
-  const group = new THREE.Group();
-  const busMat = new THREE.MeshPhongMaterial({ color: 0xb8bcc4, shininess: 20, specular: 0x222222 });
-  const panelMat = buildPanelMaterial(0x15294f, 18, 0x223344, 4, 2);
-
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 0.22, size * 0.20, size * 0.22), busMat);
-  group.add(bus);
-
-  const panelGeom = new THREE.BoxGeometry(size * 0.022, size * 0.34, size * 0.16);
-  const panelOffset = size * 0.10 + size * 0.17;
-  const panelA = new THREE.Mesh(panelGeom, panelMat);
-  panelA.position.set(0, panelOffset, 0);
-  group.add(panelA);
-  const panelB = new THREE.Mesh(panelGeom, panelMat);
-  panelB.position.set(0, -panelOffset, 0);
-  group.add(panelB);
-
-  // small dish antenna facing nadir
-  const dish = new THREE.Mesh(new THREE.ConeGeometry(size * 0.07, size * 0.05, 16), busMat);
-  dish.rotation.x = Math.PI;
-  dish.position.set(0, 0, size * 0.14);
-  group.add(dish);
-
-  return group;
-}
-
-function buildNavSatModel(size, busColor, panelColor) {
-  const group = new THREE.Group();
-  const busMat = new THREE.MeshPhongMaterial({ color: busColor, shininess: 16, specular: 0x141414 });
-  const panelMat = buildPanelMaterial(panelColor, 20, 0x223344, 5, 2);
-
-  // Hexagonal-prism bus, drum-oriented along nadir/zenith -- distinguishes
-  // this family's actual design from GPS's plain box
-  const bus = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.15, size * 0.15, size * 0.20, 6), busMat);
-  bus.rotation.x = Math.PI / 2;
-  group.add(bus);
-
-  const panelGeom = new THREE.BoxGeometry(size * 0.02, size * 0.42, size * 0.20);
-  const panelOffset = size * 0.15 + size * 0.21;
-  const panelA = new THREE.Mesh(panelGeom, panelMat);
-  panelA.position.set(0, panelOffset, 0);
-  group.add(panelA);
-  const panelB = new THREE.Mesh(panelGeom, panelMat);
-  panelB.position.set(0, -panelOffset, 0);
-  group.add(panelB);
-
-  // small nadir antenna horn (navigation signal antenna array)
-  const horn = new THREE.Mesh(new THREE.ConeGeometry(size * 0.085, size * 0.07, 12), busMat);
-  horn.rotation.x = Math.PI;
-  horn.position.set(0, 0, size * 0.135);
-  group.add(horn);
-
-  return group;
-}
-
-function buildGalileoModel(size) {
-  return buildNavSatModel(size, 0xd8dce2, 0x122540); // silver bus, dark navy panels
-}
-
-function buildGlonassModel(size) {
-  return buildNavSatModel(size, 0xc9c2b4, 0x5a1414); // warmer bus tone, dark red panels -- distinct livery, same real silhouette family
-}
-
-function buildBeidouModel(size) {
-  return buildNavSatModel(size, 0xcdd6c8, 0x143a1e); // pale bus, dark green panels
-}
-
-
-function buildGOESModel(size) {
-  const group = new THREE.Group();
-  const busMat = new THREE.MeshPhongMaterial({ color: 0xe8e4d8, shininess: 15, specular: 0x131313 });
-  const panelMat = buildPanelMaterial(0x0c1830, 22, 0x223344, 8, 2); // GOES' single long wing
-  const boomMat = new THREE.MeshPhongMaterial({ color: 0x999999, shininess: 40, specular: 0x444444 });
-
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 0.20, size * 0.24, size * 0.20), busMat);
-  group.add(bus);
-
-  // GOES uses a single sun-tracking solar array on a yoke, not a mirrored
-  // pair -- one long wing is the realistic silhouette here
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(size * 0.022, size * 0.85, size * 0.24), panelMat);
-  panel.position.set(0, size * 0.12 + size * 0.43, 0);
-  group.add(panel);
-
-  // long magnetometer boom
-  const boom = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.008, size * 0.008, size * 0.7, 6), boomMat);
-  boom.rotation.z = Math.PI / 2;
-  boom.position.set(-size * 0.45, -size * 0.10, 0);
-  group.add(boom);
-
-  // Earth-facing instrument sunshade/aperture
-  const shade = new THREE.Mesh(new THREE.ConeGeometry(size * 0.10, size * 0.07, 16), busMat);
-  shade.rotation.x = Math.PI;
-  shade.position.set(0, 0, size * 0.155);
-  group.add(shade);
-
-  return group;
-}
-
-function buildLandsatModel(size) {
-  const group = new THREE.Group();
-  const busMat = new THREE.MeshPhongMaterial({ color: 0xc7cbd1, shininess: 15, specular: 0x131313 });
-  const panelMat = buildPanelMaterial(0x102040, 25, 0x334466, 6, 3);
-  const sensorMat = new THREE.MeshPhongMaterial({ color: 0x14161c, shininess: 60, specular: 0x555555 });
-
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 0.26, size * 0.30, size * 0.24), busMat);
-  group.add(bus);
-
-  // single deployable solar wing (Landsat 9's real design, not a pair)
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(size * 0.02, size * 0.62, size * 0.28), panelMat);
-  panel.position.set(0, size * 0.15 + size * 0.31, 0);
-  group.add(panel);
-
-  // nadir-facing sensor barrel (OLI-2 / TIRS-2 imaging instruments)
-  const sensor = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.08, size * 0.09, size * 0.14, 16), sensorMat);
-  sensor.rotation.x = Math.PI / 2;
-  sensor.position.set(0, 0, size * 0.19);
-  group.add(sensor);
-
-  return group;
-}
-
-function buildTiangongModel(size) {
-  const group = new THREE.Group();
-  const moduleMat = new THREE.MeshPhongMaterial({ color: 0xd4cfa0, shininess: 20, specular: 0x222211 });
-  const panelMat = buildPanelMaterial(0x0d1b3a, 30, 0x334466, 2, 5); // lab-module panel proportions; core panel gets its own material below
-
-  // Tianhe core module, along local X
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.11, size * 0.11, size * 0.50, 16), moduleMat);
-  core.rotation.z = Math.PI / 2;
-  group.add(core);
-
-  // Core's own solar arrays, near the aft end
-  const corePanelMat = buildPanelMaterial(0x0d1b3a, 30, 0x334466, 2, 6); // core panel proportions differ from the lab panels above
-  const corePanelGeom = new THREE.BoxGeometry(size * 0.02, size * 0.10, size * 0.32);
-  [1, -1].forEach(side => {
-    const p = new THREE.Mesh(corePanelGeom, corePanelMat);
-    p.position.set(-size * 0.30, side * size * 0.16, 0);
-    group.add(p);
-  });
-
-  // Wentian & Mengtian lab modules extending to the sides, each with their
-  // own large arrays at the outer tip -- the real T/cross shape that
-  // distinguishes Tiangong's compact 3-module layout from ISS's one long truss
-  [1, -1].forEach(side => {
-    const lab = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.10, size * 0.10, size * 0.40, 16), moduleMat);
-    lab.rotation.x = Math.PI / 2;
-    lab.position.set(size * 0.05, side * size * 0.32, 0);
-    group.add(lab);
-
-    const labPanel = new THREE.Mesh(new THREE.BoxGeometry(size * 0.02, size * 0.46, size * 0.20), panelMat);
-    labPanel.position.set(size * 0.05, side * (size * 0.32 + size * 0.35), 0);
-    group.add(labPanel);
-  });
-
-  return group;
-}
-
-// ---------------------------------------------------------------------------
-// JWST -- bespoke, not an archetype. Its silhouette (segmented hexagonal
-// primary mirror + huge kite-shaped sunshield) is too iconic and too
-// different from every other satellite here to fold into a generic
-// "tube + panels" shape without doing it a disservice.
-// ---------------------------------------------------------------------------
-function buildJWSTModel(size) {
-  const group = new THREE.Group();
-  const mirrorMat = new THREE.MeshPhongMaterial({ color: 0xd4af37, shininess: 70, specular: 0x887733 }); // gold-coated beryllium segments
-  const shieldMat = new THREE.MeshPhongMaterial({ color: 0xc9c2a8, shininess: 8, specular: 0x222222, side: THREE.DoubleSide });
-  const structMat = new THREE.MeshPhongMaterial({ color: 0x888888, shininess: 30, specular: 0x333333 });
-
-  // Segmented hexagonal primary mirror: 7 hexagons (center + 6 around),
-  // facing local -X (away from the sunshield, toward deep space)
-  const hexRadius = size * 0.075;
-  const hexGeom = new THREE.CylinderGeometry(hexRadius, hexRadius, size * 0.012, 6);
-  const mirrorCenterX = size * 0.20;
-  const centerHex = new THREE.Mesh(hexGeom, mirrorMat);
-  centerHex.rotation.z = Math.PI / 2;
-  centerHex.position.set(mirrorCenterX, 0, 0);
-  group.add(centerHex);
-  for (let i = 0; i < 6; i++) {
-    const ang = (i / 6) * Math.PI * 2;
-    const hex = new THREE.Mesh(hexGeom, mirrorMat);
-    hex.rotation.z = Math.PI / 2;
-    hex.position.set(mirrorCenterX, Math.cos(ang) * hexRadius * 1.78, Math.sin(ang) * hexRadius * 1.78);
-    group.add(hex);
+function spacecraftMeshPresetName(type, name) {
+  const upper = String(type || '').toUpperCase();
+  if (upper === 'HUBBLE') return 'hst';
+  if (upper === 'STARLINK') return 'starlink';
+  if (upper === 'GPS') return 'gps';
+  if (upper === 'GALILEO') return 'galileo';
+  if (upper === 'GLONASS') return 'glonass';
+  if (upper === 'BEIDOU') return 'beidou';
+  if (upper === 'WEATHER_GEO') return 'goes';
+  if (upper === 'EARTH_OBS' || upper === 'WEATHER_LEO') return 'landsat';
+  if (upper === 'ISS') return 'iss';
+  if (upper === 'CSS') return 'tiangong';
+  if (upper === 'ROCKET_BODY') return 'rocket_body';
+  if (upper === 'DEBRIS') return 'debris';
+  if (upper === 'GENERIC_PAYLOAD') return 'boxwing';
+  if (upper === 'JWST') return 'jwst';
+  if (upper === 'TESS') return 'tess';
+  if (upper === 'OBSERVATORY') {
+    const upperName = String(name || '').toUpperCase();
+    if (upperName.includes('CHANDRA')) return 'chandra';
+    if (upperName.includes('FERMI')) return 'fermi';
+    if (upperName.includes('SWIFT')) return 'swift';
+    return 'hst';
   }
-
-  // Secondary mirror boom, extending forward from the primary
-  const boom = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.006, size * 0.006, size * 0.34, 6), structMat);
-  boom.rotation.z = Math.PI / 2;
-  boom.position.set(mirrorCenterX + size * 0.20, 0, 0);
-  group.add(boom);
-  const secondary = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.02, size * 0.02, size * 0.01, 12), mirrorMat);
-  secondary.rotation.z = Math.PI / 2;
-  secondary.position.set(mirrorCenterX + size * 0.37, 0, 0);
-  group.add(secondary);
-
-  // Sunshield: large flat diamond/kite shape on the opposite side, always
-  // facing the Sun/Earth/Moon to keep the telescope in permanent shadow
-  const shieldShape = new THREE.Shape();
-  shieldShape.moveTo(0, size * 0.30);
-  shieldShape.lineTo(size * 0.46, size * 0.10);
-  shieldShape.lineTo(size * 0.40, -size * 0.20);
-  shieldShape.lineTo(0, -size * 0.34);
-  shieldShape.lineTo(-size * 0.40, -size * 0.20);
-  shieldShape.lineTo(-size * 0.46, size * 0.10);
-  shieldShape.lineTo(0, size * 0.30);
-  const shieldGeom = new THREE.ShapeGeometry(shieldShape);
-  const shield = new THREE.Mesh(shieldGeom, shieldMat);
-  shield.rotation.y = Math.PI / 2; // lay flat in the YZ plane
-  shield.position.set(-size * 0.10, 0, 0);
-  group.add(shield);
-
-  // Bus (spacecraft body) sits at the sunshield side, between shield and mirror
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 0.10, size * 0.14, size * 0.06), structMat);
-  bus.position.set(-size * 0.06, 0, size * 0.05);
-  group.add(bus);
-
-  return group;
+  return 'boxwing';
 }
 
-// ---------------------------------------------------------------------------
-// Compact science observatory archetype -- Chandra, Fermi, Swift, TESS.
-// Smaller box/cylinder bus + 2 panels, distinct from Hubble's single big
-// tube. TESS gets 4 small camera barrels added, matching its actual
-// 4-wide-field-camera design -- the one detail worth breaking from the
-// shared archetype for, since it's TESS's most recognizable feature.
-// ---------------------------------------------------------------------------
-function buildObservatoryModel(size, variant) {
-  const group = new THREE.Group();
-  const busMat = new THREE.MeshPhongMaterial({ color: 0xb7bcc4, shininess: 25, specular: 0x222222 });
-  const panelMat = buildPanelMaterial(0x17284a, 20, 0x223344, 5, 2);
-  const tubeMat = new THREE.MeshPhongMaterial({ color: 0x1c1f26, shininess: 45, specular: 0x444444 });
-  const mliMat = buildMLIMaterial(MLI_GOLD, 70);
-
-  if (variant === 'chandra') {
-    // Chandra's real distinguishing feature is an elongated, tube-like
-    // spacecraft body (the X-ray mirror assembly is long, not a compact
-    // box like the others) -- deliberately breaks from the shared
-    // box+2-panel base for this one.
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.09, size * 0.09, size * 0.55, 20), mliMat);
-    body.rotation.z = Math.PI / 2;
-    group.add(body);
-    const aperture = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.10, size * 0.095, size * 0.05, 20), tubeMat);
-    aperture.rotation.z = Math.PI / 2;
-    aperture.position.set(size * 0.29, 0, 0);
-    group.add(aperture);
-    const panelGeom = new THREE.BoxGeometry(size * 0.02, size * 0.32, size * 0.16);
-    [1, -1].forEach(s => {
-      const p = new THREE.Mesh(panelGeom, panelMat);
-      p.position.set(-size * 0.05, s * (size * 0.10 + size * 0.16), 0);
-      group.add(p);
-    });
-    return group;
-  }
-
-  // Shared box+2-panel bus for Fermi/Swift/TESS/generic -- these three
-  // really do share a similar compact-bus silhouette in reality; the
-  // instrument section on top is where they actually differ.
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 0.24, size * 0.22, size * 0.24), busMat);
-  group.add(bus);
-  const panelGeom = new THREE.BoxGeometry(size * 0.02, size * 0.36, size * 0.18);
-  const panelOffset = size * 0.11 + size * 0.19;
-  [1, -1].forEach(s => {
-    const p = new THREE.Mesh(panelGeom, panelMat);
-    p.position.set(0, s * panelOffset, 0);
-    group.add(p);
-  });
-
-  if (variant === 'fermi') {
-    // Fermi's LAT: a large flat wide instrument on top, not a cylindrical
-    // aperture -- plus small GBM detector domes ringing the bus, matching
-    // its real distinctive silhouette.
-    const lat = new THREE.Mesh(new THREE.BoxGeometry(size * 0.22, size * 0.10, size * 0.22), tubeMat);
-    lat.position.set(0, 0, size * 0.17);
-    group.add(lat);
-    for (let i = 0; i < 6; i++) {
-      const ang = (i / 6) * Math.PI * 2;
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(size * 0.02, 8, 8), tubeMat);
-      dome.position.set(Math.cos(ang) * size * 0.13, Math.sin(ang) * size * 0.13, size * 0.12);
-      group.add(dome);
+function validSpacecraftMesh(payload) {
+  if (!payload || payload.schema !== 'ssatk.spacecraft_mesh.v1' || payload.units !== 'm' || payload.frame !== 'body') return false;
+  if (!Array.isArray(payload.vertices) || payload.vertices.length < 3 || !payload.vertices.every(vertex => Array.isArray(vertex) && vertex.length === 3 && vertex.every(Number.isFinite))) return false;
+  if (!Array.isArray(payload.faces) || !payload.faces.length) return false;
+  if (!payload.faces.every(face => Array.isArray(face) && face.length >= 3 && face.every(index => Number.isInteger(index) && index >= 0 && index < payload.vertices.length))) return false;
+  if (!Array.isArray(payload.colors) || payload.colors.length !== payload.faces.length || !payload.colors.every(color => Array.isArray(color) && color.length === 3 && color.every(component => Number.isFinite(component) && component >= 0 && component <= 1))) return false;
+  return payload.faces.every(face => {
+    const first = payload.vertices[face[0]];
+    for (let faceVertex = 1; faceVertex < face.length - 1; faceVertex++) {
+      const second = payload.vertices[face[faceVertex]];
+      const third = payload.vertices[face[faceVertex + 1]];
+      const ab = [second[0] - first[0], second[1] - first[1], second[2] - first[2]];
+      const ac = [third[0] - first[0], third[1] - first[1], third[2] - first[2]];
+      const cross = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+      if (cross[0] ** 2 + cross[1] ** 2 + cross[2] ** 2 === 0) return false;
     }
-  } else if (variant === 'swift') {
-    // Swift's 3 real, distinctly-sized co-aligned instruments (UVOT/XRT/BAT)
-    // instead of one uniform aperture.
-    const specs = [[size * 0.05, size * 0.14], [size * 0.035, size * 0.10], [size * 0.06, size * 0.08]];
-    const offsets = [-size * 0.06, size * 0.03, size * 0.09];
-    specs.forEach(([r, l], i) => {
-      const tube = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, 16), tubeMat);
-      tube.rotation.x = Math.PI / 2;
-      tube.position.set(offsets[i], 0, size * 0.16 + l * 0.15);
-      group.add(tube);
-    });
-  } else if (variant === 'tess') {
-    // TESS's 4 wide-field camera barrels, arranged in a 2x2 cluster facing nadir
-    const tubeGeom = new THREE.CylinderGeometry(size * 0.045, size * 0.045, size * 0.16, 16);
-    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {
-      const tube = new THREE.Mesh(tubeGeom, tubeMat);
-      tube.rotation.x = Math.PI / 2;
-      tube.position.set(sx * size * 0.055, sy * size * 0.055, size * 0.19);
-      group.add(tube);
-    });
-  } else {
-    const instrument = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.09, size * 0.09, size * 0.16, 20), tubeMat);
-    instrument.rotation.x = Math.PI / 2;
-    instrument.position.set(0, 0, size * 0.19);
-    group.add(instrument);
-  }
-
-  return group;
-}
-
-
-function buildModelForType(type, size, seedStr) {
-  switch (type) {
-    case 'ISS': return buildISSModel(size);
-    case 'HUBBLE': return buildHubbleModel(size);
-    case 'STARLINK': return buildStarlinkModel(size);
-    case 'GPS': return buildGPSModel(size);
-    case 'GALILEO': return buildGalileoModel(size);
-    case 'GLONASS': return buildGlonassModel(size);
-    case 'BEIDOU': return buildBeidouModel(size);
-    case 'WEATHER_GEO': return buildGOESModel(size);
-    case 'EARTH_OBS': return buildLandsatModel(size);
-    case 'WEATHER_LEO': return buildLandsatModel(size); // same real-world silhouette family as EARTH_OBS (boxy sun-sync bus + single wing)
-    case 'CSS': return buildTiangongModel(size);
-    case 'JWST': return buildJWSTModel(size);
-    case 'TESS': return buildObservatoryModel(size, 'tess');
-    case 'OBSERVATORY': {
-      // 'OBSERVATORY' only ever comes from the chandra/fermi/swift curated
-      // entries (see SATELLITE_CATALOG) -- their real names are stable, so
-      // matching on the seedStr (their name) to pick a variant is safe here.
-      const upper = (seedStr || '').toUpperCase();
-      if (upper.includes('CHANDRA')) return buildObservatoryModel(size, 'chandra');
-      if (upper.includes('FERMI')) return buildObservatoryModel(size, 'fermi');
-      if (upper.includes('SWIFT')) return buildObservatoryModel(size, 'swift');
-      return buildObservatoryModel(size, 'generic');
-    }
-    case 'DEBRIS': return buildDebrisModel(size, seedStr);
-    case 'ROCKET_BODY': return buildRocketBodyModel(size, seedStr);
-    case 'GENERIC_PAYLOAD': return buildGenericPayloadModel(size, seedStr);
-    default: return buildGPSModel(size);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Seeded randomness -- deterministic per-satellite variation (same NORAD ID
-// always renders the same way across reloads, but different satellites
-// look like different satellites, not clones of one template) plus a
-// shared MLI gold/silver thermal-blanket material, the recognizable foil
-// look most real spacecraft buses have that none of these models used
-// before.
-// ---------------------------------------------------------------------------
-function hashStringToSeed(str) {
-  let h = 2166136261;
-  const s = String(str || 'default');
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function seededRandom(seedStr) {
-  let seed = hashStringToSeed(seedStr);
-  return function () {
-    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const MLI_GOLD = 0xc9a227;
-const MLI_SILVER = 0xc7c9cc;
-function buildMLIMaterial(colorHex, shininess) {
-  return new THREE.MeshPhongMaterial({ color: colorHex, shininess: shininess || 65, specular: 0xfff2d0 });
-}
-
-// ---------------------------------------------------------------------------
-// Solar panel material -- every panel across every model was previously a
-// flat solid-color box. Real solar panels have an immediately-recognizable
-// cell grid, and panels appear on almost every satellite here, so this is
-// the single highest-value visual upgrade available: fix it once, in one
-// place, and it improves the whole scene at once.
-//
-// The texture encodes the grid as a BRIGHTNESS mask (light cells, darker
-// gridlines) rather than baking in a specific color, so the same texture
-// works correctly multiplied against any panel's existing tint (navy,
-// dark red, dark green, etc.) without needing a separate texture per
-// livery -- built once and cloned (cheap) per material so each panel can
-// set its own UV repeat to match its own proportions.
-// ---------------------------------------------------------------------------
-let _solarCellTextureCache = null;
-function getSolarCellTexture() {
-  if (_solarCellTextureCache) return _solarCellTextureCache;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#3a3a3a'; // gridline base
-  ctx.fillRect(0, 0, 128, 128);
-  const cell = 16;
-  for (let cy = 0; cy < 128; cy += cell) {
-    for (let cx = 0; cx < 128; cx += cell) {
-      const shade = 205 + Math.floor(Math.random() * 35); // slight per-cell brightness variation, not perfectly uniform
-      ctx.fillStyle = `rgb(${shade},${shade},${Math.min(255, shade + 10)})`; // faint blue-ish cast, like real cell coatings
-      ctx.fillRect(cx + 1, cy + 1, cell - 2, cell - 2);
-    }
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  _solarCellTextureCache = texture;
-  return texture;
-}
-
-function buildPanelMaterial(colorHex, shininess, specularHex, repeatX, repeatY) {
-  const tex = getSolarCellTexture().clone();
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeatX || 2, repeatY || 5);
-  tex.needsUpdate = true;
-  return new THREE.MeshPhongMaterial({ color: colorHex, shininess: shininess, specular: specularHex, map: tex });
-}
-
-// Scatters a handful of small detail boxes across a span, breaking up the
-// too-clean look of a bare primitive surface (real spacecraft buses are
-// covered in small boxes, connectors, and instrument housings). Seeded so
-// the same satellite always gets the same greebles.
-function addGreebles(parentGroup, mat, spanX, spanY, spanZ, count, seedStr) {
-  const rand = seededRandom(seedStr || 'greeble');
-  for (let i = 0; i < count; i++) {
-    const w = spanX * (0.05 + rand() * 0.06);
-    const h = spanY * (0.04 + rand() * 0.05);
-    const d = spanZ * (0.05 + rand() * 0.06);
-    const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    box.position.set(
-      (rand() - 0.5) * spanX * 0.75,
-      (rand() - 0.5) * spanY * 0.75,
-      (rand() - 0.5) * spanZ * 0.75
-    );
-    parentGroup.add(box);
-  }
-}
-
-// Small steady emissive point -- the "instrument status light" detail
-// that helps a model read as an active machine rather than a static prop.
-function addIndicatorLight(parentGroup, size, position, colorHex) {
-  const mat = new THREE.MeshBasicMaterial({ color: colorHex || 0xff3b30 });
-  const light = new THREE.Mesh(new THREE.SphereGeometry(size * 0.012, 6, 6), mat);
-  light.position.copy(position);
-  parentGroup.add(light);
-  return light;
-}
-
-// ---------------------------------------------------------------------------
-// Generic fallback models -- for the ~31,000 satellites in a loaded
-// database that aren't one of the curated types above. Classified by
-// name only (see classifyByName()). Each takes a seedStr (the satellite's
-// own name, stable across reloads) so a field of many unclassified
-// satellites doesn't render as visibly identical clones of one template.
-// ---------------------------------------------------------------------------
-function buildDebrisModel(size, seedStr) {
-  const rand = seededRandom(seedStr);
-  const group = new THREE.Group();
-  const mat = new THREE.MeshPhongMaterial({ color: 0x55524a, shininess: 5, specular: 0x111111, flatShading: true });
-  // Real debris varies from angular shards to rounder fragments -- alternate
-  // geometry type per instance, not just per-instance scale, for more
-  // visible variety across many debris entries shown at once.
-  const baseSize = size * (0.07 + rand() * 0.06);
-  const geom = rand() < 0.5
-    ? new THREE.TetrahedronGeometry(baseSize, 0)
-    : new THREE.IcosahedronGeometry(baseSize, 0);
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.scale.set(0.6 + rand() * 0.9, 0.6 + rand() * 0.9, 0.6 + rand() * 0.9);
-  mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-  group.add(mesh);
-  return group;
-}
-
-function buildRocketBodyModel(size, seedStr) {
-  const rand = seededRandom(seedStr);
-  const group = new THREE.Group();
-  const bodyMat = new THREE.MeshPhongMaterial({ color: 0x9a9a9a, shininess: 20, specular: 0x333333 });
-  const ringMat = buildMLIMaterial(MLI_GOLD, 55); // interstage rings are commonly foil-wrapped on real stages
-
-  const bodyLen = size * (0.42 + rand() * 0.18); // spent stages vary in length; not every one is identical
-  const bodyR = size * 0.06;
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(bodyR, bodyR, bodyLen, 16), bodyMat);
-  body.rotation.z = Math.PI / 2;
-  group.add(body);
-
-  // Interstage ring -- a wider, short section common on real spent stages,
-  // not present on the old plain-cylinder version.
-  const ring = new THREE.Mesh(new THREE.CylinderGeometry(bodyR * 1.25, bodyR * 1.25, size * 0.05, 16), ringMat);
-  ring.rotation.z = Math.PI / 2;
-  ring.position.set(bodyLen / 2 - size * 0.02, 0, 0);
-  group.add(ring);
-
-  // Wider engine bell than before, tapering out rather than just a small taper
-  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(bodyR * 0.9, bodyR * 1.7, size * 0.11, 16), bodyMat);
-  nozzle.rotation.z = Math.PI / 2;
-  nozzle.position.set(-bodyLen / 2 - size * 0.04, 0, 0);
-  group.add(nozzle);
-
-  return group;
-}
-
-function buildGenericPayloadModel(size, seedStr) {
-  const rand = seededRandom(seedStr);
-  const group = new THREE.Group();
-  const busColor = rand() < 0.5 ? MLI_GOLD : MLI_SILVER; // real buses show up in both foil tones
-  const busMat = buildMLIMaterial(busColor, 60);
-
-  const busW = size * (0.18 + rand() * 0.12);
-  const busH = size * (0.16 + rand() * 0.10);
-  const busD = size * (0.18 + rand() * 0.12);
-  const bus = new THREE.Mesh(new THREE.BoxGeometry(busW, busH, busD), busMat);
-  group.add(bus);
-
-  const panelLen = size * (0.26 + rand() * 0.16);
-  const panelWid = size * (0.12 + rand() * 0.08);
-  // Repeat scaled to this instance's own randomized proportions, since they
-  // vary per satellite -- not a fixed guess that would stretch on some sizes.
-  const panelMat = buildPanelMaterial(0x15294f, 18, 0x223344,
-    Math.max(2, Math.round(panelLen / (size * 0.07))), Math.max(2, Math.round(panelWid / (size * 0.07))));
-  const panelGeom = new THREE.BoxGeometry(size * 0.02, panelLen, panelWid);
-  const panelOffset = busH / 2 + panelLen / 2;
-  [1, -1].forEach(s => {
-    const p = new THREE.Mesh(panelGeom, panelMat);
-    p.position.set(0, s * panelOffset, 0);
-    group.add(p);
+    return true;
   });
-
-  if (rand() < 0.4) { // roughly 4 in 10 generic satellites get a small dish, for variety
-    const dish = new THREE.Mesh(new THREE.ConeGeometry(size * 0.06, size * 0.045, 16), busMat);
-    dish.rotation.x = Math.PI;
-    dish.position.set(0, 0, busD / 2 + size * 0.02);
-    group.add(dish);
-  }
-
-  const detailMat = new THREE.MeshPhongMaterial({ color: 0x2a2e38, shininess: 30, specular: 0x333333 });
-  addGreebles(group, detailMat, busW, busH, busD, 3, (seedStr || '') + '-greebles');
-
-  if (rand() < 0.3) { // roughly 3 in 10 get a small visible status light
-    addIndicatorLight(group, size, new THREE.Vector3(busW * 0.3, busH * 0.3, busD / 2), rand() < 0.5 ? 0xff3b30 : 0x30d158);
-  }
-
-  return group;
 }
 
+function buildSpacecraftMesh(payload, size, physical) {
+  const positions = [];
+  const colors = [];
+  let radius = 0;
+  payload.vertices.forEach(vertex => { radius = Math.max(radius, Math.hypot(vertex[0], vertex[1], vertex[2])); });
+  const scale = physical ? 0.001 : radius ? size * 0.5 / radius : 1;
+  payload.faces.forEach((face, faceIndex) => {
+    const color = payload.colors[faceIndex] || [0.7, 0.7, 0.7];
+    for (let faceVertex = 1; faceVertex < face.length - 1; faceVertex++) {
+      const triangle = [face[0], face[faceVertex], face[faceVertex + 1]];
+      for (const vertexIndex of triangle) {
+        const vertex = payload.vertices[vertexIndex];
+        positions.push(vertex[0] * scale, vertex[1] * scale, vertex[2] * scale);
+        colors.push(color[0], color[1], color[2]);
+      }
+    }
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide, shininess: 25, specular: 0x333333 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.userData.spacecraftMesh = payload;
+  mesh.userData.physicalScaleKmPerM = 0.001;
+  return mesh;
+}
 
 // ---------------------------------------------------------------------------
-// TLE-driven selected satellite -- real SGP4 propagation (via satellite.js)
-// instead of an idealized circular orbit, with a model matched to the
-// vehicle's actual real-world design.
+// TLE-driven selected satellite -- real SGP4 propagation (via satellite.js).
 // ---------------------------------------------------------------------------
 function tleEpochToMs(satrec) {
   return (satrec.jdsatepoch - 2440587.5) * 86400000;
@@ -1924,7 +1340,9 @@ function stateVectorStateAtMs(inst, ms) {
   if (Array.isArray(track.q) && track.q.length) {
     const qa = new THREE.Quaternion(track.q[i][1], track.q[i][2], track.q[i][3], track.q[i][0]);
     const qb = new THREE.Quaternion(track.q[j][1], track.q[j][2], track.q[j][3], track.q[j][0]);
-    quaternion = new THREE.Quaternion().slerpQuaternions(qa, qb, u).normalize();
+    quaternion = new THREE.Quaternion();
+    quaternion.slerpQuaternions(qa, qb, u);
+    quaternion.normalize();
   }
   return {
     position: {
@@ -2868,7 +2286,8 @@ function addSatellite(key, explicitEntry) {
   let r0, framingR;
   // LOD decision, made once up front from the current active count. `simple`
   // satellites skip both the detailed mesh and the orbit line.
-  const simple = activeSatellites.size >= SIMPLE_MODEL_ABOVE;
+  const physicalMesh = SPACECRAFT_MESH_SCALE === 'physical';
+  const simple = !physicalMesh && activeSatellites.size >= SIMPLE_MODEL_ABOVE;
   const wantOrbitLine = activeSatellites.size < ORBIT_LINE_ABOVE;
   inst.simple = simple;
 
@@ -2923,9 +2342,22 @@ function addSatellite(key, explicitEntry) {
   // cislunar orbit should look like a distant orbit with a small spacecraft,
   // not a huge model scaled up by its apogee distance.
   const modelSize = SATELLITE_GLYPH_SIZE_KM;
+  const hasEmbeddedMesh = entry.stateVector && Object.prototype.hasOwnProperty.call(entry.stateVector, 'mesh');
+  const embeddedMesh = hasEmbeddedMesh ? entry.stateVector.mesh : null;
+  if (hasEmbeddedMesh && !validSpacecraftMesh(embeddedMesh)) {
+    if (inst.orbitLine) scene.remove(inst.orbitLine);
+    return false;
+  }
+  const presetName = spacecraftMeshPresetName(entry.type, entry.name);
+  const meshPayload = validSpacecraftMesh(embeddedMesh)
+    ? embeddedMesh : (SPACECRAFT_DEFAULT_MESH || SPACECRAFT_MESH_PRESETS[presetName]);
+  if (!validSpacecraftMesh(meshPayload)) {
+    if (inst.orbitLine) scene.remove(inst.orbitLine);
+    return false;
+  }
   inst.model = simple
     ? buildSimpleGlyph(entry.type, modelSize)
-    : buildModelForType(entry.type, modelSize, entry.name);
+    : buildSpacecraftMesh(meshPayload, modelSize, physicalMesh);
   scene.add(inst.model);
 
   // Floating HTML label -- projected from the satellite's 3D position each

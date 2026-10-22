@@ -10,7 +10,6 @@ from __future__ import annotations
 from .rendering import is_low_spec
 from ._body_surfaces import BODY_COLORS
 
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import warnings
@@ -20,6 +19,7 @@ from astropy.time import Time
 
 from ssatk.constants import EARTH_RADIUS, MOON_RADIUS
 from ssatk.coordinates.attitude import rotate_vector
+from ssatk.geometry import SpacecraftMesh, coerce_mesh
 
 __all__ = ["SpacecraftMesh", "SpacecraftView", "spacecraft_view"]
 
@@ -47,153 +47,6 @@ def _body_positions(name, gps):
     body = get_body(name)  # Keep the ephemeris kernels alive during evaluation.
     return np.asarray(body.position(gps), dtype=float).reshape(3, -1).T
 
-
-@dataclass
-class SpacecraftMesh:
-    """Body-frame vertices in metres and zero-based triangular/convex faces.
-
-    Coordinates retain their physical size and origin: no centering or automatic
-    normalization is applied. ``colors`` is one RGB triple per face, or one
-    shared triple. ``face_parts`` optionally supplies a name for each face.
-    Convex polygons are triangulated as a fan for rendering.
-    """
-
-    vertices: np.ndarray
-    faces: object
-    colors: object = (0.64, 0.72, 0.79)
-    face_parts: object = None
-
-    def __post_init__(self):
-        self.vertices = np.asarray(self.vertices, dtype=float).copy()
-        if (self.vertices.ndim != 2 or self.vertices.shape[1] != 3
-                or len(self.vertices) < 3 or not np.all(np.isfinite(self.vertices))):
-            raise ValueError("vertices must be a finite (V, 3) array in metres")
-        faces = []
-        for face in self.faces:
-            raw = np.asarray(face)
-            if (raw.ndim != 1 or len(raw) < 3 or raw.dtype.kind not in "iu"
-                    or np.any(raw < 0) or np.any(raw >= len(self.vertices))):
-                raise ValueError("faces must contain at least three valid integer vertex indices")
-            faces.append(raw.astype(int))
-        if not faces:
-            raise ValueError("mesh must have faces")
-        self.faces = tuple(faces)
-        if self.face_parts is None:
-            self.face_parts = ("surface",) * len(faces)
-        else:
-            self.face_parts = tuple(self.face_parts)
-            if len(self.face_parts) != len(faces) or not all(isinstance(p, str) for p in self.face_parts):
-                raise ValueError("face_parts must contain one string per face")
-        self.colors = _track(self.colors, len(faces), 3, "colors")
-        if np.any((self.colors < 0) | (self.colors > 1)):
-            raise ValueError("RGB colors must lie in [0, 1]")
-        triangles, colors, boundaries, triangle_faces = [], [], [], []
-        for face_index, (face, color) in enumerate(zip(self.faces, self.colors)):
-            for j in range(1, len(face) - 1):
-                triangle = [face[0], face[j], face[j + 1]]
-                a, b, c = self.vertices[triangle]
-                if np.linalg.norm(np.cross(b - a, c - a)) == 0:
-                    raise ValueError("mesh contains a degenerate triangle")
-                triangles.append(triangle)
-                colors.append(color)
-                # Edges opposite each triangle vertex. Hide fan diagonals.
-                boundaries.append((True, j == len(face) - 2, j == 1))
-                triangle_faces.append(face_index)
-        self.triangles = np.asarray(triangles, dtype=int)
-        self.triangle_colors = np.asarray(colors)
-        self.triangle_boundaries = np.asarray(boundaries, dtype=bool)
-        self.triangle_faces = np.asarray(triangle_faces, dtype=int)
-
-    @staticmethod
-    def presets(group=None):
-        """Return the built-in visual mesh names; no files are required."""
-        from .spacecraft_presets import preset_names
-        return preset_names(group)
-
-    @staticmethod
-    def preset_info(name):
-        """Return source links, fidelity, visual axes and approximation notes."""
-        from .spacecraft_presets import preset_info
-        return preset_info(name)
-
-    @classmethod
-    def from_preset(cls, name="starlink", *, scale=1.0):
-        """Build an illustrative mesh in metres, optionally scaled uniformly.
-
-        These rigid visual templates are not engineering, optical or force
-        models. ``preset_info(name)`` documents sources, approximation limits
-        and visual body axes for each mission. No assets are downloaded.
-        """
-        from ssatk.satellites import SpacecraftBody
-        from .spacecraft_presets import build_preset
-
-        name = cls.preset_info(name)["name"]
-        if not np.isfinite(scale) or scale <= 0:
-            raise ValueError("scale must be a positive dimensionless factor")
-        if name not in ("starlink", "boxwing"):
-            model = build_preset(name)
-            return cls(np.asarray(model.vertices) * scale, model.faces, model.colors, model.parts)
-
-        size = (2.8, 1.4, 0.18) if name == "starlink" else (1.2, 1.0, 0.8)
-        bus = cls.from_body(SpacecraftBody.box(mass=1.0, size=size))
-        vertices, faces, colors = list(bus.vertices), list(bus.faces), list(bus.colors)
-        if name == "starlink":
-            colors = [(0.76, 0.80, 0.84)] * len(faces)
-        # Each wing extends outwards from the bus edge in its local XY plane.
-        # Starlink-like wings extend along +/-Y; box wings extend along +/-X.
-        axis = 1 if name == "starlink" else 0
-        length, width = (4.0, 2.8) if name == "starlink" else (2.0, 1.4)
-        for sign in (-1, 1):
-            for row in range(8):
-                for col in range(4):
-                    lo, hi = sorted(sign * (size[axis] / 2 + np.array([row, row + 1]) * length / 8))
-                    left, right = -width / 2 + np.array([col, col + 1]) * width / 4
-                    points = np.array([[lo, left, 0], [hi, left, 0],
-                                       [hi, right, 0], [lo, right, 0]])
-                    if axis == 1:
-                        points = points[::-1, [1, 0, 2]]  # Preserve +Z winding.
-                    faces.append(np.arange(len(vertices), len(vertices) + 4))
-                    vertices.extend(points)
-                    colors.append((0.12, 0.27, 0.48))
-        return cls(np.asarray(vertices) * scale, faces, colors)
-
-    @classmethod
-    def from_body(cls, body):
-        """Read the actual ``SpacecraftBody.facets`` geometry without synthesis.
-
-        Subtract the body's current center of mass so a propagated center-of-mass
-        position can be used directly. The body and its mass center are a snapshot.
-        Facets lacking ``vertices_body`` are rejected; an area and normal do
-        not uniquely specify the shape of a physical surface.
-        """
-        vertices, faces, colors = [], [], []
-        origin = np.asarray(getattr(body, "current_center_of_mass", (0, 0, 0)), dtype=float)
-        if origin.shape != (3,) or not np.all(np.isfinite(origin)):
-            raise ValueError("body center of mass must be a finite three-vector")
-        for facet in body.facets:
-            if facet.vertices_body is None:
-                raise ValueError(f"facet {facet.name!r} has no vertices_body")
-            points = np.asarray(facet.vertices_body, dtype=float) - origin
-            faces.append(np.arange(len(vertices), len(vertices) + len(points)))
-            vertices.extend(points)
-            panel = any(word in facet.name.lower() for word in ("solar", "array", "panel", "wing"))
-            colors.append((0.16, 0.37, 0.66) if panel else (0.74, 0.65, 0.40))
-        return cls(vertices, faces, colors)
-
-    @classmethod
-    def from_obj(cls, path, *, scale=1.0):
-        """Read a Wavefront OBJ using SSATK's facet loader; ``scale`` is m/unit.
-
-        Supports face indices with texture/normal suffixes and negative indices.
-        OBJ material/texture files are not interpreted. Polygons must be convex.
-        """
-        from ssatk.satellites import load_obj_facets
-        from types import SimpleNamespace
-
-        if not np.isfinite(scale) or scale <= 0:
-            raise ValueError("scale must be positive metres per OBJ unit")
-        facets = load_obj_facets(path, scale=scale)
-        return cls.from_body(SimpleNamespace(facets=facets))
 
 
 def _camera_basis(forward, up):
@@ -307,7 +160,7 @@ class SpacecraftView:
     is a GCRF metre vector from the spacecraft to the camera, constant or (N, 3).
     The default is a static overview; camera="limb" puts the nearest body's
     limb behind the spacecraft. See camera_modes.rst for all shots.
-    ``mesh`` accepts a preset name or SpacecraftMesh. With neither mesh nor
+    ``mesh`` accepts shared geometry, a preset name, or a supported file path. With neither mesh nor
     body supplied, a schematic Starlink-like mesh is used automatically.
     """
 
@@ -349,10 +202,8 @@ class SpacecraftView:
         if mesh is None:
             mesh = (SpacecraftMesh.from_preset() if body is None
                     else SpacecraftMesh.from_body(body))
-        elif isinstance(mesh, str):
-            mesh = SpacecraftMesh.from_preset(mesh)
-        if not isinstance(mesh, SpacecraftMesh):
-            raise TypeError("mesh must be a preset name or SpacecraftMesh")
+        else:
+            mesh = coerce_mesh(mesh)
         self.mesh = mesh
         self.mesh_radius = float(np.max(np.linalg.norm(mesh.vertices, axis=1)))
         self.camera_offset = (None if camera_offset is None else
