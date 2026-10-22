@@ -4,7 +4,9 @@ Demo: self-contained Three.js satellite viewer with an 8K NASA Earth map.
 
 Run scripts.prepare_gallery_data first for the 8192 x 4096 day texture;
 otherwise the installed 2K texture is used. The page accepts satellite
-catalogs from JSON, CSV, or HDF5. Its PNG is a capture of the actual viewer,
+catalogs from JSON, CSV, or HDF5, and starts with three synthetic low-Earth
+orbits propagated by SSAPy. These are examples, not a live satellite catalog.
+Its PNG is a capture of the actual viewer,
 requiring the browser extra and Chrome; set SSATK_CHROME_BINARY to point at a
 specific browser, or the capture is skipped and only the HTML viewer is written.
 """
@@ -16,7 +18,12 @@ import shutil
 import sys
 from pathlib import Path
 
-from ssatk.plots.build_satellite_viewer import build
+import numpy as np
+from astropy.time import Time
+from ssapy import Orbit, rv
+
+from ssatk.constants import EARTH_RADIUS
+from ssatk.plots.build_satellite_viewer import satellite_viewer
 from ssatk.plots.figpath import figpath
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -81,8 +88,27 @@ def main(make_figures=None, fast=None):
                 "reason": "figures_disabled"}
 
     html_path = Path(figpath("demo_satellite_viewer.html"))
+    epoch = Time("2026-01-01T12:00:00", scale="utc")
+    times = Time(epoch.gps + np.arange(0, 3 * 3600 + 1, 10), format="gps")
+    positions, velocities, labels = [], [], []
+    for altitude_km, inclination_deg, node_deg, phase_deg in (
+        (550, 53, 20, 45), (700, 98, 100, 135), (1200, 70, 220, 240),
+    ):
+        orbit = Orbit.fromKeplerianElements(
+            a=EARTH_RADIUS + altitude_km * 1000, e=0.0,
+            i=np.radians(inclination_deg), raan=np.radians(node_deg),
+            pa=0.0, trueAnomaly=np.radians(phase_deg), t=epoch,
+        )
+        r, v = rv(orbit, times)
+        positions.append(r)
+        velocities.append(v)
+        labels.append(f"Synthetic LEO · {altitude_km} km / {inclination_deg} deg")
     # gallery-call: *.html
-    written = build(out_path=str(html_path), verbose=True)
+    written = satellite_viewer(
+        np.asarray(positions), np.asarray(velocities), times,
+        labels=labels, mesh="boxwing", mesh_scale="glyph",
+        save_path=str(html_path), verbose=True,
+    )
     # gallery-end
     png_path = Path(figpath("demo_satellite_viewer.png"))
     try:

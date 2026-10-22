@@ -127,7 +127,11 @@ The Earth source is downsampled from 21600 × 10800 to the gallery's 8K map;
 the Moon color map retains its native NASA source dimensions.
 
 The satellite viewer embeds the complete cached day map in its standalone
-HTML. Outside gallery mode it keeps the packaged 2K fallback when the cache
+HTML. Its gallery demo starts with three synthetic circular orbits at
+550, 700 and 1200 km above the WGS84 equatorial radius, with inclinations of
+53, 98 and 70 degrees. SSAPy propagates three hours at 10-second intervals;
+the browser interpolates these supplied states. These are demonstration
+trajectories, not a live satellite catalog. Outside gallery mode it keeps the packaged 2K fallback when the cache
 is absent, with no implicit network download.
 Night lights, clouds and the ocean specular mask remain at 2048 × 1024.
 Earth, clouds and atmosphere use 256 × 128 sphere segments, with the GPU's
