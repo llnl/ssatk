@@ -122,7 +122,7 @@ def shadow_axis_world(bundle: ReferenceRayBundle, jd_value: float) -> np.ndarray
     if bundle.mode == "solar":
         occluder = np.asarray(bundle.moon_center_km, dtype=float)
         start = occluder + axis * float(bundle.solid_occluder_radius_km)
-        # Reference solar bundles are Earth-fixed; SSAPy and discovered
+        # Reference solar bundles are Earth-fixed; DE430 and discovered
         # events are GCRF, so the ellipsoid is solved in the bundle's frame.
         hit = (
             _first_earth_hit(start, axis) if bundle.frame.startswith("WGS84")

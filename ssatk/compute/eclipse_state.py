@@ -1,8 +1,8 @@
 """Eclipse event states for the two state backends.
 
 Published contact times are the event timeline. Body states come either from
-the NASA/GSFC reconstruction (``reference``) or from SSAPy's DE430 Sun/Moon
-ephemerides (``ssapy``), evaluated directly at every sample. Both backends use
+the NASA/GSFC reconstruction (``reference``) or from the JPL DE430 Sun/Moon
+ephemerides (``de430``), evaluated directly at every sample. Both backends use
 the same SSATK GCRF/ITRF transforms.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from ssatk.compute.eclipse_runtime import (
     gcrf_to_itrf_km,
     itrf_to_gcrf_km,
     resolve_backend,
-    ssapy_ephemeris_positions_km,
+    ephemeris_positions_km,
 )
 from ssatk.coordinates.eclipse_lunar_attitude import moon_attitude_for_event
 from ssatk.compute.eclipse_reference_events import (
@@ -141,7 +141,7 @@ def _event_selection_metadata(selection: BackendSelection) -> dict[str, object]:
         "ephemeris_backend": selection.ephemeris_backend,
         "frame_backend": selection.frame_backend,
         "moon_orientation_backend": (
-            "SSAPy DE440 binary lunar PCK" if selection.selected == "ssapy"
+            "DE440 binary lunar PCK" if selection.selected == "de430"
             else "NAIF IAU_MOON 2009 rotation model"
         ),
     }
@@ -200,8 +200,8 @@ def event_positions_gcrf(event: ReferenceEvent, jd_utc: float) -> tuple[np.ndarr
     if bool(event.metadata.get("dynamic_event", False)):
         return _interpolate_serialized_positions(event, float(jd_utc))
     source = str(event.metadata.get("state_source", "reference"))
-    if source == "ssapy":
-        moon, sun = ssapy_ephemeris_positions_km([float(jd_utc)])
+    if source == "de430":
+        moon, sun = ephemeris_positions_km([float(jd_utc)])
         return sun[0], moon[0]
 
     if event.mode == "solar":
@@ -216,7 +216,7 @@ def event_positions_gcrf(event: ReferenceEvent, jd_utc: float) -> tuple[np.ndarr
 def event_moon_body_to_gcrf(event: ReferenceEvent, jd_utc) -> np.ndarray:
     """Moon body-fixed-to-GCRF attitude owned by the event backend.
 
-    Strict SSAPy modes use the DE440 binary lunar PCK exposed by
+    The DE430 backend uses the DE440 binary lunar PCK exposed by
     ``get_body("moon").orientation``.  The deterministic reference mode uses
     the documented NAIF IAU_MOON 2009 trigonometric model.  No renderer-level
     fallback or synchronous-look-at approximation is permitted here.
@@ -266,7 +266,7 @@ def solar_visibility_and_separation(times, sun_km, moon_km, *, observer_itrf_km=
 def build_event(
     kind: str | ReferenceDefinition = "solar",
     *,
-    backend: str = "ssapy",
+    backend: str = "de430",
     n_frames: int = 121,
     jd: Sequence[float] | None = None,
     solar_scope: str = "global",
@@ -277,7 +277,7 @@ def build_event(
     Parameters
     ----------
     backend
-        ``ssapy`` evaluates SSAPy DE430 Sun/Moon states at every sample;
+        ``de430`` evaluates JPL DE430 Sun/Moon states at every sample;
         ``reference`` replays the NASA/GSFC Besselian elements (solar) or
         published circumstances (lunar).
     solar_scope
@@ -350,7 +350,7 @@ def build_event(
     else:
         times = np.asarray(jd, dtype=float)
 
-    moon, sun = ssapy_ephemeris_positions_km(times)
+    moon, sun = ephemeris_positions_km(times)
     reference = build_reference_event(definition, jd=times)
     if definition.mode == "solar":
         observer_itrf = itrf_surface_point(

@@ -70,8 +70,8 @@ RUNTIME_JS = Path(__file__).resolve().parent / "eclipse_cinematic_runtime.js"
 # it gives the body scale an orbital context without pretending to be part of
 # the eclipse solution.  The state history itself remains owned by the
 # eclipse backend below.
-_SSAPY_REFERENCE_ORBIT = {
-    "name": "SSAPy geocentric reference orbit",
+_REFERENCE_ORBIT = {
+    "name": "Geocentric reference orbit",
     "a_km": 42_164.0,
     "e": 0.0,
     "inc_deg": 0.0,
@@ -82,15 +82,15 @@ _SSAPY_REFERENCE_ORBIT = {
 
 
 @dataclass(frozen=True)
-class SSAPyOrbitOverlay:
-    """A display-only SSAPy orbit to draw in the cinematic scene.
+class ReferenceOrbitOverlay:
+    """A display-only orbit to draw in the cinematic scene.
 
-    ``orbit`` may be any existing SSAPy ``Orbit``.  When it is omitted, the
+    ``orbit`` may be any existing ``ssatk.Orbit``.  When it is omitted, the
     built-in geocentric reference orbit is constructed from the elements above.
     """
 
     orbit: object | None = None
-    name: str = "SSAPy orbit"
+    name: str = "Reference orbit"
     color: str = "#5fffa2"
     sample_count: int = 193
     propagator: object | None = None
@@ -446,13 +446,13 @@ def _observer_model_from_event(event) -> dict[str, object] | None:
     return dict(value) if isinstance(value, dict) else None
 
 
-def _ssapy_orbit_overlay(
-    states: list[PublicPeakState], overlay: SSAPyOrbitOverlay,
+def _reference_orbit_overlay(
+    states: list[PublicPeakState], overlay: ReferenceOrbitOverlay,
 ) -> dict[str, object]:
-    """Build a display-only orbit overlay with SSAPy's public propagation API.
+    """Build a display-only orbit overlay with SSATK's propagation API.
 
     The orbit is a geocentric reference path, separate from the validated
-    eclipse state history.  ``ssapy.rv`` supplies both the path and the
+    eclipse state history.  ``ssatk.rv`` supplies both the path and the
     time-matched marker positions; no propagation equations are duplicated in
     this renderer.  A missing optional runtime component simply disables the
     overlay while leaving the eclipse product usable.
@@ -461,16 +461,13 @@ def _ssapy_orbit_overlay(
         "enabled": False,
         "name": str(overlay.name),
         "color": str(overlay.color),
-        "reason": "SSAPy orbit overlay unavailable",
+        "reason": "Reference orbit overlay unavailable",
     }
     if not states:
         return disabled
-    try:
-        import ssapy
-        from astropy.time import Time
-        from ssapy.propagator import KeplerianPropagator
-    except ImportError as exc:
-        return {**disabled, "reason": f"SSAPy orbit overlay unavailable: {exc}"}
+    from astropy.time import Time
+
+    import ssatk
 
     start_jd = float(states[0].jd_utc)
     start_time = Time(start_jd, format="jd", scale="utc")
@@ -478,33 +475,20 @@ def _ssapy_orbit_overlay(
         if overlay.orbit is not None:
             orbit = overlay.orbit
         else:
-            elements = _SSAPY_REFERENCE_ORBIT
+            elements = _REFERENCE_ORBIT
             a_m = float(elements["a_km"]) * UNIT_KM
-            try:
-                orbit = ssapy.Orbit.fromKeplerianElements(
-                    a_m,
-                    float(elements["e"]),
-                    math.radians(float(elements["inc_deg"])),
-                    math.radians(float(elements["argp_deg"])),
-                    math.radians(float(elements["raan_deg"])),
-                    math.radians(float(elements["nu_deg"])),
-                    t=start_time,
-                )
-            except TypeError:
-                # SSAPy releases before the keyword-time signature accept GPS
-                # seconds as the final positional argument.
-                orbit = ssapy.Orbit.fromKeplerianElements(
-                    a_m,
-                    float(elements["e"]),
-                    math.radians(float(elements["inc_deg"])),
-                    math.radians(float(elements["argp_deg"])),
-                    math.radians(float(elements["raan_deg"])),
-                    math.radians(float(elements["nu_deg"])),
-                    start_time.gps,
-                )
+            orbit = ssatk.Orbit.fromKeplerianElements(
+                a_m,
+                float(elements["e"]),
+                math.radians(float(elements["inc_deg"])),
+                math.radians(float(elements["argp_deg"])),
+                math.radians(float(elements["raan_deg"])),
+                math.radians(float(elements["nu_deg"])),
+                t=start_time,
+            )
         period_seconds = float(np.asarray(orbit.period, dtype=float).reshape(()))
         if not math.isfinite(period_seconds) or period_seconds <= 0.0:
-            return {**disabled, "reason": "SSAPy returned an invalid reference-orbit period"}
+            return {**disabled, "reason": "invalid reference-orbit period"}
 
         path_count = max(16, int(overlay.sample_count))
         path_offsets_s = np.linspace(0.0, period_seconds, path_count)
@@ -516,17 +500,12 @@ def _ssapy_orbit_overlay(
         sample_time = Time(sample_jd, format="jd", scale="utc")
         propagator = (
             overlay.propagator
-            if overlay.propagator is not None else KeplerianPropagator()
+            if overlay.propagator is not None else ssatk.KeplerianPropagator()
         )
-        try:
-            positions_m, _ = ssapy.rv(
-                orbit=orbit, time=sample_time, propagator=propagator,
-            )
-        except TypeError:
-            positions_m, _ = ssapy.rv(orbit, sample_time, propagator)
+        positions_m, _ = ssatk.rv(orbit, sample_time, propagator)
         positions_km = np.asarray(positions_m, dtype=float).reshape(-1, 3) / UNIT_KM
         if len(positions_km) != len(sample_jd):
-            return {**disabled, "reason": "SSAPy returned an unexpected reference-orbit state shape"}
+            return {**disabled, "reason": "unexpected reference-orbit state shape"}
         basis_state = states[0]
         path_scene = _to_scene(positions_km[:path_count], basis_state)
         marker_scene = _to_scene(positions_km[path_count:], basis_state)
@@ -542,7 +521,7 @@ def _ssapy_orbit_overlay(
             "markers": marker_scene.tolist(),
         }
     except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
-        return {**disabled, "reason": f"SSAPy orbit overlay unavailable: {exc}"}
+        return {**disabled, "reason": f"Reference orbit overlay unavailable: {exc}"}
 
 
 def build_cinematic_payload(
@@ -551,13 +530,13 @@ def build_cinematic_payload(
     animate: bool = False,
     quality: str = "ultra",
     n_frames: int | None = None,
-    backend: str = "ssapy",
+    backend: str = "de430",
     solar_scope: str = "global",
     playback_seconds: float | None = None,
     observer_config: ObserverConfig | None = None,
     lunar_limb_profile: LunarLimbProfile | None = None,
     photometry: str = "quadratic-visible",
-    orbit_overlays: list[SSAPyOrbitOverlay | object] | None = None,
+    orbit_overlays: list[ReferenceOrbitOverlay | object] | None = None,
 ) -> dict[str, object]:
     q = _quality(quality)
     photometry_law = resolve_limb_darkening(photometry)
@@ -598,7 +577,7 @@ def build_cinematic_payload(
             )
             for state, phase in zip(animation.states, animation.phase_labels)
         ]
-        audit = animation.greatest_state.ssapy_diagnostics
+        audit = animation.greatest_state.state_diagnostics
         event = animation.event
         orbit_states = list(animation.states)
     else:
@@ -615,27 +594,27 @@ def build_cinematic_payload(
             observer_config=observer_config, lunar_limb_profile=lunar_limb_profile,
             photometry=photometry_law.name,
         )]
-        audit = peak.ssapy_diagnostics
+        audit = peak.state_diagnostics
         event = peak.event
         orbit_states = [peak]
 
     requested_orbits = (
-        [SSAPyOrbitOverlay(name=str(_SSAPY_REFERENCE_ORBIT["name"]))]
+        [ReferenceOrbitOverlay(name=str(_REFERENCE_ORBIT["name"]))]
         if orbit_overlays is None else list(orbit_overlays)
     )
     normalized_orbits = [
-        value if isinstance(value, SSAPyOrbitOverlay)
-        else SSAPyOrbitOverlay(orbit=value, name=f"SSAPy orbit {index + 1}")
+        value if isinstance(value, ReferenceOrbitOverlay)
+        else ReferenceOrbitOverlay(orbit=value, name=f"Reference orbit {index + 1}")
         for index, value in enumerate(requested_orbits)
     ]
     orbit_payloads = []
     orbit_markers: list[list[list[float]]] = []
     for overlay in normalized_orbits:
-        payload = _ssapy_orbit_overlay(orbit_states, overlay)
+        payload = _reference_orbit_overlay(orbit_states, overlay)
         orbit_markers.append(payload.pop("markers", []))
         orbit_payloads.append(payload)
     for frame_index, frame in enumerate(states):
-        frame["ssapy_orbit_positions"] = [
+        frame["reference_orbit_positions"] = [
             markers[frame_index] if frame_index < len(markers) else None
             for markers in orbit_markers
         ]
@@ -788,10 +767,10 @@ h1{{font-size:20px;line-height:1.15;margin:0 0 5px}}.subtitle{{font-size:12.5px;
 <label class="row"><span>Stars</span><input id="starToggle" type="checkbox" checked></label>
 <label class="row"><span>Physical labels</span><input id="labelsToggle" type="checkbox" checked></label>
 <label class="row"><span>Scientific axes</span><input id="scientificToggle" type="checkbox"></label>
-<label class="row"><span>SSAPy reference orbit</span><input id="orbitToggle" type="checkbox" checked></label>
+<label class="row"><span>Reference orbit</span><input id="orbitToggle" type="checkbox" checked></label>
 </div>
 <div class="section"><h2>Current physical state</h2><div class="metric"><span>State backend</span><b id="metricBackend"></b><span>Frame backend</span><b id="metricFrame"></b><span>Event scope</span><b id="metricScope"></b><span>Earth–Moon</span><b id="metricDistance"></b><span>Photosphere samples</span><b id="metricRays"></b><span>Photometry</span><b id="metricPhotometry"></b><span>Blocked light weight</span><b id="metricBlocked"></b><span>Evaluation point</span><b id="metricTarget"></b><span>Photosphere visible</span><b id="metricVisibility"></b><span>Limb-darkened flux</span><b id="metricIrradiance"></b><span>Target coordinates</span><b id="metricLocation"></b><span>Observer Sun/Moon</span><b id="metricObserver"></b><span>Solid bodies</span><b>opaque · depth-writing</b></div></div>
-<div class="section"><h2>Visual key</h2><div class="legend"><span class="sw" style="color:#fff2a8;background:#fff2a8"></span>white-gold: weighted photospheric samples reaching a solid surface<br><span class="sw" style="color:#ffad46;background:#ffad46"></span>amber: samples stopped at the eclipse occluder<br><span class="sw" style="color:#e47aff;background:#e47aff"></span>magenta: blocked-light axis, never transmitted light<br><span class="sw" style="color:#ff665c;background:#ff665c"></span>red: umbral/antumbral tangent diagnostic<br><span class="sw" style="color:#6fc8ff;background:#6fc8ff"></span>blue: penumbral tangent diagnostic<br><span class="sw" style="color:#5fffa2;background:#5fffa2"></span>green: SSAPy two-body geocentric reference orbit</div></div>
+<div class="section"><h2>Visual key</h2><div class="legend"><span class="sw" style="color:#fff2a8;background:#fff2a8"></span>white-gold: weighted photospheric samples reaching a solid surface<br><span class="sw" style="color:#ffad46;background:#ffad46"></span>amber: samples stopped at the eclipse occluder<br><span class="sw" style="color:#e47aff;background:#e47aff"></span>magenta: blocked-light axis, never transmitted light<br><span class="sw" style="color:#ff665c;background:#ff665c"></span>red: umbral/antumbral tangent diagnostic<br><span class="sw" style="color:#6fc8ff;background:#6fc8ff"></span>blue: penumbral tangent diagnostic<br><span class="sw" style="color:#5fffa2;background:#5fffa2"></span>green: two-body geocentric reference orbit</div></div>
 <div class="section"><h2>Simulation qualification</h2><div class="legend">Earth and Moon are fully opaque. The visible beams are quadrature samples distributed across the complete apparent solar disc; their weights sum to one. The body shader evaluates either geometric uniform-disc overlap or the limb-darkened flux model independently at every fragment, using an exact analytic overlap plus a high-resolution precomputed radiometric correction texture. Contact geometry remains uniform-disc and is not changed by the display photometry selection. Beam thickness, bloom, and flare size are explanatory display aids. The atmosphere, corona, and beams are the only translucent layers. A dedicated body-depth and body-mask pass prevents them from appearing through a solid body.</div></div>
 </div></div>
 <div id="bottom"><button id="play" aria-label="Play or pause">Play</button><input id="timeline" aria-label="Elapsed physical event time" type="range" min="0" value="0" step="1"><span id="timeLabel"></span><b id="phase"></b></div>
@@ -813,13 +792,13 @@ def generate_cinematic_view(
     animate: bool = False,
     quality: str = "ultra",
     n_frames: int | None = None,
-    backend: str = "ssapy",
+    backend: str = "de430",
     solar_scope: str = "global",
     playback_seconds: float | None = None,
     observer_config: ObserverConfig | None = None,
     lunar_limb_profile: LunarLimbProfile | None = None,
     photometry: str = "quadratic-visible",
-    orbit_overlays: list[SSAPyOrbitOverlay | object] | None = None,
+    orbit_overlays: list[ReferenceOrbitOverlay | object] | None = None,
 ) -> str:
     payload = build_cinematic_payload(
         kind,

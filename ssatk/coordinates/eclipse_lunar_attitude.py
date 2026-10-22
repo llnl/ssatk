@@ -1,6 +1,6 @@
 """Physical lunar attitude for eclipse rendering.
 
-Strict LLNL modes use SSAPy's DE440 principal-axis lunar orientation.  The
+The DE430 backend uses the DE440 principal-axis lunar orientation.  The
 reference backend uses the NAIF/IAU 2009 text-PCK series with an explicit
 UTC-to-TDB time path.  Every public matrix maps Moon body-fixed vectors into
 GCRF; attitude rotates texture and body axes but never deforms the solid Moon.
@@ -82,7 +82,7 @@ def _jd_tdb(jd_utc: float) -> tuple[float, str]:
     except Exception:
         # 69.184 s = TT-UTC for both validated events; periodic TDB-TT is
         # included to millisecond scale.  The fallback is deterministic and is
-        # never relabelled as the binary-PCK SSAPy solution.
+        # never relabelled as the binary-PCK solution.
         tt = float(jd_utc) + 69.184 / 86400.0
         T = (tt - 2451545.0) / 36525.0
         g = math.radians((357.5277233 + 35999.05034 * T) % 360.0)
@@ -129,15 +129,15 @@ def iau_moon_attitude(jd_utc: float) -> LunarAttitude:
 
 def moon_attitude_for_event(event, jd_utc: float) -> LunarAttitude:
     selected = str(event.metadata.get("state_source", "reference"))
-    if selected == "ssapy":
-        from ssatk.compute.eclipse_runtime import ssapy_body_to_gcrf_matrices
+    if selected == "de430":
+        from ssatk.compute.eclipse_runtime import body_to_gcrf_matrices
 
-        matrix = np.asarray(ssapy_body_to_gcrf_matrices(float(jd_utc), "moon"), dtype=float)
+        matrix = np.asarray(body_to_gcrf_matrices(float(jd_utc), "moon"), dtype=float)
         _validate_rotation(matrix)
         return LunarAttitude(
             jd_utc=float(jd_utc),
             body_to_gcrf=matrix,
-            source="SSAPy DE440 Moon principal-axis orientation",
-            time_argument="UTC JD -> Astropy GPS seconds -> SSAPy MoonOrientation",
+            source="DE440 Moon principal-axis orientation",
+            time_argument="UTC JD -> Astropy GPS seconds -> DE440 lunar PCK",
         )
     return iau_moon_attitude(float(jd_utc))

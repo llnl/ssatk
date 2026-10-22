@@ -1,6 +1,6 @@
 """Lunar attitude and optional limb-profile geometry.
 
-The strict LLNL path uses SSAPy's DE440 binary lunar PCK through
+The DE430 backend uses the DE440 binary lunar PCK through
 ``Body.orientation``.  The deterministic reference path implements the NAIF
 IAU_MOON trigonometric model from ``pck00011.tpc`` (2009 IAU constants).  The
 text-PCK model is intentionally described as a lower-accuracy fallback; it is

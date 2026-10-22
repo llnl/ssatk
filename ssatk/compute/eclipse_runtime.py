@@ -1,7 +1,7 @@
-"""SSAPy ephemerides, body orientation and SSATK frames for eclipse states.
+"""DE430 ephemerides, body orientation and SSATK frames for eclipse states.
 
-Every function takes UTC Julian Dates and returns kilometres. SSAPy bodies
-take GPS seconds and return metres; the conversion happens here once.
+Every function takes UTC Julian Dates and returns kilometres. ``ssatk.get_body``
+bodies take GPS seconds and return metres; the conversion happens here once.
 """
 from __future__ import annotations
 
@@ -20,23 +20,23 @@ class BackendSelection:
     requested: str
     selected: str
     ephemeris_backend: str
-    frame_backend: str = "SSATK GCRF<->ITRF (SSAPy groundTrack)"
+    frame_backend: str = "SSATK GCRF<->ITRF"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
 _EPHEMERIS = {
-    "ssapy": "SSAPy DE430 (ssa-data-lunar)",
+    "de430": "JPL DE430 (ssa-data-lunar)",
     "reference": "NASA/GSFC Besselian elements and published circumstances",
 }
 
 
-def resolve_backend(mode: str = "ssapy") -> BackendSelection:
-    """Return the state backend for ``mode`` (``ssapy`` or ``reference``)."""
+def resolve_backend(mode: str = "de430") -> BackendSelection:
+    """Return the state backend for ``mode`` (``de430`` or ``reference``)."""
     selected = str(mode).strip().lower()
     if selected not in _EPHEMERIS:
-        raise ValueError("backend must be 'ssapy' or 'reference'")
+        raise ValueError("backend must be 'de430' or 'reference'")
     return BackendSelection(selected, selected, _EPHEMERIS[selected])
 
 
@@ -50,7 +50,7 @@ def jd_utc_to_gps_seconds(jd_utc) -> np.ndarray:
 @lru_cache(maxsize=None)
 def _body(name: str):
     # One kernel-backed body per process: animations evaluate many frames.
-    from ssapy import get_body
+    from ssatk import get_body
 
     return get_body(name)
 
@@ -65,11 +65,11 @@ def _rows(value, count: int) -> np.ndarray:
 _LIGHT_SPEED_KM_S = 299_792.458
 
 
-def _ssapy_position_km(name: str, gps: np.ndarray) -> np.ndarray:
+def _body_position_km(name: str, gps: np.ndarray) -> np.ndarray:
     return _rows(_body(name).position(gps), len(gps)) / 1_000.0
 
 
-def ssapy_ephemeris_positions_km(jd_utc) -> tuple[np.ndarray, np.ndarray]:
+def ephemeris_positions_km(jd_utc) -> tuple[np.ndarray, np.ndarray]:
     """Return light-time-corrected geocentric GCRF ``(moon_km, sun_km)``, each ``(N, 3)``.
 
     An eclipse happens where the light is, so each body is evaluated when the
@@ -81,21 +81,21 @@ def ssapy_ephemeris_positions_km(jd_utc) -> tuple[np.ndarray, np.ndarray]:
     gps = jd_utc_to_gps_seconds(jd)
     result = []
     for name in ("moon", "sun"):
-        position = _ssapy_position_km(name, gps)
+        position = _body_position_km(name, gps)
         for _ in range(2):
-            position = _ssapy_position_km(name, gps - np.linalg.norm(position, axis=1) / _LIGHT_SPEED_KM_S)
+            position = _body_position_km(name, gps - np.linalg.norm(position, axis=1) / _LIGHT_SPEED_KM_S)
         result.append(position)
     moon, sun = result
     if not (np.all(np.isfinite(moon)) and np.all(np.isfinite(sun))):
-        raise BackendUnavailableError("SSAPy returned non-finite Sun or Moon positions")
+        raise BackendUnavailableError("DE430 returned non-finite Sun or Moon positions")
     return moon, sun
 
 
-def ssapy_body_to_gcrf_matrices(jd_utc, body: str = "moon") -> np.ndarray:
+def body_to_gcrf_matrices(jd_utc, body: str = "moon") -> np.ndarray:
     """Body-fixed-to-GCRF rotation(s) for the Earth or the Moon.
 
-    SSAPy's ``Body.orientation`` returns GCRF-to-body; the Moon uses the DE440
-    binary PCK. The renderers need the transpose.
+    ``Body.orientation`` returns GCRF-to-body; the Moon uses the DE440 binary
+    PCK. The renderers need the transpose.
     """
     key = str(body).strip().lower()
     if key not in {"earth", "moon"}:

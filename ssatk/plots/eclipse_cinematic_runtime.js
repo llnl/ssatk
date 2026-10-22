@@ -750,8 +750,8 @@ function renderStateAtElapsed(seconds){
   const qa=rowsToQuaternion(a.earth_rotation),qb=rowsToQuaternion(b.earth_rotation);
   const ma=rowsToQuaternion(a.moon_rotation),mb=rowsToQuaternion(b.moon_rotation);
   const nearest=(t<.5?a:b),nearestIndex=(t<.5?i0:i1);
-  const orbitA=Array.isArray(a.ssapy_orbit_positions)?a.ssapy_orbit_positions:[];
-  const orbitB=Array.isArray(b.ssapy_orbit_positions)?b.ssapy_orbit_positions:orbitA;
+  const orbitA=Array.isArray(a.reference_orbit_positions)?a.reference_orbit_positions:[];
+  const orbitB=Array.isArray(b.reference_orbit_positions)?b.reference_orbit_positions:orbitA;
   const orbitPositions=orbitA.map((position,index)=>{
     const other=orbitB[index]||position;
     return position&&other?lerpArray(position,other,t):(position||other||null);

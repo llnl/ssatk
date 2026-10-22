@@ -33,7 +33,7 @@ class EventRequest:
     """
 
     kind: str = "solar"
-    backend: str = "ssapy"
+    backend: str = "de430"
     sample_count: int = 121
     solar_scope: str = "global"
     observer: ObserverConfig | None = None

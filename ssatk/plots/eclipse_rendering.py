@@ -197,7 +197,7 @@ def render_earth_disk(jd_utc: float, *, size: int = 420,
     intersections rather than radially projecting a circular unit sphere.
     Rendering is supersampled and Lanczos-downsampled so the WGS-84 limb,
     finite-Sun shadow, coastlines, and atmosphere remain smooth in the compact
-    scientific-summary panel.  The packaged cloud-free SSAPy surface texture
+    scientific-summary panel.  The packaged cloud-free surface texture
     is retained; no date-inaccurate synthetic cloud field is introduced.
     """
     output_size = max(32, int(size))
@@ -293,7 +293,7 @@ def render_earth_disk(jd_utc: float, *, size: int = 420,
 
     # Highlight-preserving exposure and restrained micro-contrast.  No
     # synthetic terrain or cloud field is introduced: all geographic detail
-    # comes from the packaged 5400 x 2700 LLNL/SSAPy surface mosaic.
+    # comes from the packaged surface mosaic.
     linear = np.clip(linear*1.10, 0.0, 1.35)
     linear = linear/(1.0+0.070*linear)
     srgb = _linear_to_srgb(np.clip(linear, 0.0, 1.0))
@@ -1472,7 +1472,7 @@ def draw_solar_map(
             raise ValueError("map_extent must be (xmin, xmax, ymin, ymax)")
         xmin, xmax, ymin, ymax = map(float, map_extent)
 
-    # Use the full packaged 5400x2700 SSAPy surface instead of pre-reducing it
+    # Use the full packaged surface texture instead of pre-reducing it
     # to 1600x800.  Matplotlib clips to the requested geographic extent, so the
     # North American scientific-summary crop keeps substantially more coastline
     # and terrain detail without changing the map geometry.

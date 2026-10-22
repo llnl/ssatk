@@ -3,20 +3,20 @@ Solar and lunar eclipses
 
 ``ssatk.eclipse`` builds solar and lunar eclipse events with a finite,
 limb-darkened Sun, validates them, and renders four products. Events come
-either from SSAPy DE430 states or from NASA/GSFC published elements:
+either from JPL DE430 states or from NASA/GSFC published elements:
 
 .. code-block:: python
 
    from ssatk.eclipse import EventRequest, RenderRequest, build_event, render_product
 
-   event = build_event(EventRequest(kind="solar", backend="ssapy"))
+   event = build_event(EventRequest(kind="solar", backend="de430"))
    render_product(RenderRequest(product="scientific-suite", output="eclipse_2024", event=event))
 
 State backends
 --------------
 
-``ssapy`` (default)
-   Sun and Moon from SSAPy's DE430 kernel in ``ssa-data-lunar``. The positions
+``de430`` (default)
+   Sun and Moon from the JPL DE430 kernel in ``ssa-data-lunar``. The positions
    are light-time corrected, because an eclipse happens where the light is.
    Without the correction, the Sun's 499 s light time puts predicted contacts
    about 40 s late.
@@ -26,9 +26,10 @@ State backends
    NASA/GSFC Besselian elements, and the 2025-03-14 total lunar eclipse from
    NASA/GSFC published circumstances. Both are converted to GCRF.
 
-Both backends use the SSATK GCRF/ITRF transform and SSAPy's lunar orientation.
+Both backends use the SSATK GCRF/ITRF transform. The DE430 backend orients the
+Moon with the DE440 lunar PCK and the reference backend with the IAU 2009 model.
 ``discover_eclipses`` finds every solar and lunar eclipse in a UTC interval
-from SSAPy states, and ``build_discovered_event`` turns a result into an event
+from DE430 states, and ``build_discovered_event`` turns a result into an event
 that any product can render.
 
 Products
@@ -60,7 +61,7 @@ Accuracy
 ``tests/test_eclipse_integration.py`` compares these results with independent
 references:
 
-* SSAPy-based discovery reproduces the NASA/GSFC contacts of the 2025-03-14
+* DE430-based discovery reproduces the NASA/GSFC contacts of the 2025-03-14
   lunar eclipse within 15 s, and its umbral magnitude within 0.003. Lunar
   shadows use Danjon's rule: Earth's mean radius enlarged by 1/85.
 * The 2024-04-08 global solar contacts agree within 25 s. The global contact
@@ -69,7 +70,7 @@ references:
 * The eclipse Sun matches Astropy's apparent Sun within 0.5 arcsec, and the
   reference backends match Astropy GCRS within 5 arcsec.
 * The 2024-04-08 greatest-eclipse ground point is within 0.001 deg of NASA's
-  (reference backend) and 0.03 deg (SSAPy backend).
+  (reference backend) and 0.03 deg (DE430 backend).
 * Limb-darkened visible flux matches an independent adaptive radial
   integral within 2e-7.
 

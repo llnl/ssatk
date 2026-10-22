@@ -6,7 +6,7 @@ Builds the 2024-04-08 total solar eclipse and the 2025-03-14 total lunar
 eclipse, validates them, and renders each eclipse product: the scientific
 summary with its interactive 3-D view, the observer circumstances for
 Dallas, Texas, a contact-to-contact WebGL animation, and a Plotly scene.
-It then discovers the 2026-08-12 total solar eclipse from SSAPy DE430 states
+It then discovers the 2026-08-12 total solar eclipse from JPL DE430 states
 and renders that event the same way.
 """
 
@@ -82,13 +82,13 @@ def main(make_figures=None, fast=None):
     # gallery-call: demo_eclipse_2024_cinematic_animation.html
     animation = render_product(RenderRequest(
         product="cinematic", output=figpath("eclipse/demo_eclipse_2024_cinematic_animation.html"),
-        event=EventRequest(kind="solar", backend="ssapy", sample_count=samples), quality=quality, animate=True,
+        event=EventRequest(kind="solar", backend="de430", sample_count=samples), quality=quality, animate=True,
     ))
     # gallery-end
     # gallery-call: demo_eclipse_2025_lunar_plotly.html
     plotly_view = render_product(RenderRequest(
         product="plotly", output=figpath("eclipse/demo_eclipse_2025_lunar_plotly.html"),
-        event=EventRequest(kind="lunar", backend="ssapy", sample_count=samples), quality=quality,
+        event=EventRequest(kind="lunar", backend="de430", sample_count=samples), quality=quality,
     ))
     # gallery-end
     # gallery-call: solar_2026_08_12_*

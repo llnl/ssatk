@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-_STATE_BACKENDS = ("ssapy", "reference")
+_STATE_BACKENDS = ("de430", "reference")
 _QUALITIES = ("motion", "motion_high", "high", "ultra", "cinema")
 _PRODUCTS = ("cinematic", "plotly", "scientific-suite", "observer-suite")
 
@@ -15,8 +15,8 @@ def _event_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--samples", type=int, default=121,
                         help="minimum state count; exact contacts are inserted and may add samples")
     parser.add_argument("--solar-scope", choices=("local", "global"), default="global")
-    parser.add_argument("--backend", choices=_STATE_BACKENDS, default="ssapy",
-                        help=("ssapy evaluates SSAPy DE430 Sun/Moon states; reference replays "
+    parser.add_argument("--backend", choices=_STATE_BACKENDS, default="de430",
+                        help=("de430 evaluates JPL DE430 Sun/Moon states; reference replays "
                               "the NASA/GSFC Besselian elements of the bundled events"))
     parser.add_argument("--observer-lat", type=float)
     parser.add_argument("--observer-lon", type=float)
@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    search = sub.add_parser("search", help="discover solar/lunar eclipses in a UTC interval with SSAPy")
+    search = sub.add_parser("search", help="discover solar/lunar eclipses in a UTC interval from DE430 states")
     search.add_argument("--start", required=True, help="UTC date/time or Julian date")
     search.add_argument("--end", required=True, help="UTC date/time or Julian date")
     search.add_argument("--kind", choices=("all", "solar", "lunar"), default="all")

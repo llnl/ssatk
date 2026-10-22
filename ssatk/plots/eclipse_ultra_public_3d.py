@@ -19,7 +19,7 @@ lighting choices that make large Plotly scenes unstable:
   photosphere-to-surface paths, while exact tangent families and optical
   volumes remain optional diagnostics.
 
-Reference states are compared against SSAPy DE430 in the provenance card.
+Reference states are compared against JPL DE430 in the provenance card.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ from ssatk.compute.eclipse_brightness import (
     ray_ellipsoid_intersections,
     ray_sphere_intersections,
 )
-from ssatk.compute.eclipse_runtime import ssapy_ephemeris_positions_km
+from ssatk.compute.eclipse_runtime import ephemeris_positions_km
 from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km
 from ssatk.compute.eclipse_state import build_event, resample_event
 from ssatk.plots.eclipse_bodies import (
@@ -112,7 +112,7 @@ class PublicPeakState:
     moon_local_km: np.ndarray
     sun_local_km: np.ndarray
     axis_impact_km: float
-    ssapy_diagnostics: dict[str, object]
+    state_diagnostics: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -164,24 +164,24 @@ def _impact_basis_gcrf(event: ReferenceEvent, bundle_native) -> tuple[np.ndarray
     return _orthonormalize_basis(np.stack(columns, axis=1)), float(impact)
 
 
-def _ssapy_audit(event: ReferenceEvent, reference_sun: np.ndarray,
+def _state_audit(event: ReferenceEvent, reference_sun: np.ndarray,
                  reference_moon: np.ndarray) -> dict[str, object]:
-    """State provenance, plus the SSAPy DE430 offset of a reference state."""
+    """State provenance, plus the DE430 offset of a reference state."""
     result: dict[str, object] = {
         "selected_backend": str(event.metadata.get("state_source", "reference")),
         "ephemeris_backend": str(event.metadata.get("ephemeris_backend", event.backend)),
         "frame_backend": str(event.metadata.get("frame_backend", event.frame)),
     }
     if result["selected_backend"] == "reference":
-        moon, sun = ssapy_ephemeris_positions_km([event.greatest_jd])
-        result["ssapy_sun_reference_delta_km"] = float(np.linalg.norm(sun[0]-reference_sun))
-        result["ssapy_moon_reference_delta_km"] = float(np.linalg.norm(moon[0]-reference_moon))
+        moon, sun = ephemeris_positions_km([event.greatest_jd])
+        result["de430_sun_reference_delta_km"] = float(np.linalg.norm(sun[0]-reference_sun))
+        result["de430_moon_reference_delta_km"] = float(np.linalg.norm(moon[0]-reference_moon))
     return result
 
 
 def build_public_peak_state(kind: str | ReferenceDefinition | ReferenceEvent = "solar",
                             *, ray_azimuth: int = 96,
-                            backend: str = "ssapy",
+                            backend: str = "de430",
                             solar_scope: str = "global",
                             observer: object | None = None) -> PublicPeakState:
     if isinstance(kind, ReferenceEvent):
@@ -215,7 +215,7 @@ def build_public_peak_state(kind: str | ReferenceDefinition | ReferenceEvent = "
     earth = np.zeros(3)
     moon = _scene_coordinates(state.moon_gcrf_km.reshape(1, 3), np.zeros(3), basis, 1.0)[0]
     sun = _scene_coordinates(state.sun_gcrf_km.reshape(1, 3), np.zeros(3), basis, 1.0)[0]
-    audit = _ssapy_audit(event, state.sun_gcrf_km, state.moon_gcrf_km)
+    audit = _state_audit(event, state.sun_gcrf_km, state.moon_gcrf_km)
     return PublicPeakState(
         event=event,
         state=state,
@@ -225,7 +225,7 @@ def build_public_peak_state(kind: str | ReferenceDefinition | ReferenceEvent = "
         moon_local_km=moon,
         sun_local_km=sun,
         axis_impact_km=impact,
-        ssapy_diagnostics=audit,
+        state_diagnostics=audit,
     )
 
 
@@ -236,7 +236,7 @@ def build_public_frame_state(
     basis_world_from_scene: np.ndarray | None = None,
     reference_cross_axis_gcrf: np.ndarray | None = None,
     ray_azimuth: int = 48,
-    run_ssapy_audit: bool = False,
+    run_state_audit: bool = False,
 ) -> PublicPeakState:
     """Build one UTC state in a fixed greatest-eclipse display frame.
 
@@ -282,8 +282,8 @@ def build_public_frame_state(
     )[0]
     _, _, impact = impact_plane_basis(state.bundle_native)
     audit = (
-        _ssapy_audit(event, state.sun_gcrf_km, state.moon_gcrf_km)
-        if run_ssapy_audit
+        _state_audit(event, state.sun_gcrf_km, state.moon_gcrf_km)
+        if run_state_audit
         else {"selected_backend": str(event.metadata.get("state_source", "reference"))}
     )
     return PublicPeakState(
@@ -295,7 +295,7 @@ def build_public_frame_state(
         moon_local_km=moon,
         sun_local_km=sun,
         axis_impact_km=float(impact),
-        ssapy_diagnostics=audit,
+        state_diagnostics=audit,
     )
 
 
@@ -1463,12 +1463,12 @@ def build_cross_section_figure(peak: PublicPeakState) -> go.Figure:
 
 
 def _backend_card(peak: PublicPeakState) -> str:
-    audit = peak.ssapy_diagnostics
+    audit = peak.state_diagnostics
     comparison = ""
-    if "ssapy_sun_reference_delta_km" in audit:
+    if "de430_sun_reference_delta_km" in audit:
         comparison = (
-            f"<br>SSAPy/reference Sun delta: {float(audit['ssapy_sun_reference_delta_km']):,.3f} km"
-            f"<br>SSAPy/reference Moon delta: {float(audit['ssapy_moon_reference_delta_km']):,.3f} km"
+            f"<br>DE430/reference Sun delta: {float(audit['de430_sun_reference_delta_km']):,.3f} km"
+            f"<br>DE430/reference Moon delta: {float(audit['de430_moon_reference_delta_km']):,.3f} km"
         )
     return (
         "<b>State provenance</b><br>"
@@ -1484,7 +1484,7 @@ def generate_public_ultra_view(
     output_path: str | Path = "eclipse_greatest_public_ultra.html",
     *,
     quality: str = "ultra",
-    backend: str = "ssapy",
+    backend: str = "de430",
     solar_scope: str = "global",
     observer: object | None = None,
 ) -> str:
@@ -1574,7 +1574,7 @@ footer {{ padding:18px 26px 28px; color:var(--muted); border-top:1px solid var(-
 <div class="card">{backend_card}</div>
 <div class="card"><b>Numerical audit</b><br>Earth penetrations: {penetrations['earth']}<br>Moon penetrations: {penetrations['moon']}<br>Maximum tangent radius residual: {max(residuals['umbra_radius_error_km'], residuals['penumbra_radius_error_km']):.3e} km<br>Maximum tangent orthogonality residual: {max(residuals['umbra_orthogonality_km'], residuals['penumbra_orthogonality_km']):.3e} km</div>
 </div>
-<footer>Appearance uses the packaged SSAPy Earth and Moon mosaics. Eclipse darkness is part of the same physically shaded body surface, not a second floating overlay. Lunar totality colour is an illustrative Danjon-style atmospheric cue; the geometric shadow and contact construction are the validated quantities. No cloud layer is shown because the package does not contain a date-matched global cloud analysis.</footer>
+<footer>Appearance uses the packaged SSATK Earth and Moon mosaics. Eclipse darkness is part of the same physically shaded body surface, not a second floating overlay. Lunar totality colour is an illustrative Danjon-style atmospheric cue; the geometric shadow and contact construction are the validated quantities. No cloud layer is shown because the package does not contain a date-matched global cloud analysis.</footer>
 <script>
 const buttons=[...document.querySelectorAll('.tab-button')];
 const tabs=[...document.querySelectorAll('.tab')];

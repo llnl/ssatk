@@ -51,7 +51,7 @@ def _event_for_animation(
     *,
     n_frames: int,
     solar_scope: str = "local",
-    backend: str = "ssapy",
+    backend: str = "de430",
     observer: object | None = None,
     observer_contacts: dict[str, float] | None = None,
 ) -> ReferenceEvent:
@@ -191,7 +191,7 @@ def build_public_animation(
     n_frames: int = 39,
     solar_scope: str = "local",
     ray_azimuth: int = 48,
-    backend: str = "ssapy",
+    backend: str = "de430",
     observer: object | None = None,
     observer_contacts: dict[str, float] | None = None,
 ) -> PublicAnimation:
@@ -225,7 +225,7 @@ def build_public_animation(
             basis_world_from_scene=basis,
             reference_cross_axis_gcrf=geometry.reference_cross_axis_gcrf,
             ray_azimuth=max(24, int(ray_azimuth)),
-            run_ssapy_audit=False,
+            run_state_audit=False,
         )
         for jd in event.jd
     )

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km, ssapy_ephemeris_positions_km
+from ssatk.compute.eclipse_runtime import gcrf_to_itrf_km, itrf_to_gcrf_km, ephemeris_positions_km
 from ssatk.compute.eclipse_state import event_positions_gcrf
 from ssatk.compute.eclipse_local_finite_geometry import impact_plane_basis, shadow_axis_world
 from ssatk.compute.eclipse_reference_events import (
@@ -351,9 +351,9 @@ def _clip_polyline_x(points: np.ndarray, xmin: float, xmax: float) -> np.ndarray
 
 
 def _aligned_earth_orbit(event: ReferenceEvent, basis: np.ndarray) -> np.ndarray:
-    """Earth's heliocentric orbit over the year centred on the event (SSAPy DE430)."""
+    """Earth's heliocentric orbit over the year centred on the event (JPL DE430)."""
     year = np.linspace(event.greatest_jd-182.625, event.greatest_jd+182.625, 721)
-    _, sun = ssapy_ephemeris_positions_km(year)
+    _, sun = ephemeris_positions_km(year)
     return _scene_coordinates(-sun, np.zeros(3), basis, AU_KM)
 
 

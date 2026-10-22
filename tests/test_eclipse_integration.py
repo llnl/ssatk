@@ -39,8 +39,8 @@ def _arcsec(a, b) -> float:
     return float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))) * 3600.0)
 
 
-def test_ssapy_sun_is_light_time_corrected_against_astropy():
-    """R2: SSAPy eclipse Sun direction against Astropy's apparent geocentric Sun.
+def test_de430_sun_is_light_time_corrected_against_astropy():
+    """R2: DE430 eclipse Sun direction against Astropy's apparent geocentric Sun.
 
     Tolerance 0.5 arcsec. The geometric Sun differs from the apparent Sun by
     about 20 arcsec of light-time aberration.
@@ -49,10 +49,10 @@ def test_ssapy_sun_is_light_time_corrected_against_astropy():
     from astropy.time import Time
 
     from ssatk.compute.eclipse_reference_events import SOLAR_2024
-    from ssatk.compute.eclipse_runtime import ssapy_ephemeris_positions_km
+    from ssatk.compute.eclipse_runtime import ephemeris_positions_km
 
     jd = SOLAR_2024.greatest_jd
-    _, sun = ssapy_ephemeris_positions_km([jd])
+    _, sun = ephemeris_positions_km([jd])
     astropy_sun = get_body("sun", Time(jd, format="jd", scale="utc")).cartesian.xyz.to_value("km")
     assert _arcsec(sun[0], astropy_sun) < 0.5
 
@@ -76,7 +76,7 @@ def test_reference_backend_states_are_gcrf(kind):
     assert _arcsec(sun, astropy_sun.cartesian.xyz.to_value("km")) < 5.0
 
 
-def test_ssapy_discovery_matches_nasa_lunar_2025_contacts():
+def test_de430_discovery_matches_nasa_lunar_2025_contacts():
     """R3: NASA/GSFC contacts and umbral magnitude of the 2025-03-14 total lunar eclipse.
 
     Tolerance 15 s per contact and 0.003 in magnitude: the discovery uses
@@ -92,7 +92,7 @@ def test_ssapy_discovery_matches_nasa_lunar_2025_contacts():
     assert record.magnitude == pytest.approx(1.1784, abs=0.003)
 
 
-def test_ssapy_discovery_matches_nasa_solar_2024_contacts():
+def test_de430_discovery_matches_nasa_solar_2024_contacts():
     """R3: NASA/GSFC global contacts of the 2024-04-08 total solar eclipse.
 
     Tolerance 25 s: the global contact equation treats Earth as a sphere of
@@ -165,12 +165,12 @@ def test_photometry_lut_matches_centered_quadratic_closed_form():
     np.testing.assert_allclose((1.0 - q * q) + delta, 1.0 - blocked / total, atol=0.001, rtol=0)
 
 
-@pytest.mark.parametrize("backend, tolerance_deg", [("reference", 0.001), ("ssapy", 0.03)])
+@pytest.mark.parametrize("backend, tolerance_deg", [("reference", 0.001), ("de430", 0.03)])
 def test_greatest_eclipse_ground_point_matches_nasa_gsfc(backend, tolerance_deg):
     """R3: NASA/GSFC places 2024-04-08 greatest eclipse at 25 deg 17.2 min N, 104 deg 08.3 min W.
 
     The reference backend replays NASA's Besselian elements (0.001 deg). The
-    SSAPy backend uses DE430 and SSATK Earth orientation rather than NASA's
+    DE430 backend uses JPL DE430 and SSATK Earth orientation rather than NASA's
     VSOP87/ELP2000-85 with their Delta T, so it is held to 0.03 deg (about 3 km).
     """
     from ssatk.compute.eclipse_local_finite_geometry import shadow_axis_world

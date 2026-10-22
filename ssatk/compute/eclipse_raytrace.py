@@ -444,7 +444,7 @@ def trace_gcrf_rays(
     moon_gcrf_km,
     *,
     n_azimuth: int = 12,
-    source_label: str = "SSAPy DE430",
+    source_label: str = "JPL DE430",
 ) -> ReferenceRayBundle:
     """Trace finite-Sun eclipse rays from explicit GCRF body centres."""
     if isinstance(kind, ReferenceDefinition):

@@ -1,8 +1,8 @@
 """Numerical solar and lunar eclipse discovery from Sun/Moon state vectors.
 
 Discovery searches minima of a finite-cone target margin and root-finds the
-external and internal contact equations. ``discover_eclipses`` uses SSAPy's
-DE430 states; ``discover_with_position_provider`` accepts any provider so other
+external and internal contact equations. ``discover_eclipses`` uses DE430
+states; ``discover_with_position_provider`` accepts any provider so other
 ephemerides can be compared against it. A discovered event materializes as
 the same ``ReferenceEvent`` the ray tracer and renderers consume, with every
 body state stored so it stays reproducible after serialization.
@@ -18,7 +18,7 @@ import json
 import numpy as np
 
 from ssatk.compute.eclipse_core import shadow_cone
-from ssatk.compute.eclipse_runtime import resolve_backend, ssapy_ephemeris_positions_km
+from ssatk.compute.eclipse_runtime import resolve_backend, ephemeris_positions_km
 from ssatk.compute.eclipse_state import solar_visibility_and_separation
 from ssatk.compute.eclipse_reference_events import (
     LUNAR_DANJON_FACTOR,
@@ -243,7 +243,7 @@ def discover_with_position_provider(
 
     The method searches minima of a finite-cone target-intersection margin and
     then root-finds the external and internal contact equations.  It is used by
-    the strict SSAPy backend and is public so downstream propagators can be
+    the DE430 backend and is public so downstream propagators can be
     validated without being wrapped as a package-specific backend.
     """
     try:
@@ -371,11 +371,11 @@ def discover_with_position_provider(
     return unique
 
 
-class _SsapyProvider:
-    name = "SSAPy DE430 numerical search"
+class _De430Provider:
+    name = "DE430 numerical search"
 
     def positions_gcrf_km(self, jd_utc):
-        moon, sun = ssapy_ephemeris_positions_km(jd_utc)
+        moon, sun = ephemeris_positions_km(jd_utc)
         return sun, moon
 
 
@@ -385,7 +385,7 @@ def discover_eclipses(
     *,
     kind: str = "all",
 ) -> list[DiscoveredEclipse]:
-    """Discover all solar and/or lunar eclipses in a UTC interval with SSAPy."""
+    """Discover all solar and/or lunar eclipses in a UTC interval from DE430 states."""
     start_jd, end_jd = _coerce_jd(start), _coerce_jd(end)
     if not start_jd < end_jd:
         raise ValueError("start must precede end")
@@ -396,7 +396,7 @@ def discover_eclipses(
     records: list[DiscoveredEclipse] = []
     for mode in modes:
         records.extend(discover_with_position_provider(
-            start_jd, end_jd, mode=mode, provider=_SsapyProvider(), provider_name=_SsapyProvider.name,
+            start_jd, end_jd, mode=mode, provider=_De430Provider(), provider_name=_De430Provider.name,
         ))
     return sorted(records, key=lambda item: item.greatest_jd_utc)
 
@@ -420,10 +420,10 @@ def _contact_aware_times(record: DiscoveredEclipse, n_frames: int) -> np.ndarray
 
 
 def build_discovered_event(record: DiscoveredEclipse, *, n_frames: int = 121) -> ReferenceEvent:
-    """Materialize a discovered event with SSAPy states on a contact-aware timeline."""
+    """Materialize a discovered event with DE430 states on a contact-aware timeline."""
     times = _contact_aware_times(record, n_frames)
-    selection = resolve_backend("ssapy")
-    moon, sun = ssapy_ephemeris_positions_km(times)
+    selection = resolve_backend("de430")
+    moon, sun = ephemeris_positions_km(times)
     visible, separation = (
         solar_visibility_and_separation(times, sun, moon) if record.mode == "solar"
         else center_visibility_and_separation("lunar", sun, moon)
