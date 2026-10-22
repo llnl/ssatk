@@ -277,6 +277,38 @@ for number in (1, 3, 4, 5, 6, 7, 8):
 _add("smm", "Solar Maximum Mission", "detector_bus", group="legacy", aliases=("solarmax",),
      sources=(HEASARC+"solarmax.html",), size=(1.6,1.6,2.0), layout="generic", count=3)
 
+_add("iss", "International Space Station silhouette", "iss", group="illustrative",
+     sources=("https://www.nasa.gov/international-space-station/",),
+     notes="Station modules, truss and four solar banks use illustrative dimensions; no manufacturer or reference geometry is claimed.",
+     axes="Long truss is along X; station modules and solar banks are schematic.")
+_add("tiangong", "Tiangong station silhouette", "tiangong", group="illustrative",
+     sources=("https://www.cnsa.gov.cn/english/n6465652/n6465653/c6813088/content.html",),
+     notes="Modules, docking ports and solar wings use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("gps", "GPS navigation spacecraft silhouette", "gps", group="illustrative",
+     sources=("https://www.gps.gov/systems/gps/space/",),
+     notes="Navigation bus, antenna and dual solar wings use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("galileo", "Galileo navigation spacecraft silhouette", "galileo", group="illustrative",
+     sources=("https://www.esa.int/Applications/Navigation/Galileo",),
+     notes="Navigation bus, antenna and dual solar wings use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("glonass", "GLONASS navigation spacecraft silhouette", "glonass", group="illustrative",
+     sources=("https://gssc.esa.int/navipedia/index.php/GLONASS_Space_Segment",),
+     notes="Navigation bus, antenna and dual solar wings use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("beidou", "BeiDou navigation spacecraft silhouette", "beidou", group="illustrative",
+     sources=("https://www.beidou.gov.cn/gydbd/xtjs/",),
+     notes="Navigation bus, antenna and dual solar wings use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("goes", "GOES weather spacecraft silhouette", "goes", group="illustrative",
+     sources=("https://www.nesdis.noaa.gov/our-satellites/currently-flying/goes-east",),
+     notes="Weather bus, single solar array and dish use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("landsat", "Landsat Earth-observation silhouette", "landsat", group="illustrative",
+     sources=("https://landsat.gsfc.nasa.gov/",),
+     notes="Earth-observation bus, single solar array and instrument use illustrative dimensions; no manufacturer or reference geometry is claimed.")
+_add("rocket_body", "Launch-vehicle upper-stage silhouette", "rocket_body", group="illustrative",
+     sources=("https://www.nasa.gov/learning-resources/for-kids-and-students/what-is-a-rocket-grades-5-8/",),
+     notes="Cylinder, tapered nose, engine and fins use illustrative dimensions; no launch-vehicle reference geometry is claimed.")
+_add("debris", "Generic debris shard", "debris", group="illustrative",
+     sources=("https://www.esa.int/Space_Safety/Space_Debris",),
+     notes="Irregular shard vertices use illustrative dimensions; this is not a cataloged object or physical-fragment model.")
+
 
 def _key(name):
     if not isinstance(name, str):

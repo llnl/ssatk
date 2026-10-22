@@ -13,7 +13,8 @@ from ssapy import Orbit, get_body, rv
 
 from ssatk.constants import EARTH_MU, MOON_MU, MOON_RADIUS, SIDEREAL_DAY_SECONDS
 from ssatk.coordinates.frames import eci_to_ecf_matrix
-from ssatk.plots.spacecraft_view import SpacecraftMesh, SpacecraftView
+from ssatk.geometry import SpacecraftMesh
+from ssatk.plots.spacecraft_view import SpacecraftView
 from ssatk.satellites import SpacecraftBody, Facet
 
 TITLE = "Spacecraft Mesh, Attitude, and Sun Direction"
@@ -73,6 +74,26 @@ def example_mesh():
                 facets.append(Facet(name=f"panel_{sign}_{a}_{b}", area=(1 / 3) * (1.4 / 3),
                                     normal_body=(0, 0, 1), vertices_body=vertices))
     return SpacecraftMesh.from_body(body.with_updates(facets=tuple(facets)))
+
+
+def import_model_example(path):
+    """Use one imported body-frame mesh in both viewer implementations.
+
+    This opt-in helper samples only four GEO states and does not run as part of
+    the default gallery demo.
+    """
+    from ssatk.plots.build_satellite_viewer import satellite_viewer
+
+    times, r, v, q = geo_states(count=4)
+    mesh = SpacecraftMesh.from_file(path)
+    offline = SpacecraftView(
+        r, times, q, mesh=mesh, camera="limb", environment="earth",
+        title="Imported spacecraft mesh",
+    )
+    webgl = satellite_viewer(
+        r, v, times, q=q, mesh=mesh, mesh_scale="physical", verbose=False,
+    )
+    return offline, webgl
 
 
 def example_view(environment="earth", count=None, mesh=None, camera="limb"):

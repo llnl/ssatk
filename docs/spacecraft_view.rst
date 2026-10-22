@@ -1,12 +1,16 @@
 Spacecraft mesh and attitude exports
 ====================================
 
-``ssatk.plots.spacecraft_view`` displays a spacecraft mesh, body-frame axes,
+``ssatk.geometry.SpacecraftMesh`` is the canonical mesh type used by
+``ssatk.plots.spacecraft_view`` and the WebGL ``satellite_viewer``. The older
+``ssatk.plots.spacecraft_view.SpacecraftMesh`` import remains an alias.
+The viewers display a spacecraft mesh, body-frame axes,
 the spacecraft-to-Sun direction, catalog stars, and Earth or Moon. The default camera
 shows a static overview; select ``camera="follow"`` or ``camera="limb"`` for
 a spacecraft close-up. Planet size and position follow perspective geometry
 at the supplied position and epoch. A nearby planet can fill much of the
-background. Rendering is offline and does not require a browser or GPU.
+background. ``spacecraft_view`` rendering is offline and does not require a
+browser or GPU; the exported ``satellite_viewer`` HTML uses browser WebGL.
 
 Input conventions
 -----------------
@@ -25,6 +29,8 @@ Input conventions
   faces, and optional per-face RGB colors. Mesh origin and scale are preserved.
   Triangular and convex polygon faces are supported. Alternatively, pass a
   ``SpacecraftBody`` with ``vertices_body`` on every facet through ``body=``.
+  Meshes are always body-frame metres; construction does not normalize,
+  recenter, or otherwise change the supplied origin or scale.
 * ``frame="moon_centered_gcrf"``: Moon-relative positions in **GCRF axes**.
   This is neither the rotating Earth-Moon frame nor the lunar body-fixed frame.
   Quaternion axes remain GCRF. The default is ``frame="gcrf"``.
@@ -100,9 +106,45 @@ all lengths, including thickness. Custom geometry replaces the default:
 .. code-block:: python
 
    view = spacecraft_view(r, t, q, mesh="boxwing")
-   mesh = SpacecraftMesh.from_obj("spacecraft.obj", scale=1.0)  # m per OBJ unit
+   mesh = SpacecraftMesh.from_file("spacecraft.obj")
    view = spacecraft_view(r, t, q, mesh=mesh)
    view = spacecraft_view(r, t, q, body=spacecraft.body)
+
+``SpacecraftMesh.from_file(path, scale=None, units=None, linear_deflection=.1,
+angular_deflection=.5)`` supports OBJ directly. ``units`` may be one of
+``m``, ``cm``, ``mm``, ``in``, or ``ft`` and is mutually exclusive with
+``scale``; neither is inferred for OBJ or mesh files. STL, PLY, OFF, GLTF,
+GLB, and 3MF use the optional ``ssatk[mesh]`` extra (``trimesh``). STEP, STP,
+IGES, and IGS use the optional ``ssatk[cad]`` extra (OpenCascade,
+``cadquery-ocp``); OpenCascade
+CAD coordinates are in OpenCascade's internal millimetres, so CAD uses a default
+``.001`` SI conversion. Linear deflection is in those millimetres and angular
+deflection is in radians. GLTF uses metres; 3MF reads embedded units and defaults
+to millimetres. Unitless OBJ/STL/PLY/OFF default to metres: specify ``units`` or
+``scale`` when the authoring tool uses different units.
+
+``SpacecraftMesh.export(path)`` writes OBJ directly or uses ``trimesh`` for
+mesh outputs. It does not export CAD. ``convert_mesh(source, destination,
+**import_options)`` is the convenience form for importing and exporting.
+Proprietary SolidWorks, Inventor, CATIA, and FBX inputs are not promised;
+export those designs to a neutral CAD or mesh format first. RGB colors may be
+retained where the backend supplies them, but textures and PBR materials are
+not preserved.
+
+Unsupported file extensions raise ``ValueError`` with conversion instructions.
+For example, ``.sldprt``/``.sldasm`` identifies SolidWorks and recommends exporting
+the 3D part or complete assembly to STEP, installing ``ssatk[cad]``, and loading
+the exported file. Inventor, CATIA, Creo/NX, Fusion, FreeCAD, Parasolid and ACIS
+inputs receive corresponding guidance. FBX and other scene formats recommend
+exporting GLB/glTF or triangulated OBJ using a compatible external application.
+Drawing formats are not treated as 3D bodies. Renaming an extension is not a
+conversion. Verify units, component placements, origin and body axes afterward.
+Unsupported export targets recommend mesh output instead; SSATK cannot recover
+an editable CAD solid from its tessellated representation.
+
+For interchange, ``mesh.to_dict()`` and ``SpacecraftMesh.from_dict(value)``
+use schema ``ssatk.spacecraft_mesh.v1`` with ``units="m"``,
+``frame="body"``, vertices, faces, RGB colors, and per-face part-name lists.
 
 ``SpacecraftMesh.from_body(spacecraft.body)`` uses the actual facet vertices
 relative to ``body.current_center_of_mass``, so a propagated center-of-mass
@@ -114,6 +156,20 @@ It rejects facets defined only by area and normal, since those quantities do
 not uniquely specify their shape. Supplying both ``mesh`` and ``body`` is an
 error; a custom body alone always overrides the automatic preset.
 OBJ materials and texture files are not imported.
+
+The WebGL viewer accepts ``mesh=`` or ``body=`` for one shared model, or
+``meshes=`` for one model per orbit. These choices are exclusive. Its
+``mesh_scale="glyph"`` default exaggerates display size for visibility;
+``mesh_scale="physical"`` uses the mesh's metre dimensions. WebGL presets are
+the same Python presets used by this viewer, not independent procedural
+shapes; display-only LOD glyphs remain available.
+
+For dynamics, ``SpacecraftBody.from_file(path, mass=..., inertia=..., **...)``
+uses the imported geometry while keeping mass, inertia, facet coefficients,
+and other physical properties as caller inputs. If inertia is omitted, the
+existing uniform bounding-box estimate is used. CAD import does not infer
+mass, inertia, material, or optical coefficients and does not provide
+self-occlusion physics.
 
 See :doc:`camera_modes` for overview, follow, chase and orbit sweep options.
 

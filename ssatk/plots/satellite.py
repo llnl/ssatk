@@ -120,7 +120,7 @@ class Satellite3D:
     Attributes
     ----------
     model_path : str | None
-        Path to a Wavefront .obj file.  None → render as a simple box.
+        Path to supported mesh/CAD geometry. None renders as a simple box.
     mass_kg    : float
         Dry mass (used for finite burns when no per-burn mass is set).
     show_ntw   : bool
@@ -297,43 +297,23 @@ class Satellite3D:
     # ── OBJ loader ────────────────────────────────────────────────────────────
     def load_obj(self) -> bool:
         """
-        Parse a Wavefront .obj file.
-        Returns True on success.
+        Load shared geometry, retaining legacy unit-sphere display normalization.
 
-        Sets self._verts (V, 3) and self._faces (list of index lists).
-        Vertices are normalised so the model fits in a unit sphere.
+        The historical method name remains for compatibility. Physical geometry
+        import and optional backends are handled by SpacecraftMesh.from_file.
         """
         if self.model_path is None or not self.model_path.exists():
             return False
-        verts, faces = [], []
-        try:
-            with open(self.model_path) as fh:
-                for line in fh:
-                    line = line.strip()
-                    if line.startswith("v "):
-                        parts = line.split()
-                        verts.append([float(parts[1]),
-                                      float(parts[2]),
-                                      float(parts[3])])
-                    elif line.startswith("f "):
-                        parts = line.split()[1:]
-                        # handle v, v/vt, v/vt/vn formats
-                        idx = [int(p.split("/")[0]) - 1 for p in parts]
-                        faces.append(idx)
-        except Exception as ex:
-            print(f"[Satellite3D] OBJ load error: {ex}")
-            return False
+        from ssatk.geometry import SpacecraftMesh
 
-        if not verts:
-            return False
-        v = np.array(verts, dtype=float)
-        # centre and normalise to unit sphere
+        mesh = SpacecraftMesh.from_file(self.model_path)
+        v = mesh.vertices.copy()
         v -= v.mean(axis=0)
         r_max = np.linalg.norm(v, axis=1).max()
         if r_max > 1e-10:
             v /= r_max
         self._verts = v
-        self._faces = faces
+        self._faces = [face.tolist() for face in mesh.faces]
         return True
 
     def model_vertices_eci(
@@ -349,9 +329,9 @@ class Satellite3D:
         scale_km controls the rendered size.
         """
         if self._verts is None:
-            # fallback: simple box
-            self._verts = _unit_box_verts()
-            self._faces = _unit_box_faces()
+            if not self.load_obj():
+                self._verts = _unit_box_verts()
+                self._faces = _unit_box_faces()
 
         T, N, W = ntw_axes(r_km, v_km_s)
         # rotation: model X→T, Y→N, Z→W

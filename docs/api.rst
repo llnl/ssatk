@@ -43,6 +43,7 @@ Top-level modules
    constants
    data
    environment
+   geometry
    hpc
    orbit_initializer
    utils
