@@ -317,3 +317,99 @@ def early(b, style="oao", length=3, radius=1):
         b.cylinder(radius,length,color=SILVER,segments=8)
         b.aperture(radius*.4,length/2+.001)
         b.wings(radius*6,length*.7,radius*1.1)
+
+
+def iss(b):
+    b.box((3.0, 2.4, 1.6), (-2.4, 0, 0), WHITE, "station_module")
+    b.box((2.4, 2.2, 1.5), (0.4, 0, 0), SILVER, "station_module")
+    b.box((2.0, 2.0, 1.4), (2.8, 0, 0), WHITE, "station_module")
+    for y in (-1.0, 1.0):
+        b.rod([-4, y, 0], [4, y, 0], .10, GOLD, "main_truss")
+        b.rod([-4, y, -.45], [4, y, .45], .06, SILVER, "truss_brace")
+    for x in (-4, 4):
+        b.panel((x, 0, 2.2), (0, 0, 4.8), (3.4, 0, 0), rows=5, cols=8,
+                part="solar_bank")
+        b.panel((x, 0, -2.2), (0, 0, 4.8), (3.4, 0, 0), rows=5, cols=8,
+                part="solar_bank")
+    b.cylinder(.35, 1.2, (0, 0, 1.1), WHITE, "docking_port", axis=(0, 0, 1))
+
+
+def tiangong(b):
+    b.cylinder(1.25, 4.8, (0, 0, 0), WHITE, "station_module", segments=16)
+    b.cylinder(.9, 2.0, (0, 0, 3.3), SILVER, "station_module", segments=16)
+    b.cylinder(.85, 1.5, (0, 0, -3.1), SILVER, "station_module", segments=16)
+    b.cylinder(.35, .7, (0, 0, 4.6), GOLD, "docking_port", segments=12)
+    b.wings(15, 2.8, 1.5, z=-.5, normal="y", part="solar_bank")
+    b.rod([-1.5, 0, -.5], [1.5, 0, -.5], .08, GOLD, "truss")
+
+
+def navigation_bus(b, size=(1.8, 1.8, 2.2), span=12, panel_width=2.2,
+                   color=GOLD):
+    b.box(size, color=color, part="navigation_bus")
+    b.wings(span, panel_width, size[0] / 2 + .35, z=-size[2] / 3,
+            part="solar_wing")
+    b.cylinder(.42, .22, (0, 0, size[2] / 2 + .12), WHITE, "antenna",
+               segments=16)
+    b.disk(.32, (0, 0, size[2] / 2 + .24), color=DARK, part="antenna_face")
+    b.rod([0, 0, -size[2] / 2], [0, 0, -size[2] / 2 - .6], .06,
+           SILVER, "boom")
+
+
+def gps(b):
+    navigation_bus(b, size=(1.9, 1.9, 2.3), span=12, panel_width=2.1)
+
+
+def galileo(b):
+    navigation_bus(b, size=(2.1, 2.1, 2.5), span=13, panel_width=2.4,
+                   color=WHITE)
+
+
+def glonass(b):
+    navigation_bus(b, size=(2.0, 2.0, 2.0), span=11, panel_width=2.0,
+                   color=SILVER)
+
+
+def beidou(b):
+    navigation_bus(b, size=(2.2, 2.0, 2.4), span=13, panel_width=2.5,
+                   color=GOLD)
+    b.disk(.55, (0, 0, 1.35), color=DARK, part="navigation_antenna")
+
+
+def goes(b):
+    b.box((2.4, 2.2, 2.8), (0, 0, -.2), GOLD, "weather_bus")
+    b.panel((3.0, 0, -.2), (0, 2.8, 0), (0, 0, 2.2), rows=5, cols=4,
+            part="single_solar_array")
+    b.rod([1.2, 0, -.2], [3.0, 0, -.2], .07, SILVER, "array_boom")
+    b.cylinder(.65, .18, (0, 0, 1.5), WHITE, "dish_mount", segments=16)
+    b.disk(.8, (0, 0, 1.62), color=DARK, part="dish")
+
+
+def landsat(b):
+    b.box((1.8, 1.8, 2.4), (0, 0, 0), WHITE, "earth_observation_bus")
+    b.cylinder(.48, .22, (0, 0, 1.32), DARK, "instrument", segments=16)
+    b.panel((2.1, 0, -.3), (0, 3.0, 0), (0, 0, 1.8), rows=5, cols=4,
+            part="single_solar_array")
+    b.rod([.9, 0, -.3], [2.1, 0, -.3], .06, SILVER, "array_boom")
+
+
+def rocket_body(b):
+    b.cylinder(1.0, 4.0, (0, 0, 0), SILVER, "rocket_stage", segments=16)
+    b.cylinder(1.0, 1.2, (0, 0, 2.6), WHITE, "rocket_stage",
+               top_radius=.25, segments=16)
+    b.cylinder(.55, .6, (0, 0, -2.3), DARK, "engine", top_radius=.75,
+               segments=12)
+    for angle in np.deg2rad((45, 135, 225, 315)):
+        b.rod([0, 0, -1.1], [1.25*np.cos(angle), 1.25*np.sin(angle), -1.8],
+              .08, GOLD, "fin")
+
+
+def debris(b):
+    points = np.array([
+        [-.9, -.35, -.25], [.65, -.45, -.30], [.95, .25, -.15],
+        [.20, .55, -.35], [-.75, .40, -.20], [-.15, -.10, .55],
+        [.45, .10, .25], [-.45, -.25, .35],
+    ])
+    for face in ((0, 1, 5), (1, 2, 6), (2, 3, 6), (3, 4, 7),
+                 (4, 0, 5), (0, 5, 7), (1, 6, 5), (2, 7, 6),
+                 (3, 7, 6), (4, 5, 7)):
+        b.face(points[list(face)], SILVER, "debris_shard")
