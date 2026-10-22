@@ -34,7 +34,10 @@ def texture_path(body):
 @lru_cache(maxsize=16)
 def _read_map(path, width, height, modified=None, raw=False):
     with Image.open(path) as image:
-        rgb = np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BOX))
+        image = image.convert("RGB")
+        if width is not None and height is not None:
+            image = image.resize((width, height), Image.Resampling.BOX)
+        rgb = np.asarray(image)
         return rgb if raw else rgb / 255.
 
 
@@ -90,16 +93,21 @@ def surface_quads(body, n=90, path=None):
 
 class BodySurface:
     """Reusable Matplotlib surface; texture/mode captured once for animation."""
-    def __init__(self, ax, body, radius, center=(0, 0, 0), rotation=None, *, n=90, path=None, zorder=10):
+    def __init__(self, ax, body, radius, center=(0, 0, 0), rotation=None, *, n=90, path=None, zorder=10, raster=False):
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
         self.low_spec = is_low_spec()
         self.quads, self.colors = surface_quads(body, n, path)
         self.radius = radius
-        self.raster = gallery_max_textures()
+        self.raster = gallery_max_textures() or raster
         if self.raster:
             from ._sphere_raster import MappedSphere
-            path = texture_path(body)
-            texture = _read_map(str(path), 8192, 4096, path.stat().st_mtime_ns, raw=True)
+            path = texture_path(body) if path is None or gallery_max_textures() else path
+            if path is None:
+                texture = np.round(255*np.asarray(BODY_COLORS[body])).astype(np.uint8)[None, None, :]
+            else:
+                from pathlib import Path
+                path = Path(path)
+                texture = _read_map(str(path), None, None, path.stat().st_mtime_ns, raw=True)
             had_data = ax.has_data() or bool(getattr(getattr(ax, "_ssatk_occlusion", None), "bodies", []))
             self.artist = MappedSphere(ax, texture, zorder=zorder)
             limits = np.asarray(center)[:, None]+radius*np.array([-1., 1.])
