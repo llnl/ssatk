@@ -190,7 +190,8 @@ def resample_event(event: ReferenceEvent, jd_utc: Sequence[float]) -> ReferenceE
         solar_visibility_and_separation(values, sun, moon) if event.mode == "solar"
         else center_visibility_and_separation("lunar", sun, moon)
     )
-    return replace(event, jd=values, sun_km=sun, moon_km=moon,
+    # event_positions_gcrf returns GCRF even for ITRF-stored reference solar states.
+    return replace(event, jd=values, sun_km=sun, moon_km=moon, frame="GCRF",
                    center_visibility=np.asarray(visible), separation_deg=np.asarray(separation))
 
 

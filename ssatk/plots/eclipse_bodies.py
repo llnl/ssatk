@@ -11,13 +11,11 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
-import plotly.graph_objects as go
 
 from ssatk.compute.eclipse_brightness import irradiance_fraction
 from ssatk.compute.eclipse_reference_events import AU_KM, R_MOON_MEAN_KM, R_SUN_KM, RE_KM, RP_KM
 from ssatk.compute.eclipse_runtime import _itrf_to_gcrf_matrix
 from ssatk.plots._textures import earth_texture_path, moon_texture_path
-from ssatk.plots.eclipse_plotly_mesh import rgb_strings
 
 
 def _normalize(vector, *, name="vector"):
@@ -152,7 +150,7 @@ def _earth_surface_data(
     sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.0, 0.0),
     shadow_body_center_km=None, shadow_body_radius_km=None, rotation_deg=0.0,
     time_jd=None, sun_position_km=None, physical_center_km=(0.0, 0.0, 0.0),
-    night_floor=0.05, exposure=1.0, **_display_options,
+    night_floor=0.05, exposure=1.0,
 ):
     physical_center = np.asarray(physical_center_km, dtype=float).reshape(3)
     if sun_position_km is None:
@@ -174,44 +172,6 @@ def _earth_surface_data(
     illumination = float(np.clip(night_floor, 0.0, 0.08)) + np.clip(normals @ sun_hat, 0.0, 1.0) * visibility
     shaded = _linear_to_srgb(_srgb_to_linear(base) * illumination[:, None] * float(exposure))
     return EarthSurfaceData(display, physical, normals, faces, base, shaded, visibility, rotation)
-
-
-def _earth_mesh(sun_hat, **options):
-    data = _earth_surface_data(sun_hat, **options)
-    return go.Mesh3d(
-        x=data.display_vertices[:, 0], y=data.display_vertices[:, 1], z=data.display_vertices[:, 2],
-        i=data.faces[:, 0], j=data.faces[:, 1], k=data.faces[:, 2],
-        vertexcolor=rgb_strings(data.shaded_rgb_srgb), flatshading=False,
-        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
-        name="Earth", hoverinfo="skip", showlegend=False,
-    )
-
-
-def _rgba_strings(rgb, alpha):
-    values = np.rint(np.clip(np.asarray(rgb), 0.0, 1.0) * 255.0).astype(np.uint8)
-    return [f"rgba({r},{g},{b},{float(a):.4f})" for (r, g, b), a in zip(values, alpha)]
-
-
-def _earth_atmosphere_trace(
-    center=(0.0, 0.0, 0.0), radius_scale=1.0, *, sun_hat=(1.0, 0.0, 0.0),
-    view_hat=None, time_jd=None, rotation_deg=0.0, n_lat=54, n_lon=108,
-    altitude_km=105.0, max_alpha=0.34,
-):
-    vertices, normals, faces, _, _, _ = _wgs84_vertices(n_lat, n_lon, altitude_km=altitude_km)
-    rotation = _earth_rows_rotation(time_jd, rotation_deg)
-    vertices = np.asarray(center, dtype=float).reshape(3) + (vertices @ rotation) * float(radius_scale)
-    normals = normals @ rotation
-    sun_hat = _normalize(sun_hat, name="sun_hat")
-    view_hat = _normalize(view_hat if view_hat is not None else sun_hat, name="view_hat")
-    limb = np.clip(1.0 - np.abs(normals @ view_hat), 0.0, 1.0) ** 2.2
-    day = 0.20 + 0.80 * np.sqrt(np.clip(normals @ sun_hat, 0.0, 1.0))
-    alpha = np.clip(float(max_alpha) * limb * day, 0.0, 0.8)
-    return go.Mesh3d(
-        x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
-        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        vertexcolor=_rgba_strings(np.tile([0.24, 0.56, 1.0], (len(vertices), 1)), alpha),
-        opacity=0.999, flatshading=False, hoverinfo="skip", showlegend=False, name="Atmosphere",
-    )
 
 
 def _display_lunar_albedo(rgb):
@@ -242,7 +202,7 @@ def _moon_surface_data(
     center, radius, sun_hat=None, real_center_km=None, mode="lunar",
     eclipse_tint=True, n_lat=181, n_lon=360, real_sun_position_km=None,
     ambient_floor=0.008, view_hat=None, exposure=1.08,
-    eclipse_occluder_radius_km=RE_KM, body_to_gcrf=None, **_display_options,
+    eclipse_occluder_radius_km=RE_KM, body_to_gcrf=None,
 ):
     directions, faces, lat_rows, _, _ = _unit_sphere_mesh(int(n_lat), int(n_lon))
     center = np.asarray(center, dtype=float).reshape(3)
@@ -290,19 +250,3 @@ def _moon_surface_data(
         linear += _srgb_to_linear(base) * mix * np.array([0.12, 0.018, 0.004])
     shaded = _linear_to_srgb(linear)
     return MoonSurfaceData(display_vertices, physical_vertices, normals, faces, base, shaded, visibility, orientation)
-
-
-def moon_mesh_plotly(center, radius, **options):
-    """Moon mesh with physical attitude and finite-Sun eclipse shading.
-
-    ``body_to_gcrf`` rotates the body-fixed texture; eclipse shading uses the
-    spherical physical Moon at ``R_MOON_MEAN_KM`` centred on ``real_center_km``.
-    """
-    data = _moon_surface_data(center, radius, **options)
-    return go.Mesh3d(
-        x=data.display_vertices[:, 0], y=data.display_vertices[:, 1], z=data.display_vertices[:, 2],
-        i=data.faces[:, 0], j=data.faces[:, 1], k=data.faces[:, 2],
-        vertexcolor=rgb_strings(data.shaded_rgb_srgb), flatshading=False,
-        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
-        name="Moon", hoverinfo="skip", showlegend=False,
-    )

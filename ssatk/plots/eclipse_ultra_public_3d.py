@@ -331,8 +331,6 @@ def _public_earth_mesh(peak: PublicPeakState, quality: PublicQuality) -> list[go
         physical_center_km=(0.0, 0.0, 0.0),
         night_floor=0.0015,
         exposure=1.08,
-        view_hat=_unit(state.sun_gcrf_km),
-        specular_strength=0.0,
     )
     vertices = _scene_coordinates(
         data.display_vertices, np.zeros(3), peak.basis_world_from_scene, 1.0,
@@ -372,7 +370,6 @@ def _public_moon_mesh(peak: PublicPeakState, quality: PublicQuality) -> list[go.
         ambient_floor=0.002,
         view_hat=-_unit(state.moon_gcrf_km),
         exposure=1.10,
-        relief_exaggeration=0.0,
         eclipse_occluder_radius_km=LUNAR_DANJON_EARTH_RADIUS_KM,
         body_to_gcrf=moon_attitude_for_event(peak.event, peak.jd_utc).body_to_gcrf,
     )
@@ -410,7 +407,6 @@ def _atmosphere_shell(peak: PublicPeakState, quality: PublicQuality) -> list[go.
         time_jd=float(peak.jd_utc),
         sun_position_km=peak.state.sun_gcrf_km,
         exposure=1.0,
-        specular_strength=0.0,
     )
     oriented = vertices @ data.rotation_rows
     local = _scene_coordinates(oriented, np.zeros(3), peak.basis_world_from_scene, 1.0)
