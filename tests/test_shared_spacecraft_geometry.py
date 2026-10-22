@@ -70,7 +70,7 @@ def test_webgl_body_axes_and_scale_match_independent_scipy_rotation():
         helpers.append(source[start:end])
     mesh = SpacecraftMesh([[1, 2, 3], [2, 2, 3], [1, 4, 3]], [[0, 1, 2]])
     program = "\n".join([
-        "const THREE = require(" + json.dumps(str(folder / "three.min.js")) + ");",
+        "import * as THREE from " + json.dumps((folder / "three.module.min.js").as_uri()) + ";",
         *helpers,
         "const mesh = buildSpacecraftMesh(" + json.dumps(mesh.to_dict()) + ", 100, true);",
         "applyQuaternionOrientation(mesh, new THREE.Vector3(0,0,0), new THREE.Quaternion(0,0,Math.SQRT1_2,Math.SQRT1_2));",
@@ -80,7 +80,7 @@ def test_webgl_body_axes_and_scale_match_independent_scipy_rotation():
         "for (let index=0; index<attribute.count; index++) { points.push(new THREE.Vector3().fromBufferAttribute(attribute,index).applyMatrix4(mesh.matrixWorld).toArray()); }",
         "console.log(JSON.stringify(points));",
     ])
-    actual = json.loads(subprocess.check_output([node, "-e", program], text=True))
+    actual = json.loads(subprocess.check_output([node, "--input-type=module", "-e", program], text=True))
     rotated = Rotation.from_euler("z", 90, degrees=True).apply(mesh.vertices) * 0.001
     expected = rotated[:, [0, 2, 1]] * [1, 1, -1]
     np.testing.assert_allclose(actual, expected, rtol=0, atol=2e-7)

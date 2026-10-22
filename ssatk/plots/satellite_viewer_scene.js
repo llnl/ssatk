@@ -15,6 +15,13 @@
 // for exactly this use case).
 // ============================================================================
 
+// three.js applies sRGB colour management (r152+) and physical light units
+// (r165+). The shaders, colours and light levels below were tuned without
+// either, so colours and textures pass through unconverted and light
+// intensities carry the legacy factor of pi.
+THREE.ColorManagement.enabled = false;
+const LEGACY_LIGHT_SCALE = Math.PI;
+
 const R_EARTH_KM = SSAPY_CONSTANTS.R_EARTH_KM;
 const R_MOON_KM = SSAPY_CONSTANTS.R_MOON_KM;
 const R_SUN_KM = SSAPY_CONSTANTS.R_SUN_KM;
@@ -373,6 +380,7 @@ function init() {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 10, CAMERA_FAR_KM);
   renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   container.innerHTML = '';
@@ -380,13 +388,13 @@ function init() {
 
   // Faint ambient only -- the Earth shader handles its own day/night
   // lighting internally; this mainly lights the satellites.
-  scene.add(new THREE.AmbientLight(0x404050, 0.38));
-  sunLight = new THREE.DirectionalLight(0xffffff, 0.85);
+  scene.add(new THREE.AmbientLight(0x404050, 0.38 * LEGACY_LIGHT_SCALE));
+  sunLight = new THREE.DirectionalLight(0xffffff, 0.85 * LEGACY_LIGHT_SCALE);
   // Earthshine: real spacecraft on the night side are weakly lit by sunlight
   // reflected off Earth, so their nadir face isn't a flat black silhouette.
   // A dim, cool fill from the origin direction reads as that, and keeps model
   // detail legible against the dark side of the globe.
-  earthShineLight = new THREE.DirectionalLight(0x8fa8c8, 0.22);
+  earthShineLight = new THREE.DirectionalLight(0x8fa8c8, 0.22 * LEGACY_LIGHT_SCALE);
   earthShineLight.position.set(0, 0, 0);
   scene.add(earthShineLight);
   sunLight.position.copy(sunDirection.clone().multiplyScalar(100000));
@@ -851,7 +859,6 @@ function buildEarth() {
   const dayTex = loader.load(DAY_TEXTURE_DATAURI);
   const nightTex = loader.load(NIGHT_TEXTURE_DATAURI);
   const specTex = loader.load(SPECULAR_TEXTURE_DATAURI);
-  [dayTex, nightTex, specTex].forEach(t => { t.colorSpace = THREE.SRGBColorSpace; });
   // Anisotropic filtering retains detail at grazing angles near the limb.
   // Three.js also resizes textures to the GPU's maxTextureSize if necessary.
   [dayTex, nightTex, specTex].forEach(t => {
