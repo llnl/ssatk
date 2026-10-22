@@ -5,7 +5,8 @@
 
 Run:  python assemble.py
 
-Inlines scene.js, the vendored libraries (three.min.js and satellite.min.js) and
+Inlines scene.js, the vendored libraries (three.js via plots/_threejs.py and
+satellite.min.js) and
 the four Earth textures into a single standalone HTML file. The texture images
 come from the external core data package, with an optional cached 8K NASA
 day map prepared by scripts.prepare_gallery_data, not from this source repository.
@@ -16,6 +17,7 @@ files can sit flat in an existing package folder or in their own subdirectory,
 whichever suits the repo -- no particular directory structure is required.
 """
 
+from ._threejs import classic_scripts_html
 from .rendering import is_low_spec
 
 from .rendering import _with_low_spec
@@ -806,9 +808,6 @@ html = """<!DOCTYPE html>
 <!-- Viewer libraries are inlined for full offline operation -- no CDN or
      network dependency. See NOTICE. -->
 <script>
-__THREE_JS__
-</script>
-<script>
 __SATELLITE_JS__
 </script>
 <script>
@@ -828,9 +827,7 @@ const PROPAGATOR = __PROPAGATOR__;
 const INITIAL_SIM_TIME_MS = null;
 let BUNDLED_SATELLITE_DATABASE = __SATELLITE_DATABASE__;
 </script>
-<script>
 __SCENE_JS__
-</script>
 </body>
 </html>
 """
@@ -928,7 +925,6 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     ).replace("<", "\\u003c")
 
     satellite_js = text("satellite.min.js")
-    three_js = text("three.min.js")
     from dataclasses import asdict, replace
     from .camera import _camera_spec
     camera_spec = _camera_spec(camera)
@@ -954,8 +950,7 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
         "MESH_SCALE": json.dumps(mesh_scale),
         "PROPAGATOR": json.dumps(propagator),
         "SATELLITE_DATABASE": database_json,
-        "SCENE_JS": scene_js,
-        "THREE_JS": three_js,
+        "SCENE_JS": classic_scripts_html(scene_js),
     }
     doc = re.sub(
         r"__([A-Z0-9_]+)__",

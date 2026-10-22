@@ -8,8 +8,8 @@ The views and opinions of authors expressed herein do not necessarily state or r
 
 LLNL-CODE-2015996
 
-Third-party JavaScript assets included for the optional satellite viewer:
+Third-party JavaScript assets included for the WebGL viewers:
 
-- three.min.js: Three.js r128, Copyright 2010-2021 Three.js Authors, MIT License.
-- OrbitControls.js: Three.js r128, Copyright 2010-2021 Three.js Authors, MIT License.
+- three.core.min.js, three.module.min.js: Three.js r185, Copyright 2010-2026 Three.js Authors, MIT License (ssatk/plots/three_license.txt).
+- OrbitControls.js: Three.js r185 add-on, Copyright 2010-2026 Three.js Authors, MIT License.
 - satellite.min.js: satellite-js v4.1.4, Copyright 2013 Shashwat Kandadai and UCSC, MIT License.

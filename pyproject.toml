@@ -137,7 +137,7 @@ packages = { find = { where = ["."], include = ["ssatk*", "demos*"] } }
 [tool.setuptools.package-data]
 demos = ["README.md"]
 "demos.benchmarks" = ["README.md", "orekit/*.java", "orekit/*.xml"]
-"ssatk.plots" = ["*.js", "eclipse_three_license.txt"]
+"ssatk.plots" = ["*.js", "three_license.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
