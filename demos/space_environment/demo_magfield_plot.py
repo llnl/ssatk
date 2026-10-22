@@ -5,6 +5,13 @@ Demo: Earth magnetic field lines + Van Allen radiation belts (IGRF 2025).
 Output
 ------
 demo_magfield_plot.html  — interactive 3D (rotate/zoom in browser)
+demo_magfield_plot.png   — static preview
+demo_magfield_lines.mp4  — camera tour of the internal field
+demo_magfield_belts.mp4  — camera tour with illustrative L-shell belts
+
+The videos move the camera around a fixed 2025 IGRF model; they do not
+simulate field evolution or particle motion. Export needs ssatk[browser,video]
+and Chrome. Set SSATK_CHROME_BINARY to select the browser.
 
 Run
 ---
@@ -18,6 +25,7 @@ import os
 
 from ssatk.plots.figpath import figpath
 from ssatk.plots.magfield_plot_3d import plot_magfield_3d
+from demos.space_environment._magfield_video import save_field_videos
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
@@ -55,8 +63,11 @@ def main(make_figures=None, fast=None):
     # A PNG preview belongs on the gallery card; the HTML remains interactive.
     # Fail visibly if the configured publishing environment cannot export it.
     fig.write_image(figpath("demo_magfield_plot.png"), width=1200, height=900)
-    print("Saved: demo_magfield_plot.html and demo_magfield_plot.png")
-    return {"figure": fig, "stats": stats, "skipped": False}
+    # gallery-call: demo_magfield_lines.mp4 | demo_magfield_belts.mp4
+    videos = save_field_videos(figpath("demo_magfield_plot.html"), fast=fast)
+    # gallery-end
+    print("Saved: demo_magfield_plot.html, demo_magfield_plot.png and field videos")
+    return {"figure": fig, "stats": stats, "videos": videos, "skipped": False}
 
 
 if __name__ == "__main__":

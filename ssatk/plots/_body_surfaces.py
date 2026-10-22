@@ -9,7 +9,7 @@ import warnings
 import numpy as np
 from PIL import Image
 
-from .rendering import is_low_spec
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec
 
 BODY_COLORS = {"earth": (0.10, 0.31, 0.54), "moon": (1., 1., 1.)}
 
@@ -19,28 +19,39 @@ def texture_path(body):
         return None
     from ._textures import earth_texture_path, moon_texture_path, viewer_earth_day_path
     try:
+        if gallery_max_textures():
+            return earth_texture_path() if body == "earth" else moon_texture_path()
         if body == "earth" and viewer_earth_day_path().is_file():
             return viewer_earth_day_path()
         return earth_texture_path() if body == "earth" else moon_texture_path()
     except FileNotFoundError as exc:
+        if gallery_max_textures():
+            raise
         warnings.warn(f"{exc} Rendering a plain {body.title()} sphere.", UserWarning, stacklevel=2)
         return None
 
 
 @lru_cache(maxsize=16)
-def _read_map(path, width, height):
+def _read_map(path, width, height, modified=None, raw=False):
     with Image.open(path) as image:
-        return np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BOX)) / 255.
+        image = image.convert("RGB")
+        if width is not None and height is not None:
+            image = image.resize((width, height), Image.Resampling.BOX)
+        rgb = np.asarray(image)
+        return rgb if raw else rgb / 255.
 
 
 def surface_map(body, width, height, path=None):
     """RGB texels, or a constant colour without any texture I/O in low mode."""
     if is_low_spec():
         return np.broadcast_to(BODY_COLORS[body], (height, width, 3)).copy()
-    path = texture_path(body) if path is None else path
+    path = texture_path(body) if path is None or gallery_max_textures() else path
     if path is None:
         return np.broadcast_to(BODY_COLORS[body], (height, width, 3)).copy()
-    return _read_map(str(path), width, height).copy()
+    from pathlib import Path
+    path = Path(path)
+    modified = path.stat().st_mtime_ns
+    return _read_map(str(path), width, height, modified).copy()
 
 
 def body_rotation(body, time=None, frame="gcrf"):
@@ -72,7 +83,7 @@ def body_rotation(body, time=None, frame="gcrf"):
 
 
 def surface_quads(body, n=90, path=None):
-    n = min(n, 18) if is_low_spec() else n
+    n = min(n, 18) if is_low_spec() else body_mesh_resolution(n)
     width, height = 2*int(n), int(n)
     lon, lat = np.meshgrid(np.linspace(-np.pi, np.pi, width+1), np.linspace(np.pi/2, -np.pi/2, height+1))
     vertices = np.stack((np.cos(lat)*np.cos(lon), np.cos(lat)*np.sin(lon), np.sin(lat)), axis=-1)
@@ -82,20 +93,39 @@ def surface_quads(body, n=90, path=None):
 
 class BodySurface:
     """Reusable Matplotlib surface; texture/mode captured once for animation."""
-    def __init__(self, ax, body, radius, center=(0, 0, 0), rotation=None, *, n=90, path=None, zorder=10):
+    def __init__(self, ax, body, radius, center=(0, 0, 0), rotation=None, *, n=90, path=None, zorder=10, raster=False):
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
         self.low_spec = is_low_spec()
         self.quads, self.colors = surface_quads(body, n, path)
         self.radius = radius
-        self.artist = Poly3DCollection([], edgecolors="none", linewidths=0, antialiased=False, zorder=zorder)
+        self.raster = gallery_max_textures() or raster
+        if self.raster:
+            from ._sphere_raster import MappedSphere
+            path = texture_path(body) if path is None or gallery_max_textures() else path
+            if path is None:
+                texture = np.round(255*np.asarray(BODY_COLORS[body])).astype(np.uint8)[None, None, :]
+            else:
+                from pathlib import Path
+                path = Path(path)
+                texture = _read_map(str(path), None, None, path.stat().st_mtime_ns, raw=True)
+            had_data = ax.has_data() or bool(getattr(getattr(ax, "_ssatk_occlusion", None), "bodies", []))
+            self.artist = MappedSphere(ax, texture, zorder=zorder)
+            limits = np.asarray(center)[:, None]+radius*np.array([-1., 1.])
+            ax.auto_scale_xyz(*limits, had_data=had_data)
+        else:
+            self.artist = Poly3DCollection([], edgecolors="none", linewidths=0, antialiased=False, zorder=zorder)
         from .occultation import _register_body
         self.occluder = _register_body(ax, self.artist, center, radius)
         self.update(center, rotation)
-        ax.add_collection3d(self.artist)
+        if not self.raster:
+            ax.add_collection3d(self.artist)
 
     def update(self, center=(0, 0, 0), rotation=None, sun_hat=None, ambient=.22, diffuse=.78):
         self.occluder.center = np.asarray(center, dtype=float)
         rotation = np.eye(3) if rotation is None else np.asarray(rotation)
+        if self.raster:
+            self.artist.set_surface(center, self.radius, rotation, sun_hat, ambient, diffuse)
+            return self.artist
         quads = self.quads @ rotation.T
         colors = self.colors
         if sun_hat is None and self.low_spec:
@@ -114,7 +144,8 @@ class BodySurface:
 def body_mesh_plotly(body, center, radius, rotation=None, *, n=90, path=None, sun_hat=None):
     """Float64 vertices and per-face texels (no palette quantization)."""
     import plotly.graph_objects as go
-    quads, colors = surface_quads(body, n, path)
+    quads, colors = surface_quads(body, body_mesh_resolution(n, plotly=True), path)
+    fixed = quads.reshape(-1, 3)
     quads = quads @ (np.eye(3) if rotation is None else np.asarray(rotation).T)
     if sun_hat is not None:
         normals = quads.mean(axis=1)
@@ -123,11 +154,31 @@ def body_mesh_plotly(body, center, radius, rotation=None, *, n=90, path=None, su
     vertices = np.asarray(center) + radius*quads.reshape(-1, 3)
     indices = np.arange(len(vertices)).reshape(-1, 4)
     triangles = indices[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-    vertices, inverse = np.unique(vertices, axis=0, return_inverse=True)
+    vertices, unique, inverse = np.unique(vertices, axis=0, return_index=True, return_inverse=True)
     triangles = inverse[triangles]
+    if gallery_max_textures():
+        # Interpolate actual texels at shared vertices instead of assigning a
+        # single constant colour to each quad's two triangles.
+        from scipy.ndimage import map_coordinates
+        path = texture_path(body)
+        rgb = _read_map(str(path), 8192, 4096, path.stat().st_mtime_ns, raw=True)
+        normals = fixed[unique]
+        lon = np.arctan2(normals[:, 1], normals[:, 0])
+        lat = np.arcsin(np.clip(normals[:, 2], -1, 1))
+        col = (lon+np.pi)/(2*np.pi)*rgb.shape[1]-.5
+        row = np.clip((np.pi/2-lat)/np.pi*rgb.shape[0]-.5, 0, rgb.shape[0]-1)
+        sampled = np.stack([map_coordinates(rgb[..., channel], [row, col], order=1,
+                                            output=np.float64, mode="grid-wrap")
+                            for channel in range(3)], axis=-1)
+        if sun_hat is not None:
+            scene_normals = normals @ (np.eye(3) if rotation is None else np.asarray(rotation).T)
+            sampled *= (.22+.78*np.maximum(0, scene_normals @ sun_hat))[:, None]
+        color_args = dict(vertexcolor=np.round(sampled).astype(np.uint8), flatshading=False)
+    else:
+        color_args = dict(facecolor=np.repeat(np.round(colors*255).astype(np.uint8), 2, axis=0))
     return go.Mesh3d(x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
                      i=triangles[:, 0], j=triangles[:, 1], k=triangles[:, 2],
-                     facecolor=np.repeat(np.round(colors*255).astype(np.uint8), 2, axis=0),
+                     **color_args,
                      lighting=dict(ambient=.35 if is_low_spec() and sun_hat is None else 1,
                                    diffuse=.65 if is_low_spec() and sun_hat is None else 0, specular=0),
                      name=body.title(), hoverinfo="skip", showlegend=False)
@@ -154,12 +205,20 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy", *, r
         lat = np.arcsin(np.clip(normals[..., 2], -1, 1))
         # Bilinear texel lookup avoids magnifying nearest-neighbour blocks.
         from scipy.ndimage import map_coordinates
-        width, height = 4096, 2048
-        rgb = surface_map(body, width, height)
+        full = gallery_max_textures()
+        width, height = (8192, 4096) if full else (4096, 2048)
+        if full:
+            path = texture_path(body)
+            rgb = _read_map(str(path), width, height, path.stat().st_mtime_ns, raw=True)
+        else:
+            rgb = surface_map(body, width, height)
         col = (lon+np.pi)/(2*np.pi)*width-.5
         row = np.clip((np.pi/2-lat)/np.pi*height-.5, 0, height-1)
         mapped = np.stack([map_coordinates(rgb[..., channel], [row, col], order=1,
-                                           mode="grid-wrap") for channel in range(3)], axis=-1)
+                                           output=np.float64, mode="grid-wrap")
+                           for channel in range(3)], axis=-1)
+        if full:
+            mapped /= 255.
         image = ax.imshow(mapped, origin="lower", interpolation="bilinear",
                           extent=(center[a]-radius, center[a]+radius,
                                   center[b]-radius, center[b]+radius), zorder=2)

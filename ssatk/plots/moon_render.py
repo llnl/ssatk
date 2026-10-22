@@ -5,7 +5,7 @@ DE440 body orientation; undated geometry uses lunar body-fixed axes.
 """
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec
 from ._body_surfaces import surface_map, body_rotation
 
 from .rendering import _with_low_spec
@@ -101,6 +101,9 @@ def moon_mesh_plotly(center, radius, sun_hat=None, seed=3,
     """
     if is_low_spec():
         n_lat, n_lon = min(n_lat, 19), min(n_lon, 36)
+    elif gallery_max_textures():
+        n_lat = body_mesh_resolution(n_lat-1, plotly=True)+1
+        n_lon = max(n_lon, 2*body_mesh_resolution(0, plotly=True))
     lat = np.linspace(90, -90, n_lat)
     lon = np.linspace(-180, 180, n_lon, endpoint=False)
     Lon, Lat = np.meshgrid(lon, lat)

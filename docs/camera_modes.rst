@@ -131,6 +131,11 @@ bounds and orbit-sweep phase. The existing 24-hour GEO gallery example selects
 
 The :mod:`demos.orbit_visualization.demo_camera_modes` example compares all four
 shared shots over one SSAPy circular orbit in a 15-second, four-panel movie.
+Its Earth uses an analytic mapped sphere for both standalone and gallery runs,
+including fast mode. Both modes export 1920 × 1440 pixels; fast mode reduces
+the frame rate to 12 fps instead of 24 fps. Follow and chase use a 36000 km
+camera distance to keep the Earth within the panels. These choices change
+presentation only, not the orbit or the Earth's physical scale.
 Camera regressions use literal translations, a quarter-turn Rodrigues
 rotation, constant-velocity tangents and independently projected target pixels.
 Browser tests validate actual rendered target centring, not just JSON fields.

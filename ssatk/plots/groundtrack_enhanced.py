@@ -54,7 +54,7 @@ from matplotlib.patches import Circle
 import warnings
 
 from astropy.time import Time
-from astropy.coordinates import GCRS, ITRS, get_sun
+from astropy.coordinates import EarthLocation, GCRS, ITRS, get_sun
 import astropy.units as u
 
 from ssatk.constants import EARTH_MU_KM3_S2, EARTH_RADIUS_KM, SUN_RADIUS_KM
@@ -220,13 +220,14 @@ def _elevation_deg(sat_ecef_km, site_ecef_km, site_lat_deg, site_lon_deg):
 
 
 def _site_ecef(lat_deg, lon_deg, alt_km=0.0):
-    lat, lon = np.radians(lat_deg), np.radians(lon_deg)
-    r = RE_KM + alt_km
-    return np.array([r*np.cos(lat)*np.cos(lon), r*np.cos(lat)*np.sin(lon), r*np.sin(lat)])
+    # Site latitude is geodetic, consistent with the mapped ground track.
+    site = EarthLocation.from_geodetic(lon_deg * u.deg, lat_deg * u.deg, alt_km * u.km)
+    return np.array([coordinate.to_value(u.km) for coordinate in site.geocentric])
 
 
 # ── Continents ───────────────────────────────────────────────────────────────
 _earth_texture_cache = None
+_earth_texture_cache_path = None
 
 
 def _load_earth_texture():
@@ -236,18 +237,23 @@ def _load_earth_texture():
     Returns an (H, W, 3) uint8 array in equirectangular projection
     (lon -180..180, lat +90..-90 top-to-bottom), or None if unavailable.
     """
-    global _earth_texture_cache
+    global _earth_texture_cache, _earth_texture_cache_path
     if is_low_spec():
         return np.array([[[26, 79, 138]]], dtype=np.uint8)
-    if _earth_texture_cache is not None:
-        return _earth_texture_cache
+    from .rendering import gallery_max_textures
     try:
-        from PIL import Image as _PILImage
         from ._textures import earth_texture_path
-        img = _PILImage.open(earth_texture_path()).convert("RGB")
+        path = earth_texture_path()
+        if _earth_texture_cache is not None and _earth_texture_cache_path == str(path):
+            return _earth_texture_cache
+        from PIL import Image as _PILImage
+        img = _PILImage.open(path).convert("RGB")
         _earth_texture_cache = np.asarray(img)
+        _earth_texture_cache_path = str(path)
         return _earth_texture_cache
     except Exception as ex:
+        if gallery_max_textures():
+            raise
         print(f"[groundtrack_enhanced] real Earth texture load failed: {ex}")
         return None
 

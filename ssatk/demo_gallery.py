@@ -78,6 +78,21 @@ def _gallery_output(root: Path):
                 os.environ[name] = value
 
 
+@contextmanager
+def _gallery_textures():
+    """Require the prepared body maps in demos and their child processes."""
+    name = "SSATK_GALLERY_MAX_TEXTURES"
+    previous = os.environ.get(name)
+    os.environ[name] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+
+
 @dataclass
 class DemoResult:
     name: str
@@ -877,13 +892,14 @@ def run_all_demos(
     for path in paths:
         rel = path.relative_to(demos_dir)
         print(f"[demo] running {rel.as_posix()}")
-        result = run_demo_script(
-            path,
-            output_root,
-            demos_dir=demos_dir,
-            fast=fast,
-            timeout_seconds=timeout_seconds,
-        )
+        with _gallery_textures():
+            result = run_demo_script(
+                path,
+                output_root,
+                demos_dir=demos_dir,
+                fast=fast,
+                timeout_seconds=timeout_seconds,
+            )
         print(f"[demo] {rel.as_posix()}: {result.status} ({result.runtime_seconds:.2f}s)")
         results.append(result)
 

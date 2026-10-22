@@ -12,7 +12,7 @@ own layers.py (EarthLayer / SunLayer), not flat markers.
 """
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec
 from ._body_surfaces import BODY_COLORS
 
 from .rendering import _with_low_spec
@@ -111,6 +111,7 @@ from .eclipse_brightness_plot import sun_direction_eci  # noqa: E402  (one GCRF 
 
 
 _earth_texture_cache = None
+_earth_texture_cache_key = None
 
 
 def _load_real_earth_texture(n_lat, n_lon):
@@ -120,17 +121,22 @@ def _load_real_earth_texture(n_lat, n_lon):
     PIL, resized to the mesh resolution). Cached after first call.
     Returns an (n_lat, n_lon, 3) uint8 array, or None if unavailable.
     """
-    global _earth_texture_cache
-    if _earth_texture_cache is not None and _earth_texture_cache.shape[:2] == (n_lat, n_lon):
-        return _earth_texture_cache
+    global _earth_texture_cache, _earth_texture_cache_key
     try:
         from ._textures import earth_texture_path
+        path = earth_texture_path()
+        key = (str(path), int(n_lat), int(n_lon))
+        if _earth_texture_cache is not None and _earth_texture_cache_key == key:
+            return _earth_texture_cache
         from PIL import Image
-        img = Image.open(earth_texture_path()).convert("RGB")
+        img = Image.open(path).convert("RGB")
         img = img.resize((n_lon, n_lat), Image.LANCZOS)
         _earth_texture_cache = np.array(img)
+        _earth_texture_cache_key = key
         return _earth_texture_cache
     except Exception as ex:
+        if gallery_max_textures():
+            raise
         print(f"[globe_orbit_daynight_plotly] Real Earth texture not found "
               f"({ex}) — using procedural continents instead.")
         return None
@@ -350,6 +356,9 @@ def _earth_mesh(sun_hat, n_lat=180, n_lon=360, radius_scale=1.0, center=(0.0, 0.
     if is_low_spec():
         n_lat, n_lon = min(n_lat, 19), min(n_lon, 36)
         show_city_lights = False
+    elif gallery_max_textures():
+        n_lat = body_mesh_resolution(n_lat-1, plotly=True)+1
+        n_lon = max(n_lon, 2*body_mesh_resolution(0, plotly=True))
     lat = np.linspace(90, -90, n_lat)
     lon = np.linspace(-180, 180, n_lon, endpoint=False)
     Lon, Lat = np.meshgrid(lon, lat)
