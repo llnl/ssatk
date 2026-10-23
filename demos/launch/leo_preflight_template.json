@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "mission_id": "leo_reference",
+  "description": "Unconfigured LEO preflight template. Replace every null and UNSET source with authoritative mission data before propagation.",
+  "profile": "LEO",
+  "launch_site": null,
+  "launch_height_m": null,
+  "epoch_utc": null,
+  "vehicle": null,
+  "payload_mass_kg": null,
+  "phases": [
+    "prelaunch",
+    "powered_ascent",
+    "stage_separation",
+    "insertion",
+    "orbital_coast"
+  ],
+  "transitions": [
+    ["prelaunch", "powered_ascent"],
+    ["powered_ascent", "stage_separation"],
+    ["stage_separation", "insertion"],
+    ["insertion", "orbital_coast"]
+  ],
+  "termination_conditions": [
+    "planet impact",
+    "propellant depletion",
+    "invalid state",
+    "mission time limit"
+  ],
+  "requirements": {
+    "max_dynamic_pressure": {
+      "value": null,
+      "unit": "Pa",
+      "tolerance": null,
+      "check": "maximum_dynamic_pressure",
+      "evidence_field": "constraints.max_dynamic_pressure_pa",
+      "source": "UNSET"
+    },
+    "max_heating_rate": {
+      "value": null,
+      "unit": "W/m^2",
+      "tolerance": null,
+      "check": "maximum_heating_rate",
+      "evidence_field": "constraints.max_heating_rate_w_m2",
+      "source": "UNSET"
+    },
+    "max_acceleration": {
+      "value": null,
+      "unit": "m/s^2",
+      "tolerance": null,
+      "check": "maximum_acceleration",
+      "evidence_field": "constraints.max_acceleration_m_s2",
+      "source": "UNSET"
+    },
+    "max_angle_of_attack": {
+      "value": null,
+      "unit": "deg",
+      "tolerance": null,
+      "check": "maximum_angle_of_attack",
+      "evidence_field": "constraints.max_angle_of_attack_deg",
+      "source": "UNSET"
+    },
+    "minimum_propellant_reserve": {
+      "value": null,
+      "unit": "kg",
+      "tolerance": null,
+      "check": "minimum_propellant_reserve",
+      "evidence_field": "constraints.final_propellant_reserve_kg",
+      "source": "UNSET"
+    },
+    "maximum_navigation_position_error": {
+      "value": null,
+      "unit": "m",
+      "tolerance": null,
+      "check": "maximum_navigation_position_error",
+      "evidence_field": "navigation.max_position_error_m",
+      "source": "UNSET"
+    },
+    "frame_position_closure": {
+      "value": 0.0,
+      "unit": "m",
+      "tolerance": null,
+      "check": "itrf_gcrf_itrf_position_closure",
+      "evidence_field": "initial_state.closure.position_m",
+      "source": "UNSET"
+    },
+    "frame_velocity_closure": {
+      "value": 0.0,
+      "unit": "m/s",
+      "tolerance": null,
+      "check": "itrf_gcrf_itrf_velocity_closure",
+      "evidence_field": "initial_state.closure.velocity_m_s",
+      "source": "UNSET"
+    },
+    "target_perigee_altitude": {
+      "value": null,
+      "unit": "m",
+      "tolerance": null,
+      "check": "final_perigee_altitude",
+      "evidence_field": "orbit.perigee_altitude_m",
+      "source": "UNSET"
+    },
+    "target_apogee_altitude": {
+      "value": null,
+      "unit": "m",
+      "tolerance": null,
+      "check": "final_apogee_altitude",
+      "evidence_field": "orbit.apogee_altitude_m",
+      "source": "UNSET"
+    },
+    "target_eccentricity": {
+      "value": null,
+      "unit": "1",
+      "tolerance": null,
+      "check": "final_eccentricity",
+      "evidence_field": "orbit.eccentricity",
+      "source": "UNSET"
+    },
+    "target_inclination": {
+      "value": null,
+      "unit": "deg",
+      "tolerance": null,
+      "check": "final_inclination",
+      "evidence_field": "orbit.inclination_deg",
+      "source": "UNSET"
+    }
+  },
+  "resources": [
+    {
+      "path": "environment/eop/finals2000A.all",
+      "sha256": "59aa390fdbcad0b4905ee2887c53fdb488d95b5968a111c5bf4c4fd31653405b",
+      "source": "IERS Bulletin A snapshot retrieved 2026-08-24; ssa_data_core source id iers_finals2000a_2026_08_24",
+      "license": "IERS public scientific distribution; attribution required; no SPDX license asserted by source",
+      "units": "MJD day, polar motion arcsec, UT1-UTC s, celestial-pole offset mas",
+      "frame": "ITRF Earth-orientation inputs",
+      "validity": "Frozen snapshot; predicted records require explicit opt-in"
+    }
+  ],
+  "software": {
+    "python": null,
+    "llnl-ssapy": "1.1.12",
+    "ssatk": "1.1.4",
+    "ssa-data-core": "0.0.1",
+    "ssa-data-gravity": "0.0.1",
+    "ssa-data-lunar": "0.0.1",
+    "ssa-data-lunar-gravity": "0.0.1",
+    "astropy": null,
+    "astropy-iers-data": null
+  },
+  "source_revisions": {
+    "llnl-ssapy": null,
+    "ssatk": "c247817d8a590ca2be1890f8ecc578fe8b74ba12",
+    "ssa-data-core": null
+  },
+  "conventions": {
+    "position_frame": "GCRF",
+    "velocity_frame": "GCRF",
+    "earth_fixed_frame": "ITRF",
+    "epoch_scale": "UTC",
+    "propagation_time": "GPS seconds",
+    "state_units": "SI",
+    "angles": "east-positive degrees",
+    "quaternion": "body-to-GCRF [w, x, y, z]",
+    "angular_rate": "body relative to GCRF, expressed in body, rad/s"
+  },
+  "risks": [
+    {
+      "id": "surface-launch-guard",
+      "description": "Generic SSAPy numerical propagators may suppress acceleration near the surface.",
+      "control": "Use and test a launch-specific propagation path through liftoff and 100 km.",
+      "status": "OPEN"
+    },
+    {
+      "id": "changing-mass-rotation",
+      "description": "Changing inertia, moving center of mass, and exhaust momentum require one consistent derivation.",
+      "control": "Pass fixed-mass, torque-free, controlled-depletion, mass, and impulse checks before 6-DoF ascent.",
+      "status": "OPEN"
+    },
+    {
+      "id": "representative-vehicle-data",
+      "description": "The Toolkit launch catalog is representative rather than flight-qualified vendor data.",
+      "control": "Select a coherent, source-backed vehicle package before setting mission acceptance limits.",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "dense-atmosphere-domain",
+      "description": "An orbital drag model is not automatically valid for launch ascent.",
+      "control": "Select a launch atmosphere, winds, and aerodynamic data with documented validity bounds.",
+      "status": "BLOCKED"
+    }
+  ]
+}

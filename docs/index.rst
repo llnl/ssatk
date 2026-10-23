@@ -30,6 +30,7 @@ body and component model.
    :caption: Contents:
 
    usage
+   launch_baseline
    spacecraft_view
    gallery_hosting
    gallery_scene_fidelity
