@@ -35,16 +35,13 @@ from .rendering import _with_low_spec
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
-import calendar
 
 import numpy as np
+from astropy.time import Time
 
 from ssatk._paths import output_root
+from ssatk.plots.plotutils import normalize_orbit_trajectory, plotly_orbit_trace, save_plotly_figure
 
-try:
-    from .plotutils import normalize_orbit_trajectory, plotly_orbit_trace
-except ImportError:
-    from plotutils import normalize_orbit_trajectory, plotly_orbit_trace
 
 # Shared geometry, Earth, sky and texture helpers live in one module so the
 # two plot modules cannot drift apart (they did, repeatedly, when duplicated).
@@ -371,51 +368,15 @@ def _igrf_belt_mesh(L_min, L_max, date, axis, base_rgb, lat_max_deg=None,
 
 
 # ===========================================================================
-# Radiation belts from NASA AE-8 / AP-8 trapped flux
+# Radiation-belt mean flux surfaces
 # ===========================================================================
-# The belts are rendered as iso-flux surfaces of the NASA AE-8 (electron) and
-# AP-8 (proton) models, evaluated on field geometry traced from real IGRF.
-# AE-8/AP-8 are functions of exactly two coordinates, (L, B/B0), so the model
-# is tabulated once over that plane and interpolated — no shape, extent or
-# radial profile is asserted here.  The inner/outer belts and the slot between
-# them emerge from the model: tabulated equatorial peaks land at L = 1.7 for
-# protons > 10 MeV and L = 4.4 for electrons > 1 MeV, with the slot minimum at
-# L = 2.2, matching the published belt structure.
+# IRENE AE9/AP9 evaluates a single-epoch GEO grid by default. The legacy
+# AE8/AP8 backend remains available only through an explicit model selection.
 
 # Dipole moment calibrated so L = (M/Bmin)^(1/3) reproduces IRBEM's McIlwain L
 # (validated: constant +1.43% bias against irbempy.get_Lm, removed here).
 
 
-# ---------------------------------------------------------------------------
-# Measured accuracy.  Each entry records WHEN it was measured, because these
-# numbers move with geomagnetic conditions: the same model gives 10.4% on a
-# quiet day and 17.2% on a moderately disturbed one.  Regenerate with
-# validate_against_goes.py / validate_tail_and_magnetopause.py /
-# validate_belts_against_goes.py and update here.
-# ---------------------------------------------------------------------------
-VALIDATION = {
-    "geo":        ("2026-07-08", "T96 14.5 nT = 17.2%, T89 15.8 nT = 18.8% "
-                                 "(Kp 1.9, Dst -30)"),
-    "geo_quiet":  ("2025-07-02", "T96 10.4%, T89 9.7% (Kp 1.1)"),
-    "geo_storm":  ("2025-11-12", "T96 49 nT = 40%, T89 66 nT = 53% (Kp 8.7)"),
-    "sky":        ("2026-07-08", "star directions agree with astropy ITRS to "
-                                 "8-24 arcsec; GMST to 0.01 s"),
-    # Characterised INSIDE the magnetosphere, which is the only place these
-    # models are defined.  Earlier "tail" figures quoted here were taken with
-    # 0% of samples inside the modelled magnetopause — i.e. in the
-    # magnetosheath, outside T96's domain — so they described the model where
-    # it does not apply.  Corrected rather than reused.
-    "depth":      ("2026-01-10", "T96 inside the magnetosphere: 17.2% at "
-                                 "6.6 RE (GOES), 23.2% at 10.2 RE (MMS)"),
-    "sheath":     ("2025-07-03", "outside the magnetopause neither model is "
-                                 "defined: T96 ~97%, T89 ~35-44% (MMS, "
-                                 "magnetosheath) — not a magnetotail result"),
-    "boundary":   ("2026-01-10", "T96: agreement degrades 3.6x across the Shue "
-                                 "surface at a 10.2 RE dayside MMS crossing; "
-                                 "measured |B| 47->32 nT"),
-    "belts":      ("2025-07",    "AE-8 reads ~18x above GOES >2.1 MeV "
-                                 "electrons, which vary 82x over 8 days"),
-}
 
 
 
@@ -434,62 +395,105 @@ VALIDATION = {
 
 
 def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
-                      pitch_angle_deg=25.0, opacity=0.30, cache=True, **kw):
+                      pitch_angle_deg=25.0, opacity=0.30, cache=True, radiation_model="irene", **kw):
+    """Mean integral belt flux surfaces; IRENE AE9/AP9 is the default backend.
+
+    Legacy AE8/AP8 is available only by explicit radiation_model="ae8ap8".
+    IRENE uses its own magnetic-coordinate database, separate from IGRF/T96.
     """
-    Volumetric belts: AE-8/AP-8 flux sampled onto a Cartesian grid and drawn as
-    iso-flux surfaces.  Each surface is a real flux level in /cm2/s, not a
-    chosen shape.
-    """
-    if not _HAS_PPIGRF:
-        # The samples are traced through the real field, so without an internal
-        # field model there is nothing to trace.  Return empty and let the
-        # caller fall back rather than failing deep inside the tracer.
-        print("  ppigrf unavailable — cannot trace belt shells", flush=True)
-        return []
-    if _load_aep8_table() is None:
-        # Check the flux model BEFORE tracing: the shells cost ~80 s to trace
-        # and were previously computed and then discarded when the lookup
-        # turned out to be unavailable.
-        print("  AE-8/AP-8 unavailable — skipping belt flux", flush=True)
-        return []
-    try:
-        from scipy.spatial import cKDTree
-    except ImportError:
-        # Every other optional dependency degrades with a message; this one
-        # used to raise from inside the belt builder.
-        print("  scipy unavailable — cannot build belt flux volume", flush=True)
-        return []
-    key = (date.strftime('%Y%m%d'), grid_n, extent_re, round(pitch_angle_deg, 1),
-           tuple(sorted(kw.items())),
-           _geo.get_external_model() is not None,
-           _physics_fingerprint())
-    import hashlib as _hl
-    # stable digest: Python's hash() is salted per process, so a plain hash()
-    # here would miss the cache on every new run
-    _dig = _hl.md5(repr(key).encode()).hexdigest()[:16]
-    fp_cache = _texture_cache_dir() / ("beltflux_" + _dig + ".npz")
-    if cache and fp_cache.exists():
-        d = np.load(fp_cache)
-        P, Fp, Fe = d['P'], d['Fp'], d['Fe']
-        print(f"  belts: reusing cached AE8/AP8 samples ({len(P)} points)", flush=True)
+    if radiation_model not in {"irene", "ae8ap8"}:
+        raise ValueError("radiation_model must be 'irene' or 'ae8ap8'")
+    if radiation_model == "irene":
+        import hashlib
+        from ssatk.io.irene import (find_irene_runtime, prepare_irene_flux_grid,
+                                           read_irene_flux_grid, run_irene)
+
+        runtime = find_irene_runtime()
+        if runtime is None:
+            raise FileNotFoundError("IRENE is required for flux belts; configure IRENE_HOME")
+        RE = EARTH_RADIUS_KM
+        g = np.linspace(-extent_re * RE, extent_re * RE, grid_n)
+        X, Y, Z = np.meshgrid(g, g, g, indexing='ij')
+        Q = np.stack([X.ravel(), Y.ravel(), Z.ravel()], axis=1)
+        radii = np.linalg.norm(Q, axis=1) / RE
+        selected = (radii >= 1.02) & (radii <= 7.0)
+        database = runtime[1]
+        files = [runtime[0], *sorted(database.iterdir())]
+        identity = [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in files if p.is_file()]
+        key = repr(("irene_integral_grid_v1", date.isoformat(), grid_n, extent_re, identity))
+        digest = hashlib.sha256(key.encode()).hexdigest()[:20]
+        directory = output_root() / "data" / "irene_belt_flux" / digest
+        if cache and (directory / "flux.json").is_file():
+            result = read_irene_flux_grid(directory)
+        else:
+            if directory.exists():
+                import tempfile
+                directory = Path(tempfile.mkdtemp(prefix=digest + "_", dir=directory.parent)) / "run"
+            prepare_irene_flux_grid(Q[selected], date, directory)
+            print(f"  belts: evaluating official IRENE on {selected.sum()} GEO grid points", flush=True)
+            result = run_irene(directory)
+        if not np.array_equal(np.asarray(result["geo_km"]), np.char.mod('%.12f', Q[selected]).astype(float)):
+            raise ValueError("IRENE cached flux does not match the plotting grid")
+        Fp, Fe = np.zeros(len(Q)), np.zeros(len(Q))
+        Fp[selected], Fe[selected] = result["proton_flux"], result["electron_flux"]
+        idx = np.arange(len(Q))
+        far = ~selected
+        model_label = f'IRENE {result["metadata"]["version"]} AE9/AP9 mean'
+        proton_label, electron_label, electron_model = 'AP9', 'AE9', 'AE9'
+        print(f"  belts: {model_label}; inputs and official outputs: {directory}", flush=True)
     else:
-        out = _belt_flux_samples(date, axis, pitch_angle_deg=pitch_angle_deg, **kw)
-        if out is None:
+        if not _HAS_PPIGRF:
+            # The samples are traced through the real field, so without an internal
+            # field model there is nothing to trace.  Return empty and let the
+            # caller fall back rather than failing deep inside the tracer.
+            print("  ppigrf unavailable — cannot trace belt shells", flush=True)
             return []
-        P, Fp, Fe = out
-        if cache:
-            np.savez_compressed(fp_cache, P=P, Fp=Fp, Fe=Fe)
-    RE = EARTH_RADIUS_KM
-    g = np.linspace(-extent_re*RE, extent_re*RE, grid_n)
-    X, Y, Z = np.meshgrid(g, g, g, indexing='ij')
-    Q = np.stack([X.ravel(), Y.ravel(), Z.ravel()], axis=1)
-    tree = cKDTree(P)
-    dist, idx = tree.query(Q, k=1)
-    cell = (g[1] - g[0])
-    far = dist > 1.6 * cell            # outside the traced region
+        if _load_aep8_table() is None:
+            # Check the flux model BEFORE tracing: the shells cost ~80 s to trace
+            # and were previously computed and then discarded when the lookup
+            # turned out to be unavailable.
+            print("  AE-8/AP-8 unavailable — skipping belt flux", flush=True)
+            return []
+        try:
+            from scipy.spatial import cKDTree
+        except ImportError:
+            # Every other optional dependency degrades with a message; this one
+            # used to raise from inside the belt builder.
+            print("  scipy unavailable — cannot build belt flux volume", flush=True)
+            return []
+        key = (date.strftime('%Y%m%d'), grid_n, extent_re, round(pitch_angle_deg, 1),
+               tuple(sorted(kw.items())),
+               _geo.get_external_model() is not None,
+               _physics_fingerprint())
+        import hashlib as _hl
+        # stable digest: Python's hash() is salted per process, so a plain hash()
+        # here would miss the cache on every new run
+        _dig = _hl.md5(repr(key).encode()).hexdigest()[:16]
+        fp_cache = _texture_cache_dir() / ("beltflux_" + _dig + ".npz")
+        if cache and fp_cache.exists():
+            d = np.load(fp_cache)
+            P, Fp, Fe = d['P'], d['Fp'], d['Fe']
+            print(f"  belts: reusing cached AE8/AP8 samples ({len(P)} points)", flush=True)
+        else:
+            out = _belt_flux_samples(date, axis, pitch_angle_deg=pitch_angle_deg, **kw)
+            if out is None:
+                return []
+            P, Fp, Fe = out
+            if cache:
+                np.savez_compressed(fp_cache, P=P, Fp=Fp, Fe=Fe)
+        RE = EARTH_RADIUS_KM
+        g = np.linspace(-extent_re*RE, extent_re*RE, grid_n)
+        X, Y, Z = np.meshgrid(g, g, g, indexing='ij')
+        Q = np.stack([X.ravel(), Y.ravel(), Z.ravel()], axis=1)
+        tree = cKDTree(P)
+        dist, idx = tree.query(Q, k=1)
+        cell = (g[1] - g[0])
+        far = dist > 1.6 * cell            # outside the traced region
+        model_label = 'AE-8/AP-8 climatological mean'
+        proton_label, electron_label, electron_model = 'AP-8', 'AE-8', 'AE-8'
     traces = []
-    for species, F, cmap, label in (('p', Fp, 'YlOrBr', 'AP-8 protons &gt;10 MeV'),
-                                    ('e', Fe, 'Blues', 'AE-8 electrons &gt;1 MeV')):
+    for species, F, cmap, label in (('p', Fp, 'YlOrBr', f'{proton_label} protons &gt;10 MeV'),
+                                    ('e', Fe, 'Blues', f'{electron_label} electrons &gt;1 MeV')):
         V = F[idx].astype(float)
         V[far] = 0.0
         if V.max() <= 0:
@@ -502,7 +506,7 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
             isomin=levels[0]*vmax, isomax=levels[-1]*vmax,
             surface_count=len(levels),
             showscale=(species == 'e'), colorscale=cmap,
-            colorbar=dict(title=dict(text='AE-8 e&#8315; mean flux<br>(cm&#8315;&#178; s&#8315;&#185;)',
+            colorbar=dict(title=dict(text=f'{electron_model} e&#8315; mean flux<br>(cm&#8315;&#178; s&#8315;&#185;)',
                                      font=dict(color=_INK_SOFT, size=10)),
                           tickfont=dict(color=_INK_SOFT, size=9), thickness=11,
                           len=0.32, x=0.98, y=0.14, outlinewidth=0,
@@ -510,7 +514,7 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
             opacity=opacity, flatshading=False,
             caps=dict(x_show=False, y_show=False, z_show=False),
             hoverinfo='none', showlegend=True,
-            name=(f'{label} &#183; AE-8/AP-8 climatological mean '
+            name=(f'{label} &#183; {model_label} '
                   f'({levels[0]*vmax:.0e} cm&#8315;&#178;s&#8315;&#185; contour)')))
     return traces
 
@@ -656,8 +660,8 @@ def latest_driven_epoch(default=datetime(2025, 7, 2)):
         real = (a[:, 3] < 999) & (a[:, 5] < 9999) & (a[:, 6] < 99)
         if not real.any():
             continue
-        doy = int(a[real, 0].max())
-        return datetime(year, 1, 1) + timedelta(days=doy - 1)
+        hours = (a[real, 0] - 1) * 24 + a[real, 1]
+        return datetime(year, 1, 1) + timedelta(hours=float(hours.max()))
     return default
 
 
@@ -666,15 +670,8 @@ def latest_driven_epoch(default=datetime(2025, 7, 2)):
 # ===========================================================================
 
 def _model_provenance(date, external_field, kp, belt_style, sw_bz_nT, sw_dp_nPa,
-                      sw_source='nominal'):
-    """
-    One line per model actually used, plus the measured accuracy.
-
-    Figures that state only "IGRF" invite the reader to assume more precision
-    than the models carry.  The residuals quoted here were measured against
-    GOES-18 magnetometer data (validate_against_goes.py) and GOES SEISS
-    particle data (validate_belts_against_goes.py).
-    """
+                      sw_source='nominal', radiation_model='irene'):
+    """Describe the selected models and inputs without historical accuracy claims."""
     try:
         igrf = Path(_pp.shc_fn).stem.replace("_", " ").upper()
     except Exception:
@@ -686,20 +683,17 @@ def _model_provenance(date, external_field, kp, belt_style, sw_bz_nT, sw_dp_nPa,
     else:
         ext = "NO EXTERNAL FIELD"
     lines = [
-        f"INTERNAL FIELD  {igrf}, DEGREE 13, EPOCH {date:%Y-%m-%d}",
+        f"INTERNAL FIELD  {igrf}, DEGREE 13, EPOCH {date.isoformat(sep=' ')} UTC",
         f"EXTERNAL FIELD  {ext}",
         f"MAGNETOPAUSE  SHUE ET AL. 1998  (Bz {sw_bz_nT:+.1f} nT, Dp {sw_dp_nPa:.2f} nPa)",
         f"DRIVERS  {sw_source}",
     ]
     if belt_style == "flux":
-        lines.append("BELTS  NASA AE-8 / AP-8 MAX, CLIMATOLOGICAL MEAN")
+        lines.append("BELTS  IRENE AE9/AP9, OMNIDIRECTIONAL INTEGRAL MEAN" if radiation_model == "irene"
+                     else "BELTS  NASA AE-8 / AP-8 MAX, CLIMATOLOGICAL MEAN")
+        if radiation_model == "irene":
+            lines.append("IRENE IGRF DATABASE FIXED AFTER 2020; SEP/GCR EXCLUDED")
     lines.append("EARTH  WGS84 ELLIPSOID  &#183;  SKY  J2000 CATALOGUE, PRECESSED TO EPOCH")
-    for key in ("geo", "geo_storm", "depth", "sheath", "boundary", "sky"):
-        when, what = VALIDATION[key]
-        lines.append(f"MEASURED [{when}]  {what}")
-    if belt_style == "flux":
-        when, what = VALIDATION["belts"]
-        lines.append(f"MEASURED [{when}]  {what}")
     return "<br>".join(lines)
 
 
@@ -736,6 +730,7 @@ def plot_magfield_3d(
     save_png=False,
     dpi=150,
     show_van_allen=True,
+    radiation_model="irene",
     belt_style="flux",              # 'igrf' | 'lshell' | 'torus'
     inner_min_RE=1.0,
     inner_max_RE=2.0,
@@ -775,10 +770,15 @@ def plot_magfield_3d(
 
     Parameters
     ----------
+    epoch : datetime, str or float
+        Field evaluation time in UTC; numeric values are decimal years.
+        The plot displays this timestamp and the OMNI driver record range.
     fidelity : {'high', 'draft'}
         ``'high'`` uses fine integration steps, a dense Earth mesh, and
-        IGRF-traced belts; ``'draft'`` is the fast preview path.
-    belt_style : {'igrf', 'lshell', 'torus'}
+        a dense IRENE flux grid; ``'draft'`` is the fast preview path.
+    radiation_model : {'irene', 'ae8ap8'}
+        Flux belt backend. IRENE is required by default; legacy use is explicit.
+    belt_style : {'flux', 'igrf', 'lshell', 'torus'}
         ``'igrf'`` uses real IGRF-traced L-shells; ``'lshell'`` uses an analytic
         dipole crescent; ``'torus'`` uses an analytic circular torus.
     zoom : float
@@ -793,14 +793,11 @@ def plot_magfield_3d(
 
     hi = (str(fidelity).lower() != "draft")
 
-    if isinstance(epoch, (int, float)):
-        year = int(epoch); frac = epoch - year
-        days = 366 if calendar.isleap(year) else 365
-        date = datetime(year, 1, 1) + timedelta(days=int(frac * days))
-    else:
-        date = epoch.replace(tzinfo=None) if hasattr(epoch, 'tzinfo') else epoch
+    date = Time(epoch, format="decimalyear" if isinstance(epoch, (int, float)) else None,
+                scale="utc").utc.to_datetime()
+    timestamp = date.isoformat(sep=" ") + " UTC"
 
-    print(f"IGRF epoch: {date.strftime('%Y-%m-%d')}  (fidelity={'high' if hi else 'draft'})",
+    print(f"Field data timestamp: {timestamp}  (fidelity={'high' if hi else 'draft'})",
           flush=True)
 
     if lons is None:
@@ -928,11 +925,14 @@ def plot_magfield_3d(
             fx = _flux_isosurfaces(date, axis, pitch_angle_deg=pitch_angle_deg,
                                    n_L=22 if hi else 16, n_azim=24 if hi else 18,
                                    n_pts=80 if hi else 60,
-                                   grid_n=48 if hi else 36, eq_iters=2 if hi else 1)
+                                   grid_n=48 if hi else 36, eq_iters=2 if hi else 1,
+                                   radiation_model=radiation_model)
             if fx:
                 traces.extend(fx)
             else:
-                print("  AE8/AP8 unavailable — falling back to IGRF L-shell belts", flush=True)
+                if radiation_model == "irene":
+                    raise ValueError("IRENE returned no positive belt flux; no substitute geometry rendered")
+                print(f"  {radiation_model} flux unavailable — falling back to IGRF L-shell belts", flush=True)
                 belt_style = "igrf"
         if belt_style == "igrf":
             print("  belts: tracing IGRF L-shells...", flush=True)
@@ -1105,20 +1105,30 @@ def plot_magfield_3d(
                  'torus': 'BELTS FROM TORUS APPROXIMATION'}.get(belt_style, '')
     _annotations = [
         dict(x=0.01, y=0.045, xref='paper', yref='paper', xanchor='left',
-             text=f'IGRF EPOCH&#160;&#160;{date.strftime("%Y-%m-%d")}',
-             font=dict(color=_INK_SOFT, size=10, family='Helvetica, Arial'),
+             text=f'FIELD DATA TIMESTAMP&#160;&#160;{timestamp}',
+             font=dict(color=_INK_SOFT, size=12, family='Helvetica, Arial'),
              showarrow=False),
         dict(x=0.01, y=0.015, xref='paper', yref='paper', xanchor='left',
              text=f'IGRF DEGREE 13, GEOCENTRIC SYNTHESIS &#183; ADAPTIVE RK4 &#183; WGS84 EARTH &#183; {belt_note}',
              font=dict(color=_INK_FAINT, size=9, family='Helvetica, Arial'),
              showarrow=False),
     ]
+    _annotations.append(dict(
+        x=0.01, y=0.075, xref='paper', yref='paper', xanchor='left',
+        text=f'DRIVERS&#160;&#160;{_sw_src}',
+        font=dict(color=_INK_SOFT, size=10, family='Helvetica, Arial'),
+        showarrow=False))
+    if show_van_allen and belt_style == "flux":
+        _annotations.append(dict(x=0.01, y=0.105, xref='paper', yref='paper', xanchor='left',
+            text=('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED; IRENE IGRF FIXED AFTER 2020'
+                  if radiation_model == "irene" else 'BELTS: LEGACY AE-8/AP-8 MEAN FLUX'),
+            font=dict(color=_INK_SOFT, size=10, family='Helvetica, Arial'), showarrow=False))
     if show_provenance:
         _annotations.append(dict(
             x=0.01, y=0.30, xref='paper', yref='paper',
             xanchor='left', yanchor='top', align='left',
             text=_model_provenance(date, external_field, kp, belt_style,
-                                   sw_bz_nT, sw_dp_nPa, _sw_src),
+                                   sw_bz_nT, sw_dp_nPa, _sw_src, radiation_model),
             font=dict(color=_INK_FAINT, size=8.5, family='Helvetica, Arial'),
             showarrow=False))
 
@@ -1165,18 +1175,13 @@ def plot_magfield_3d(
             uirevision='magfield_camera'),
     )
 
-    if save_path is not None:
-        out = Path(str(save_path)).with_suffix('')
-        out.parent.mkdir(parents=True, exist_ok=True)
-        html_out = out.with_suffix('.html')
-        fig.write_html(str(html_out), include_plotlyjs=True,
-                       full_html=True, config=PLOTLY_CONFIG)
-        print(f"  HTML (interactive): {html_out}", flush=True)
+    if save_path is not None and save_path is not False:
+        target = True if save_path is True else Path(str(save_path)).with_suffix('.html')
+        html_out = Path(save_plotly_figure(fig, target, default_name="magfield_plot_3d",
+                                          config=PLOTLY_CONFIG))
         if save_png:
             try:
-                png_out = out.with_suffix('.png')
-                fig.write_image(str(png_out), width=width, height=height, scale=2)
-                print(f"  PNG: {png_out}", flush=True)
+                save_plotly_figure(fig, html_out.with_suffix('.png'), width=width, height=height, scale=2)
             except Exception as e:
                 print(f"  PNG skipped: {e}", flush=True)
 
@@ -1195,7 +1200,7 @@ def _check_environment():
 
     This exists because the failure modes of this module are mostly silent
     degradations rather than crashes -- a missing star catalogue gives you a
-    synthetic starfield, no spacepy gives you no belt surfaces, no geopack
+    synthetic starfield, missing IRENE stops flux rendering, no geopack
     gives you the internal field only. Each is reasonable on its own, but the
     figure doesn't say which happened. --check answers "why does my plot look
     different from the one in the docs" without reading any source.
@@ -1213,7 +1218,6 @@ def _check_environment():
     else:
         for asset, consequence in (
             ("bright_stars.csv", "synthetic starfield instead of the real sky"),
-            ("aep8_table.npz", "no radiation-belt flux surfaces"),
         ):
             found = find_data_file(asset)
             if found is None:
@@ -1227,13 +1231,21 @@ def _check_environment():
     for mod, consequence in (
         ("ppigrf", "no IGRF internal field"),
         ("geopack", "no T89/T96 external field, no GEO->GSM conversion"),
-        ("spacepy", "cannot build the AE-8/AP-8 table (a cached one still works)"),
     ):
         try:
             __import__(mod)
             lines.append(f"  ok       {mod}")
         except Exception:
             lines.append(f"  MISSING  {mod}  -> {consequence}")
+
+    lines.append("radiation model:")
+    from ssatk.io.irene import find_irene_runtime
+    try:
+        runtime = find_irene_runtime()
+        lines.append(f"  ok       IRENE AE9/AP9  {runtime[0]}  database {runtime[1]}" if runtime
+                     else "  MISSING  IRENE AE9/AP9 -> set IRENE_HOME; no flux substitute")
+    except (OSError, ValueError) as exc:
+        lines.append(f"  INVALID  IRENE AE9/AP9 -> {exc}")
 
     lines.append("solar-wind drivers:")
     try:
@@ -1302,16 +1314,7 @@ if __name__ == "__main__":
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    epoch = cfg.get("epoch")
-    if isinstance(epoch, str):
-        try:
-            from datetime import datetime as _dt
-            _d = _dt.strptime(epoch[:19], "%Y-%m-%d %H:%M:%S")
-            epoch = _d.year + (_d.timetuple().tm_yday - 1) / 365.25
-        except Exception:
-            epoch = 2025.0
-    elif not isinstance(epoch, (int, float)):
-        epoch = 2025.0
+    epoch = cfg.get("epoch", 2025.0)
 
     # Any key in the GUI config that names a real parameter is forwarded.
     # Previously only ten keys were read, so most of the model controls

@@ -745,3 +745,54 @@ which first checks the local ``ssatk_output`` cache, then downloads from a known
 public source when internet access is available. When the file cannot be found
 or fetched, the helper emits ``DemoDataUnavailableWarning`` and returns
 ``None`` so demos and tests can skip gracefully instead of failing hard.
+
+Magnetic-field timestamps
+-------------------------
+
+``plot_magfield_3d`` prints and displays ``FIELD DATA TIMESTAMP`` with the UTC
+date and time used to evaluate the field. Timezone-aware datetimes are converted
+to UTC; decimal years retain their time of day. The label stays visible when
+``show_provenance=False``. OMNI drivers also show the first and last selected
+hourly records and their count, since the drivers are averaged over a time
+window. Nominal drivers are labeled explicitly. These labels describe model
+and driver time, rather than the time the HTML file was created.
+
+IRENE radiation belts
+---------------------
+
+The separately supplied official AFRL IRENE runtime integrates through
+``ssatk.prepare_irene_flux_grid``, ``ssatk.run_irene``, and
+``ssatk.read_irene_flux_grid``. Use ``ssatk.find_irene_runtime()`` to inspect
+the selected installation. Set ``IRENE_HOME`` to the extracted ``Irene``
+directory, or set ``IRENE_EXECUTABLE`` / ``IRENE_DB``. IRENE
+binaries and databases are supplied externally and are not bundled in the wheel.
+
+Magnetic-field and Van Allen plots use ``radiation_model="irene"`` by default
+for ``belt_style="flux"``. The surfaces show official AE9 mean electrons above
+1 MeV and AP9 mean protons above 10 MeV, evaluated on a single-epoch GEO grid.
+``prepare_irene_flux_grid(geo_km, epoch, directory)`` and ``run_irene(directory)``
+provide the reusable grid workflow; ``read_irene_flux_grid`` validates saved
+results. Raw inputs, executable logs and flux outputs are retained under
+``SSATK_OUTPUT_DIR/data/irene_belt_flux``. Cached runs are keyed by the complete
+timestamp, grid and runtime/database identity, separate from legacy caches.
+Missing IRENE raises an error instead of substituting AE-8/AP-8.
+``radiation_model="ae8ap8"`` explicitly selects the legacy backend.
+
+IRENE evaluates its own internal magnetic-coordinate database; the rendered
+field lines remain IGRF/T96. The supplied IRENE field database is fixed after
+2020, and mean flux is a statistical environment, not a forecast of current
+particle observations. SEP/GCR are excluded. The display grid covers
+1.02–7 Earth radii and uses interpolation to draw flux contours; it does not
+depict a sharply bounded physical belt.
+
+With ``IRENE_HOME`` configured, run
+``python -m demos.space_environment.demo_magfield_plot`` for the field and
+IRENE belts, or ``python -m demos.space_environment.demo_van_allen`` for
+three belt views. Without IRENE, these gallery demos explicitly show labeled
+illustrative L-shell geometry without particle flux. A configured but incomplete
+installation remains an error, and direct flux plot requests require IRENE.
+``ssatk-magnetosphere --check`` reports the selected runtime and database.
+Both plots use the shared ``save_plotly_figure`` output policy: relative paths
+go under ``SSATK_OUTPUT_DIR/figures`` (default ``~/ssatk_output/figures``),
+absolute paths are explicit overrides, and ``save_path=False`` disables saving.
+Model provenance lists inputs, without repeating historical validation claims.

@@ -55,7 +55,7 @@ never touch magnetic fields).
 from __future__ import annotations
 
 import functools as _functools
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import os
 from pathlib import Path
@@ -830,13 +830,14 @@ def get_solar_wind(date, window_hours=24):
     Returns Kp (for T89), Bz_GSM and dynamic pressure (for the Shue
     magnetopause), plus speed, density and Dst for reporting.  Returns None if
     the record is unavailable, in which case callers fall back to nominal
-    values and say so.
+    values and say so. record_start_utc / record_end_utc give the inclusive
+    range of selected hourly records used for the averages.
     """
     a = _load_omni_year(date.year)
     if a is None:
         return None
     doy = date.timetuple().tm_yday
-    hr = date.hour + date.minute / 60.0
+    hr = date.hour + date.minute / 60.0 + date.second / 3600.0 + date.microsecond / 3.6e9
     dt_h = (a[:, 0] - doy) * 24.0 + (a[:, 1] - hr)
     sel = a[np.abs(dt_h) <= window_hours / 2.0]
     if len(sel) == 0:
@@ -853,6 +854,10 @@ def get_solar_wind(date, window_hours=24):
                dp_nPa=clean(6, "pressure"), dst=clean(8, "dst"),
                kp=None if kp is None else kp / 10.0,   # OMNI stores Kp*10
                n_hours=len(sel))
+    record_hours = (sel[:, 0] - 1) * 24 + sel[:, 1]
+    start = datetime(date.year, 1, 1)
+    out["record_start_utc"] = (start + timedelta(hours=float(record_hours.min()))).isoformat() + "Z"
+    out["record_end_utc"] = (start + timedelta(hours=float(record_hours.max()))).isoformat() + "Z"
     return out
 
 
@@ -864,7 +869,9 @@ def _apply_solar_wind(date, kp, sw_bz_nT, sw_dp_nPa, use_omni=True):
     if not sw or sw["dp_nPa"] is None or sw["bz_nT"] is None:
         return kp, sw_bz_nT, sw_dp_nPa, "nominal (OMNI unavailable)"
     kp_o = int(round(sw["kp"])) if sw["kp"] is not None else kp
-    src = (f"OMNI {date:%Y-%m-%d}: v={sw['speed']:.0f} km/s, n={sw['density']:.1f}/cc, "
+    records = (f"{sw['record_start_utc']} to {sw['record_end_utc']} ({sw['n_hours']} hourly records)"
+               if "record_start_utc" in sw else f"{date:%Y-%m-%d %H:%M:%S} UTC")
+    src = (f"OMNI mean {records}: v={sw['speed']:.0f} km/s, n={sw['density']:.1f}/cc, "
            f"Bz={sw['bz_nT']:+.1f} nT, Dp={sw['dp_nPa']:.2f} nPa, Kp={sw['kp']:.1f}")
     print(f"  solar wind from {src}", flush=True)
     return kp_o, sw["bz_nT"], sw["dp_nPa"], src

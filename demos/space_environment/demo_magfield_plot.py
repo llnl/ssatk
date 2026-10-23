@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Demo: Earth magnetic field lines + Van Allen radiation belts (IGRF 2025).
+Demo: Earth magnetic field lines + official IRENE AE9/AP9 radiation belts.
+Set IRENE_HOME for official flux; otherwise show illustrative IGRF L-shells.
 
 Output
 ------
@@ -16,6 +17,7 @@ GALLERY_CATEGORY = "space_environment"
 import sys
 import os
 
+from ssatk.io.irene import find_irene_runtime
 from ssatk.plots.figpath import figpath
 from ssatk.plots.magfield_plot_3d import plot_magfield_3d
 
@@ -29,18 +31,25 @@ def main(make_figures=None, fast=None):
     if not make_figures:
         return {"figure": None, "skipped": True, "reason": "figures_disabled"}
 
+    irene_available = find_irene_runtime() is not None
+    if not irene_available:
+        print("IRENE unavailable: showing illustrative IGRF L-shells without particle flux; set IRENE_HOME")
+
     try:
         # gallery-call: *.html | *.png
         fig, stats = plot_magfield_3d(
-            epoch           = 2025.0,
+            epoch           = "2025-07-02T12:34:56Z",
             fidelity        = "draft" if fast else "high",
             external_field  = None,
             use_omni        = False,
-            belt_style      = "igrf",
+            belt_style      = "flux" if irene_available else "igrf",
+            radiation_model = "irene",
             show_magnetopause = False,
             show_provenance = False,
             split_topology  = False,
-            title           = "Earth internal field — IGRF 2025; illustrative L-shell belts",
+            title           = ("Earth internal field - IGRF 2025; " +
+                               ("IRENE AE9/AP9 mean flux" if irene_available else
+                                "illustrative L-shells, no particle flux")),
             texture_path    = "auto",
             elev            = 8,
             azim            = -15,
