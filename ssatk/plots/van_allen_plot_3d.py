@@ -32,7 +32,6 @@ from __future__ import annotations
 from .rendering import _with_low_spec
 
 import os
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -409,7 +408,9 @@ def plot_van_allen_3d(
     # Annotations
     # ------------------------------------------------------------------
     src = {'_done': ('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED; IRENE IGRF FIXED AFTER 2020'
-                     if radiation_model == "irene" else 'BELTS: LEGACY AE-8/AP-8 CLIMATOLOGICAL MEAN FLUX'),
+                     if radiation_model == "irene" else
+                     'BELTS: NASA AE-8/AP-8 CLIMATOLOGICAL MEAN FLUX ON IGRF FIELD GEOMETRY '
+                     '&#183; MEASURED ~18x ABOVE GOES &gt;2.1 MeV ELECTRONS, WHICH VARY 82x IN 8 DAYS'),
            'igrf': f'IGRF L-SHELLS BOUNDED BY MIRROR POINTS, PITCH {pitch_angle_deg:.0f}\u00b0 (SHOWS SOUTH ATLANTIC ANOMALY)',
            'lshell': 'BELT SHELLS FROM DIPOLE L-SHELL MODEL',
            'torus': 'BELT SHELLS FROM TORUS APPROXIMATION'}[style]

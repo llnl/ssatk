@@ -1,4 +1,4 @@
-"""IRENE dose arithmetic against exact synthetic values, not radiation predictions."""
+"""IRENE unit conversions against exact synthetic values, not radiation predictions."""
 
 import json
 
@@ -42,3 +42,25 @@ def test_summed_absorbed_dose_and_time_units(tmp_path):
     np.testing.assert_allclose(result["total_mgy"], [[0, 0, 0], [30, 15, 3], [60, 30, 6]],
                                rtol=0, atol=1e-12)
     assert "mSv" not in (tmp_path / "dose_vs_mission_day.csv").read_text()
+
+
+def test_flux_grid_si_positions_and_exact_flux(tmp_path):
+    """Closed-form km-to-m conversion (1e-9 m), flux unchanged (1e-12 cm^-2 s^-1)."""
+    positions = np.array([[7_000_000, 0, 0], [0, 8_000_000, 1000]])
+    irene.prepare_irene_flux_grid(positions, "2025-01-01T00:00:00", tmp_path / "run")
+    directory = tmp_path / "run"
+    orbit = np.array([[60676, 7000, 0, 0], [60676, 0, 8000, 1]])
+    np.testing.assert_allclose(np.loadtxt(directory / "orbit.csv", delimiter=","),
+                               orbit, rtol=0, atol=1e-12)
+    for model, species, energy, flux in (("AE9", "e-", 1, [12, 34]), ("AP9", "H+", 10, [56, 78])):
+        header = (f"Irene Software Version: 1.58.001\nModel type: {model}\n"
+                  f"Particle species: {species}\nEnergy levels (MeV): {energy}\n"
+                  "Flux type: Integral\nFlux direction: Omnidirectional\n"
+                  "Time format: Modified Julian Date\n"
+                  "Coordinate system: GEO (Geographic) Cartesian in km\nflux(#/cm^2/s)")
+        np.savetxt(directory / f"{model}_mean_flux.txt", np.column_stack([orbit, flux]),
+                   delimiter=",", header=header)
+    result = irene.read_irene_flux_grid(directory)
+    np.testing.assert_allclose(result["geo_m"], positions, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(result["electron_flux"], [12, 34], rtol=0, atol=1e-12)
+    np.testing.assert_allclose(result["proton_flux"], [56, 78], rtol=0, atol=1e-12)

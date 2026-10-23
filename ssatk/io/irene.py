@@ -35,7 +35,12 @@ def find_irene_runtime(*, executable=None, model_data=None):
     home = os.environ.get("IRENE_HOME")
     if home:
         home = Path(home).expanduser()
-        executable = executable or home / "win64" / "bin" / "CmdLineIrene.exe"
+        if not executable:
+            name = "CmdLineIrene.exe" if os.name == "nt" else "CmdLineIrene"
+            candidates = [path for path in home.rglob(name) if path.is_file()]
+            if len(candidates) != 1:
+                raise FileNotFoundError("IRENE_HOME must contain one runtime; set IRENE_EXECUTABLE explicitly")
+            executable = candidates[0]
         model_data = model_data or home / "modelData"
     executable = executable or shutil.which("CmdLineIrene")
     if not executable:
@@ -61,7 +66,7 @@ def prepare_irene_run(r_m, times, directory):
     These are absorbed dose assumptions, not an Orion shielding model.
     """
     positions = np.asarray(r_m, dtype=float)
-    times = Time(times)
+    times = Time(times, format="gps" if np.asarray(times).dtype.kind in "iuf" else None)
     mjd = np.atleast_1d(times.utc.mjd)
     if positions.shape != (len(mjd), 3) or len(mjd) < 2:
         raise ValueError("r_m must have shape (N, 3), with N >= 2 matching times")
@@ -98,22 +103,23 @@ def prepare_irene_run(r_m, times, directory):
     return directory
 
 
-def prepare_irene_flux_grid(geo_km, epoch, directory):
-    """Prepare an official single-epoch GEO/km grid of mean integral flux.
+def prepare_irene_flux_grid(geo_m, epoch, directory):
+    """Prepare mean integral flux from GEO positions in metres and GPS/Time.
 
     AE9 electrons above 1 MeV and AP9 protons above 10 MeV are evaluated
     independently of the plotted IGRF/T96 field. No dose is computed on a grid.
+    Positions are converted to kilometres only in the IRENE ephemeris file.
     """
-    positions = np.asarray(geo_km, dtype=float)
-    time = Time(epoch).utc
+    positions = np.asarray(geo_m, dtype=float)
+    time = Time(epoch, format="gps" if np.asarray(epoch).dtype.kind in "iuf" else None).utc
     if not time.isscalar or not np.isfinite(time.mjd) or not 33282 <= time.mjd < 69807:
         raise ValueError("epoch must be one finite time from 1950 through 2049")
     if positions.ndim != 2 or positions.shape[1] != 3 or not len(positions) or not np.isfinite(positions).all():
-        raise ValueError("geo_km must be a finite (N, 3) Cartesian grid")
+        raise ValueError("geo_m must be a finite (N, 3) Cartesian grid")
     time.precision = 9
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=False)
-    np.savetxt(directory / "orbit.csv", np.column_stack([np.full(len(positions), time.mjd), positions]),
+    np.savetxt(directory / "orbit.csv", np.column_stack([np.full(len(positions), time.mjd), positions / 1000]),
                delimiter=",", fmt="%.12f", header="MJD UTC, GEO X km, GEO Y km, GEO Z km")
     for model, energy in (("AE9", 1), ("AP9", 10)):
         (directory / f"{model}.input.txt").write_text(
@@ -161,7 +167,10 @@ def run_irene(directory, *, executable=None, model_data=None, timeout=600):
 
 
 def read_irene_flux_grid(directory):
-    """Read AE9/AP9 mean integral flux, validating grid, units and model headers."""
+    """Read AE9/AP9 mean integral flux with GEO positions in metres.
+
+    Validate grid, units and model headers; metadata describes on-disk units.
+    """
     directory = Path(directory)
     metadata = json.loads((directory / "run.json").read_text(encoding="utf-8"))
     if (metadata.get("product"), metadata.get("electron_threshold_mev"),
@@ -205,7 +214,7 @@ def read_irene_flux_grid(directory):
         if np.any(rows[:, 4] < 0):
             raise ValueError(f"{path.name}: negative or out-of-domain flux")
         fluxes.append(rows[:, 4].tolist())
-    result = {"geo_km": orbit[:, 1:].tolist(), "electron_flux": fluxes[0],
+    result = {"geo_m": (orbit[:, 1:] * 1000).tolist(), "electron_flux": fluxes[0],
               "proton_flux": fluxes[1], "metadata": metadata}
     (directory / "flux.json").write_text(json.dumps(result), encoding="utf-8")
     return result

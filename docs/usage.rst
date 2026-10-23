@@ -133,6 +133,9 @@ For :func:`ssatk.plots.orbit_plot`, ``.mp4`` and ``.gif`` save paths
 create animated quicklooks with short fading tails. Static extensions such as
 ``.png`` and ``.jpg`` save the full time-series figure.
 
+``plot_magfield_3d`` and ``plot_van_allen_3d`` follow the same policy through
+``save_plotly_figure``; ``save_path=False`` disables saving.
+
 Saving data products
 --------------------
 
@@ -770,10 +773,13 @@ binaries and databases are supplied externally and are not bundled in the wheel.
 Magnetic-field and Van Allen plots use ``radiation_model="irene"`` by default
 for ``belt_style="flux"``. The surfaces show official AE9 mean electrons above
 1 MeV and AP9 mean protons above 10 MeV, evaluated on a single-epoch GEO grid.
-``prepare_irene_flux_grid(geo_km, epoch, directory)`` and ``run_irene(directory)``
+``prepare_irene_flux_grid(geo_m, epoch, directory)`` and ``run_irene(directory)``
 provide the reusable grid workflow; ``read_irene_flux_grid`` validates saved
-results. Raw inputs, executable logs and flux outputs are retained under
-``SSATK_OUTPUT_DIR/data/irene_belt_flux``. Cached runs are keyed by the complete
+results and returns ``geo_m`` positions in metres. Grid positions are GEO metres
+in memory and GEO kilometres in the IRENE files; epochs accept GPS seconds,
+Astropy ``Time`` or UTC strings. Raw inputs, executable logs and flux outputs
+are retained under ``SSATK_CACHE/irene_belt_flux`` (default
+``~/.cache/ssatk/irene_belt_flux``). Cached runs are keyed by the complete
 timestamp, grid and runtime/database identity, separate from legacy caches.
 Missing IRENE raises an error instead of substituting AE-8/AP-8.
 ``radiation_model="ae8ap8"`` explicitly selects the legacy backend.
@@ -790,9 +796,17 @@ With ``IRENE_HOME`` configured, run
 IRENE belts, or ``python -m demos.space_environment.demo_van_allen`` for
 three belt views. Without IRENE, these gallery demos explicitly show labeled
 illustrative L-shell geometry without particle flux. A configured but incomplete
-installation remains an error, and direct flux plot requests require IRENE.
+installation is an error. Direct flux plot requests require IRENE, including
+``quick_figure`` and every ``ssatk-magnetosphere`` preset.
 ``ssatk-magnetosphere --check`` reports the selected runtime and database.
-Both plots use the shared ``save_plotly_figure`` output policy: relative paths
-go under ``SSATK_OUTPUT_DIR/figures`` (default ``~/ssatk_output/figures``),
-absolute paths are explicit overrides, and ``save_path=False`` disables saving.
-Model provenance lists inputs, without repeating historical validation claims.
+
+For absorbed dose along a trajectory, use
+``prepare_irene_run(r_m, times, directory)`` with GCRF positions in metres and
+GPS seconds or Astropy ``Time``, then ``run_irene(directory)``. The returned
+AE9/AP9 SHIELDOSE2 results include ``total_rad`` and ``total_mgy`` for an
+illustrative 4-pi aluminum sphere at 1, 3 and 10 mm depth with a tissue detector.
+``read_irene_dose(directory)`` validates existing outputs. These are absorbed
+dose assumptions, not a spacecraft shielding model or dose equivalent in mSv;
+SEP/GCR remain excluded. Run
+``python -m demos.space_environment.demo_irene_dose`` for a small orbit example;
+it reports a skip when IRENE is unavailable.

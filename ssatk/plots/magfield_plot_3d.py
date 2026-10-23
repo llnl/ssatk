@@ -371,12 +371,42 @@ def _igrf_belt_mesh(L_min, L_max, date, axis, base_rgb, lat_max_deg=None,
 # Radiation-belt mean flux surfaces
 # ===========================================================================
 # IRENE AE9/AP9 evaluates a single-epoch GEO grid by default. The legacy
-# AE8/AP8 backend remains available only through an explicit model selection.
+# AE8/AP8 backend is available only through an explicit model selection.
 
 # Dipole moment calibrated so L = (M/Bmin)^(1/3) reproduces IRBEM's McIlwain L
 # (validated: constant +1.43% bias against irbempy.get_Lm, removed here).
 
 
+# ---------------------------------------------------------------------------
+# Measured accuracy.  Each entry records WHEN it was measured, because these
+# numbers move with geomagnetic conditions: the same model gives 10.4% on a
+# quiet day and 17.2% on a moderately disturbed one.  Regenerate with
+# validate_against_goes.py / validate_tail_and_magnetopause.py /
+# validate_belts_against_goes.py and update here.
+# ---------------------------------------------------------------------------
+VALIDATION = {
+    "geo":        ("2026-07-08", "T96 14.5 nT = 17.2%, T89 15.8 nT = 18.8% "
+                                 "(Kp 1.9, Dst -30)"),
+    "geo_quiet":  ("2025-07-02", "T96 10.4%, T89 9.7% (Kp 1.1)"),
+    "geo_storm":  ("2025-11-12", "T96 49 nT = 40%, T89 66 nT = 53% (Kp 8.7)"),
+    "sky":        ("2026-07-08", "star directions agree with astropy ITRS to "
+                                 "8-24 arcsec; GMST to 0.01 s"),
+    # Characterised INSIDE the magnetosphere, which is the only place these
+    # models are defined.  Earlier "tail" figures quoted here were taken with
+    # 0% of samples inside the modelled magnetopause — i.e. in the
+    # magnetosheath, outside T96's domain — so they described the model where
+    # it does not apply.  Corrected rather than reused.
+    "depth":      ("2026-01-10", "T96 inside the magnetosphere: 17.2% at "
+                                 "6.6 RE (GOES), 23.2% at 10.2 RE (MMS)"),
+    "sheath":     ("2025-07-03", "outside the magnetopause neither model is "
+                                 "defined: T96 ~97%, T89 ~35-44% (MMS, "
+                                 "magnetosheath) — not a magnetotail result"),
+    "boundary":   ("2026-01-10", "T96: agreement degrades 3.6x across the Shue "
+                                 "surface at a 10.2 RE dayside MMS crossing; "
+                                 "measured |B| 47->32 nT"),
+    "belts":      ("2025-07",    "AE-8 reads ~18x above GOES >2.1 MeV "
+                                 "electrons, which vary 82x over 8 days"),
+}
 
 
 
@@ -422,17 +452,17 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
         identity = [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in files if p.is_file()]
         key = repr(("irene_integral_grid_v1", date.isoformat(), grid_n, extent_re, identity))
         digest = hashlib.sha256(key.encode()).hexdigest()[:20]
-        directory = output_root() / "data" / "irene_belt_flux" / digest
+        directory = _texture_cache_dir() / "irene_belt_flux" / digest
         if cache and (directory / "flux.json").is_file():
             result = read_irene_flux_grid(directory)
         else:
             if directory.exists():
                 import tempfile
                 directory = Path(tempfile.mkdtemp(prefix=digest + "_", dir=directory.parent)) / "run"
-            prepare_irene_flux_grid(Q[selected], date, directory)
+            prepare_irene_flux_grid(Q[selected] * 1000, date, directory)
             print(f"  belts: evaluating official IRENE on {selected.sum()} GEO grid points", flush=True)
             result = run_irene(directory)
-        if not np.array_equal(np.asarray(result["geo_km"]), np.char.mod('%.12f', Q[selected]).astype(float)):
+        if not np.array_equal(np.asarray(result["geo_m"]), np.char.mod('%.12f', Q[selected]).astype(float) * 1000):
             raise ValueError("IRENE cached flux does not match the plotting grid")
         Fp, Fe = np.zeros(len(Q)), np.zeros(len(Q))
         Fp[selected], Fe[selected] = result["proton_flux"], result["electron_flux"]
@@ -671,7 +701,14 @@ def latest_driven_epoch(default=datetime(2025, 7, 2)):
 
 def _model_provenance(date, external_field, kp, belt_style, sw_bz_nT, sw_dp_nPa,
                       sw_source='nominal', radiation_model='irene'):
-    """Describe the selected models and inputs without historical accuracy claims."""
+    """
+    One line per model actually used, plus the measured accuracy.
+
+    Figures that state only "IGRF" invite the reader to assume more precision
+    than the models carry.  The residuals quoted here were measured against
+    GOES-18 magnetometer data (validate_against_goes.py) and GOES SEISS
+    particle data (validate_belts_against_goes.py).
+    """
     try:
         igrf = Path(_pp.shc_fn).stem.replace("_", " ").upper()
     except Exception:
@@ -694,6 +731,13 @@ def _model_provenance(date, external_field, kp, belt_style, sw_bz_nT, sw_dp_nPa,
         if radiation_model == "irene":
             lines.append("IRENE IGRF DATABASE FIXED AFTER 2020; SEP/GCR EXCLUDED")
     lines.append("EARTH  WGS84 ELLIPSOID  &#183;  SKY  J2000 CATALOGUE, PRECESSED TO EPOCH")
+    for key in ("geo", "geo_storm", "depth", "sheath", "boundary", "sky"):
+        when, what = VALIDATION[key]
+        lines.append(f"MEASURED [{when}]  {what}")
+    if belt_style == "flux" and radiation_model == "ae8ap8":
+        # This residual was measured for AE-8 belts; it does not describe IRENE.
+        when, what = VALIDATION["belts"]
+        lines.append(f"MEASURED [{when}]  {what}")
     return "<br>".join(lines)
 
 
@@ -1218,6 +1262,7 @@ def _check_environment():
     else:
         for asset, consequence in (
             ("bright_stars.csv", "synthetic starfield instead of the real sky"),
+            ("aep8_table.npz", "no legacy AE-8/AP-8 flux surfaces (radiation_model='ae8ap8')"),
         ):
             found = find_data_file(asset)
             if found is None:
@@ -1231,6 +1276,7 @@ def _check_environment():
     for mod, consequence in (
         ("ppigrf", "no IGRF internal field"),
         ("geopack", "no T89/T96 external field, no GEO->GSM conversion"),
+        ("spacepy", "cannot build the AE-8/AP-8 table (a cached one still works)"),
     ):
         try:
             __import__(mod)
