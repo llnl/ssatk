@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
+from ssatk._gallery_layout import gallery_title
 from ssatk._physics_catalog import TOPICS as RADIATION_TOPICS
 from ssatk._physics_dynamics_catalog import TOPICS as DYNAMICS_TOPICS
 
@@ -35,7 +36,7 @@ def write_physics_explorer(results, out_root: Path) -> None:
             ]
             demos.append({
                 "name": name,
-                "title": result.title if result else name.rsplit("/", 1)[-1].removeprefix("demo_").replace("_", " ").capitalize(),
+                "title": gallery_title(name, result.title if result else name.rsplit("/", 1)[-1].replace("_", " ").title()),
                 "status": result.status if result else "not in this build",
                 "href": "index.html#" + quote(demo_anchor(name), safe="") if result else None,
                 "preview": images[0] if images else None,
@@ -177,7 +178,7 @@ code { font:12px/1.6 ui-monospace,monospace; color:#a7e5f0; overflow-wrap:anywhe
 <section class="detail" aria-labelledby="topic-title"><div id="kicker" class="eyebrow"></div><h2 id="topic-title"></h2><p id="summary"></p><ol id="chain" class="chain" aria-label="Model connections"></ol><p class="boundary"><strong>Model boundary</strong><span id="limits"></span></p><details><summary>Python entry points</summary><ul id="apis" class="apis"></ul></details></section>
 </div>
 <section class="examples" aria-labelledby="example-heading"><div class="examples-heading"><h2 id="example-heading">Explore the computed examples</h2><p id="demo-context"></p></div><div id="demos" class="demo-grid"></div></section>
-<p class="footer">Space Situational Awareness Toolkit · This map describes SSATK workflows and its SSAPy adapters. Demo status comes from this gallery build. The concept map works offline; external source links require a connection.</p>
+<p class="footer">Space Situational Awareness Toolkit · This map describes SSATK workflows. Demo status comes from this gallery build. The concept map works offline; external source links require a connection.</p>
 <noscript><p>Enable JavaScript to interact with the map. Browse the <a href="index.html">gallery</a> for computed examples.</p>__NO_SCRIPT__</noscript>
 </main>
 <script type="application/json" id="topic-data">__TOPIC_DATA__</script>
