@@ -452,7 +452,8 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
         radii = np.linalg.norm(Q, axis=1) / RE
         selected = (radii >= 1.02) & (radii <= 7.0)
         database = runtime[1]
-        files = [runtime[0], *sorted(database.iterdir())]
+        database_files = sorted((p for p in database.rglob("*") if p.is_file()), key=lambda p: p.as_posix())
+        files = [runtime[0], *database_files]
         identity = [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in files if p.is_file()]
         key = repr(("irene_integral_grid_v1", date.isoformat(), grid_n, extent_re, identity))
         digest = hashlib.sha256(key.encode()).hexdigest()[:20]
