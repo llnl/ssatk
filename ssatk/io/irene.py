@@ -22,6 +22,16 @@ from ssatk.coordinates.earth_fixed import gcrf_to_itrf_astropy
 __all__ = ["find_irene_runtime", "prepare_irene_run", "prepare_irene_flux_grid",
            "run_irene", "read_irene_dose", "read_irene_flux_grid"]
 
+# IRENE's text output prints MJD to 8 decimals and GEO/km positions to 6 (see
+# the "%.12f" input written by prepare_irene_run/prepare_irene_flux_grid,
+# truncated by IRENE's own formatting on the way out). Re-parsing that text
+# does not round-trip bit-for-bit with the in-memory orbit array, so outputs
+# are compared with a tolerance of half the smallest printed increment (plus a
+# small margin for float noise) rather than requiring exact equality between
+# two independently rounded copies.
+_EPHEMERIS_PRINTED_DECIMALS = np.array([8, 6, 6, 6])
+_EPHEMERIS_TEXT_ATOL = 0.55 * 10.0 ** (-_EPHEMERIS_PRINTED_DECIMALS)
+
 
 def find_irene_runtime(*, executable=None, model_data=None):
     """Return validated executable/database paths, or None when unconfigured.
@@ -215,8 +225,8 @@ def read_irene_flux_grid(directory):
             raise ValueError(f"{path.name}: missing or mismatched IRENE version")
         metadata["version"] = version[1]
         rows = np.loadtxt(io.StringIO(content), delimiter=",", ndmin=2)
-        serialized = np.column_stack([np.round(orbit[:, 0], 8), np.round(orbit[:, 1:], 6)])
-        if rows.shape != (len(orbit), 5) or not np.isfinite(rows).all() or not np.array_equal(rows[:, :4], serialized):
+        if (rows.shape != (len(orbit), 5) or not np.isfinite(rows).all()
+                or not np.allclose(rows[:, :4], orbit, rtol=0, atol=_EPHEMERIS_TEXT_ATOL)):
             raise ValueError(f"{path.name}: invalid flux rows or mismatched input grid")
         if np.any(rows[:, 4] < 0):
             raise ValueError(f"{path.name}: negative or out-of-domain flux")
@@ -268,9 +278,7 @@ def read_irene_dose(directory):
         rows = np.loadtxt(io.StringIO(content), delimiter=",", comments="#", ndmin=2)
         if rows.shape != (len(orbit), 7) or not np.isfinite(rows).all():
             raise ValueError(f"{path.name}: expected finite MJD/GEO XYZ/three-depth dose rows")
-        # IRENE V1.58 prints MJD to 8 decimals and GEO/km positions to 6.
-        serialized_orbit = np.column_stack([np.round(orbit[:, 0], 8), np.round(orbit[:, 1:4], 6)])
-        if not np.array_equal(rows[:, :4], serialized_orbit):
+        if not np.allclose(rows[:, :4], orbit[:, :4], rtol=0, atol=_EPHEMERIS_TEXT_ATOL):
             raise ValueError(f"{path.name}: output does not match input ephemeris")
         dose = rows[:, 4:]
         # The official AP9 run showed a one-digit reversal in its %.8e dose output.
