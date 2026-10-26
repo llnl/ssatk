@@ -60,7 +60,6 @@ from scipy.integrate import trapezoid as _trapezoid
 _STAR_CACHE = {}
 _HYG_PATHS = [
     os.path.expanduser("~/bright_stars.csv"),
-    os.path.expanduser("~/SSAPy/ssapy/data/bright_stars.csv"),
     os.path.join(os.path.dirname(__file__), "bright_stars.csv"),
 ]
 
@@ -567,12 +566,10 @@ def _add_milky_way(ax, sky_radius):
 # with files below ``<package>/data``. See ``ssatk.data``.
 #
 # Resolution order, first hit wins:
-#   1. $SSAPY_DATA                        -- explicit override for CI / odd layouts
-#   2. a sibling data checkout            -- useful while developing both repos
+#   1. a sibling ssa-data-core checkout   -- useful while developing both repos
 #      side by side, before `pip install -e` has been run against the data repo
-#   3. the installed split data packages  -- the real, supported user mechanism
-#      (then the retired ``ssapy_data`` archive package, if still installed)
-#   4. alongside this module              -- legacy in-tree assets, so existing
+#   2. the installed split data packages  -- the real, supported user mechanism
+#   3. alongside this module              -- legacy in-tree assets, so existing
 #                                            working copies keep functioning
 #
 # Everything degrades: find_data_file() returns None rather than raising, and
@@ -590,10 +587,10 @@ def _ssa_data_package_dirs():
     import importlib.resources as _res
     from pathlib import Path as _P
 
-    from ssatk.data import DEFAULT_DATA_PACKAGES, LEGACY_DATA_PACKAGE
+    from ssatk.data import DEFAULT_DATA_PACKAGES
 
     dirs = []
-    for package in (*DEFAULT_DATA_PACKAGES, LEGACY_DATA_PACKAGE):
+    for package in DEFAULT_DATA_PACKAGES:
         try:
             p = _P(str(_res.files(package) / "data"))
         except (ImportError, TypeError):
@@ -616,7 +613,6 @@ def ssa_data_dirs():
     asset can't be found: "not found" is not actionable, "not found in these
     four places" is. `ssatk-magnetosphere --check` prints it.
     """
-    import os as _os
     from pathlib import Path as _Path
 
     here = _Path(__file__).resolve()
@@ -625,10 +621,6 @@ def ssa_data_dirs():
     repo_parent = repo_root.parent        # directory holding the sibling repos
 
     dirs = []
-
-    env = _os.environ.get("SSAPY_DATA")
-    if env:
-        dirs.append(_Path(env))
 
     # Sibling checkouts of the core data repository, raw or in packaged layout.
     for parent in (repo_parent, repo_root):
@@ -661,7 +653,6 @@ def find_data_file(name):
             if candidate.is_file():
                 return candidate
         except OSError:
-            # A bad $SSAPY_DATA or a stale network mount should not take out
-            # the whole search.
+            # A stale network mount should not take out the whole search.
             continue
     return None

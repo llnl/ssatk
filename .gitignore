@@ -6,7 +6,7 @@
 **/*.h5
 
 # Local data products and generated analysis/demo outputs belong outside this
-# source repository. Persist reusable data in SSAPy-Data instead.
+# source repository. Persist reusable data in the split ssa-data-* packages instead.
 data/
 outputs/
 gallery_output/

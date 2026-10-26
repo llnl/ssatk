@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demonstrate reading data from an external SSAPy data package."""
+"""Demonstrate reading data from an external ``ssa-data-*``-style data package."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from ssatk.data import (
 )
 
 
-DEMO_PACKAGE = "demo_ssapy_data"
+DEMO_PACKAGE = "demo_ssa_data"
 DEMO_RESOURCE = "catalogs/sample_catalog.txt"
 MISSING_PACKAGE = "demo_ssa_data_missing_offline"
 
@@ -25,7 +25,7 @@ def _create_demo_package(root: Path) -> None:
     package_root = root / DEMO_PACKAGE
     data_root = package_root / "data" / "catalogs"
     data_root.mkdir(parents=True)
-    (package_root / "__init__.py").write_text('"""Demo-only SSAPy data package."""\n', encoding="utf-8")
+    (package_root / "__init__.py").write_text('"""Demo-only SSATK data package."""\n', encoding="utf-8")
     (data_root / "sample_catalog.txt").write_text(
         "object_id,semi_major_axis_km\nDEMO-1,42164\n",
         encoding="utf-8",

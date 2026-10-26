@@ -669,7 +669,6 @@ class MoonShadingLayer:
 _STAR_CACHE = None
 _HYG_PATHS = [
     os.path.expanduser("~/bright_stars.csv"),
-    os.path.expanduser("~/SSAPy/ssapy/data/bright_stars.csv"),
     os.path.join(os.path.dirname(__file__), "bright_stars.csv"),
 ]
 
@@ -695,11 +694,9 @@ def _load_star_catalog(mag_limit: float = 6.5):
     if _STAR_CACHE is not None and _STAR_CACHE.get("mag_limit") == mag_limit:
         return _STAR_CACHE
 
-    # Prefer the split ssa-data-* packages (and $SSAPY_DATA / sibling-checkout
-    # overrides) that starfield.find_data_file resolves -- the _HYG_PATHS
-    # list below only ever matched a catalog dropped by hand at one of three
-    # fixed locations, so a normal package install always fell through to
-    # the random placeholder sky.
+    # Prefer the split ssa-data-* packages (and a sibling ssa-data-core
+    # checkout) that starfield.find_data_file resolves; _HYG_PATHS only covers
+    # a catalog placed by hand.
     from .starfield import find_data_file
     csv_path = None
     for name in ("bright_stars_mag9.csv", "bright_stars.csv"):
