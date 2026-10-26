@@ -96,7 +96,6 @@ class BodySurface:
     def __init__(self, ax, body, radius, center=(0, 0, 0), rotation=None, *, n=90, path=None, zorder=10, raster=False):
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
         self.low_spec = is_low_spec()
-        self.quads, self.colors = surface_quads(body, n, path)
         self.radius = radius
         self.raster = gallery_max_textures() or raster
         if self.raster:
@@ -113,6 +112,7 @@ class BodySurface:
             limits = np.asarray(center)[:, None]+radius*np.array([-1., 1.])
             ax.auto_scale_xyz(*limits, had_data=had_data)
         else:
+            self.quads, self.colors = surface_quads(body, n, path)
             self.artist = Poly3DCollection([], edgecolors="none", linewidths=0, antialiased=False, zorder=zorder)
         from .occultation import _register_body
         self.occluder = _register_body(ax, self.artist, center, radius)
