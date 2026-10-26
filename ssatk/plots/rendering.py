@@ -14,6 +14,7 @@ import os as _os
 __all__ = ["low_spec_mode", "set_low_spec_mode", "is_low_spec"]
 
 _override = _ContextVar("ssatk_low_spec", default=None)
+_per_frame = _ContextVar("ssatk_per_frame_meshes", default=False)
 
 
 def gallery_max_textures():
@@ -27,9 +28,24 @@ def body_mesh_resolution(latitude_cells, *, plotly=False):
     Matplotlib sorts individual polygons on the CPU; Plotly can use a denser
     GPU mesh. Larger caller-supplied meshes are retained in either backend.
     """
-    if gallery_max_textures():
+    if gallery_max_textures() and not _per_frame.get():
         return max(latitude_cells, 180 if plotly else 90)
     return latitude_cells
+
+
+@_contextmanager
+def per_frame_meshes():
+    """Keep caller-chosen body mesh sizes while building animation frames.
+
+    Each Plotly frame carries its own copy of a body mesh, so applying the
+    gallery floor to every frame multiplies its memory and file size by the
+    frame count.
+    """
+    token = _per_frame.set(True)
+    try:
+        yield
+    finally:
+        _per_frame.reset(token)
 
 
 def is_low_spec(low_spec=None):
