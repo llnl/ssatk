@@ -39,6 +39,7 @@ __all__ = [
     "LAUNCH_CONVENTIONS",
     "MissionContractError",
     "ResourceVerificationError",
+    "RUN_STATUSES",
     "collect_software_baseline",
     "launch_site_state",
     "load_mission_contract",
@@ -76,6 +77,7 @@ _TOP_LEVEL_FIELDS = frozenset(
         "phases",
         "transitions",
         "termination_conditions",
+        "failure_behavior",
         "requirements",
         "resources",
         "software",
@@ -86,7 +88,7 @@ _TOP_LEVEL_FIELDS = frozenset(
 )
 _OPTIONAL_TOP_LEVEL_FIELDS = frozenset({"description"})
 _REQUIREMENT_FIELDS = frozenset(
-    {"value", "unit", "tolerance", "check", "evidence_field", "source"}
+    {"value", "unit", "tolerance", "comparison", "check", "evidence_field", "source"}
 )
 _RESOURCE_FIELDS = frozenset(
     {"path", "sha256", "source", "license", "units", "frame", "validity"}
@@ -114,6 +116,7 @@ _COMMON_REQUIREMENTS = frozenset(
         "max_angle_of_attack",
         "minimum_propellant_reserve",
         "maximum_navigation_position_error",
+        "maximum_mission_duration",
         "frame_position_closure",
         "frame_velocity_closure",
     }
@@ -164,10 +167,12 @@ def load_mission_contract(source: str | Path) -> dict[str, Any]:
 
 
 def validate_mission_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a shallow copy after validating the strict version-1 contract."""
+    """Return a detached JSON record after validating the strict version-1 contract."""
 
     if not isinstance(contract, Mapping):
         raise MissionContractError("mission contract must be a JSON object")
+    if any(not isinstance(key, str) for key in contract):
+        raise MissionContractError("mission contract field names must be strings")
 
     errors: list[str] = []
     keys = set(contract)
@@ -178,7 +183,7 @@ def validate_mission_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
     if unknown:
         errors.append(f"unknown top-level fields: {', '.join(sorted(unknown))}")
 
-    if contract.get("schema_version") != 1:
+    if type(contract.get("schema_version")) is not int or contract["schema_version"] != 1:
         errors.append("schema_version must be 1")
     for field in ("mission_id", "profile", "launch_site", "epoch_utc", "vehicle"):
         _require_text(contract.get(field), field, errors)
@@ -199,6 +204,9 @@ def validate_mission_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
     _validate_epoch(contract.get("epoch_utc"), errors)
     _validate_phases(contract.get("phases"), contract.get("transitions"), errors)
     _validate_string_list(contract.get("termination_conditions"), "termination_conditions", errors)
+    _validate_failure_behavior(
+        contract.get("failure_behavior"), contract.get("termination_conditions"), errors
+    )
     _validate_requirements(contract.get("requirements"), profile, errors)
     _validate_resources(contract.get("resources"), errors)
     _validate_software(contract.get("software"), errors)
@@ -209,7 +217,10 @@ def validate_mission_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
 
     if errors:
         raise MissionContractError("Invalid launch mission contract:\n- " + "\n- ".join(errors))
-    return dict(contract)
+    try:
+        return json.loads(json.dumps(dict(contract), allow_nan=False))
+    except (TypeError, ValueError) as exc:
+        raise MissionContractError(f"mission contract must contain only finite JSON values: {exc}") from exc
 
 
 def collect_software_baseline(
@@ -250,11 +261,11 @@ def collect_software_baseline(
 def verify_data_resources(
     resources: list[Mapping[str, Any]], *, strict: bool = True
 ) -> list[dict[str, Any]]:
-    """Verify packaged data against the contract and installed wheel RECORD."""
+    """Verify wheel RECORD payloads and any supplied contract SHA-256 hashes."""
     results = []
     for requested in resources:
         path = requested["path"]
-        declared_hash = requested["sha256"].lower()
+        declared_hash = requested.get("sha256")
         try:
             package = resource_package(path)
             metadata = distribution(package.replace("_", "-"))
@@ -278,7 +289,7 @@ def verify_data_resources(
         problems = []
         if is_lfs_pointer:
             problems.append("resource is a Git LFS pointer, not its payload")
-        if declared_hash != manifest_hash:
+        if declared_hash is not None and declared_hash.lower() != manifest_hash:
             problems.append("contract SHA-256 does not match the package manifest")
         if actual_hash != manifest_hash:
             problems.append("resource SHA-256 does not match the package manifest")
@@ -384,6 +395,14 @@ def run_launch_preflight(
         return report
 
     report["mission_id"] = contract["mission_id"]
+    report["contract"] = contract
+    report["contract_sha256"] = hashlib.sha256(
+        json.dumps(contract, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    ).hexdigest()
+    report["requirement_checks"] = {
+        name: {"status": "NOT RUN", "detail": "mission dynamics were not propagated"}
+        for name in contract["requirements"]
+    }
     report["gates"]["G0"] = {
         "status": "PASS",
         "detail": "mission targets, limits, frames, units, checks, and tolerances are explicit",
@@ -418,8 +437,11 @@ def run_launch_preflight(
         ]
         report["initial_state"] = state
         report["frame_checks"] = frame_checks
-        g2_status = _combined_status(item["status"] for item in frame_checks)
-        g2_detail = "configuration resolved and launch-pad position/velocity closure checked"
+        report["requirement_checks"].update({item["name"]: item for item in frame_checks})
+        g2_status = _combined_status([
+            report["gates"]["G1"]["status"], *(item["status"] for item in frame_checks)
+        ])
+        g2_detail = "schema, dependency/resource resolution and initial-state checks; not an ascent"
     except (KeyError, OSError, TypeError, ValueError) as exc:
         g2_status = "ERROR"
         g2_detail = f"{type(exc).__name__}: {exc}"
@@ -455,7 +477,7 @@ def _validate_phases(phases: Any, transitions: Any, errors: list[str]) -> None:
         if not isinstance(transition, list) or len(transition) != 2:
             errors.append(f"transitions[{index}] must be [from_phase, to_phase]")
             continue
-        if transition[0] not in valid or transition[1] not in valid:
+        if any(not isinstance(phase, str) or phase not in valid for phase in transition):
             errors.append(f"transitions[{index}] references an unknown phase")
             continue
         parsed.append(tuple(transition))
@@ -464,12 +486,29 @@ def _validate_phases(phases: Any, transitions: Any, errors: list[str]) -> None:
             errors.append(f"missing ordered transition {pair[0]!r} -> {pair[1]!r}")
 
 
+def _validate_failure_behavior(behavior: Any, conditions: Any, errors: list[str]) -> None:
+    if not isinstance(behavior, Mapping):
+        errors.append("failure_behavior must map each termination condition to FAIL, ERROR or BLOCKED")
+        return
+    if isinstance(conditions, list) and all(isinstance(condition, str) for condition in conditions):
+        if set(behavior) != set(conditions):
+            errors.append("failure_behavior must cover exactly the termination_conditions")
+        if len(set(conditions)) != len(conditions):
+            errors.append("termination_conditions must be unique")
+    for condition, status in behavior.items():
+        if not isinstance(status, str) or status not in {"FAIL", "ERROR", "BLOCKED"}:
+            errors.append(f"failure_behavior.{condition} must be FAIL, ERROR or BLOCKED")
+
+
 def _validate_requirements(requirements: Any, profile: Any, errors: list[str]) -> None:
     if not isinstance(requirements, Mapping):
         errors.append("requirements must be an object keyed by requirement id")
         return
     required = set(_COMMON_REQUIREMENTS)
-    required.update(_PROFILE_REQUIREMENTS.get(profile, ()))
+    required.update(_PROFILE_REQUIREMENTS.get(profile, ()) if isinstance(profile, str) else ())
+    if any(not isinstance(name, str) for name in requirements):
+        errors.append("requirement ids must be strings")
+        return
     missing = required - set(requirements)
     if missing:
         errors.append(f"missing requirements: {', '.join(sorted(missing))}")
@@ -481,6 +520,18 @@ def _validate_requirements(requirements: Any, profile: Any, errors: list[str]) -
         _exact_fields(spec, _REQUIREMENT_FIELDS, where, errors)
         _require_finite(spec.get("value"), f"{where}.value", errors)
         _require_finite(spec.get("tolerance"), f"{where}.tolerance", errors, minimum=0.0)
+        comparison = spec.get("comparison")
+        if not isinstance(comparison, str) or comparison not in {"at_most", "at_least", "within"}:
+            errors.append(f"{where}.comparison must be at_most, at_least or within")
+        if name in required:
+            if name.startswith("max"):
+                expected = "at_most"
+            elif name.startswith("min"):
+                expected = "at_least"
+            else:
+                expected = "within"
+            if comparison != expected:
+                errors.append(f"{where}.comparison must be {expected}")
         for field in ("unit", "check", "evidence_field", "source"):
             _require_text(spec.get(field), f"{where}.{field}", errors)
 
@@ -505,7 +556,7 @@ def _validate_resources(resources: Any, errors: list[str]) -> None:
         if isinstance(path, str) and path:
             pure_path = PurePosixPath(path)
             if pure_path.is_absolute() or ".." in pure_path.parts or "\\" in path:
-                errors.append(f"{where}.path must be a safe POSIX path below ssa_data_core/data")
+                errors.append(f"{where}.path must be a safe POSIX path below the selected data package data root")
             paths.append(path)
     if len(paths) != len(set(paths)):
         errors.append("resource paths must be unique")
@@ -577,6 +628,8 @@ def _exact_fields(value: Mapping[str, Any], expected: frozenset[str], where: str
 def _require_text(value: Any, name: str, errors: list[str]) -> None:
     if not isinstance(value, str) or not value.strip():
         errors.append(f"{name} must be a non-empty string")
+    elif value.strip().upper() == "UNSET":
+        errors.append(f"{name} must replace UNSET with an authoritative input")
 
 
 def _require_finite(value: Any, name: str, errors: list[str], *, minimum: float | None = None) -> None:
@@ -690,13 +743,20 @@ def _hash_file(path: Path) -> tuple[str, int, bool]:
 def _residual_check(name: str, residual: float, requirement: Mapping[str, Any]) -> dict[str, Any]:
     target = float(requirement["value"])
     tolerance = float(requirement["tolerance"])
-    passed = abs(residual - target) <= tolerance
+    comparison = requirement["comparison"]
+    if comparison == "at_most":
+        passed = residual <= target + tolerance
+    elif comparison == "at_least":
+        passed = residual >= target - tolerance
+    else:
+        passed = abs(residual - target) <= tolerance
     return {
         "name": name,
         "status": "PASS" if passed else "FAIL",
         "value": residual,
         "target": target,
         "tolerance": tolerance,
+        "comparison": comparison,
         "unit": requirement["unit"],
         "evidence_field": requirement["evidence_field"],
     }

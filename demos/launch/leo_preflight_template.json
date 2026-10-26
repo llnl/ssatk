@@ -13,22 +13,35 @@
     "powered_ascent",
     "stage_separation",
     "insertion",
-    "orbital_coast"
+    "orbital_coast",
+    "deployment"
   ],
   "transitions": [
     ["prelaunch", "powered_ascent"],
     ["powered_ascent", "stage_separation"],
     ["stage_separation", "insertion"],
-    ["insertion", "orbital_coast"]
+    ["insertion", "orbital_coast"],
+    ["orbital_coast", "deployment"]
   ],
   "termination_conditions": [
+    "requirement violation",
+    "missing input",
     "planet impact",
     "propellant depletion",
     "invalid state",
     "mission time limit"
   ],
+  "failure_behavior": {
+    "requirement violation": "FAIL",
+    "missing input": "BLOCKED",
+    "planet impact": "FAIL",
+    "propellant depletion": "FAIL",
+    "invalid state": "ERROR",
+    "mission time limit": "FAIL"
+  },
   "requirements": {
     "max_dynamic_pressure": {
+      "comparison": "at_most",
       "value": null,
       "unit": "Pa",
       "tolerance": null,
@@ -37,6 +50,7 @@
       "source": "UNSET"
     },
     "max_heating_rate": {
+      "comparison": "at_most",
       "value": null,
       "unit": "W/m^2",
       "tolerance": null,
@@ -45,6 +59,7 @@
       "source": "UNSET"
     },
     "max_acceleration": {
+      "comparison": "at_most",
       "value": null,
       "unit": "m/s^2",
       "tolerance": null,
@@ -53,6 +68,7 @@
       "source": "UNSET"
     },
     "max_angle_of_attack": {
+      "comparison": "at_most",
       "value": null,
       "unit": "deg",
       "tolerance": null,
@@ -61,6 +77,7 @@
       "source": "UNSET"
     },
     "minimum_propellant_reserve": {
+      "comparison": "at_least",
       "value": null,
       "unit": "kg",
       "tolerance": null,
@@ -69,6 +86,7 @@
       "source": "UNSET"
     },
     "maximum_navigation_position_error": {
+      "comparison": "at_most",
       "value": null,
       "unit": "m",
       "tolerance": null,
@@ -76,7 +94,17 @@
       "evidence_field": "navigation.max_position_error_m",
       "source": "UNSET"
     },
+    "maximum_mission_duration": {
+      "value": null,
+      "unit": "s",
+      "tolerance": null,
+      "comparison": "at_most",
+      "check": "maximum_mission_duration",
+      "evidence_field": "events.elapsed_time_s",
+      "source": "UNSET"
+    },
     "frame_position_closure": {
+      "comparison": "within",
       "value": 0.0,
       "unit": "m",
       "tolerance": null,
@@ -85,6 +113,7 @@
       "source": "UNSET"
     },
     "frame_velocity_closure": {
+      "comparison": "within",
       "value": 0.0,
       "unit": "m/s",
       "tolerance": null,
@@ -93,6 +122,7 @@
       "source": "UNSET"
     },
     "target_perigee_altitude": {
+      "comparison": "within",
       "value": null,
       "unit": "m",
       "tolerance": null,
@@ -101,6 +131,7 @@
       "source": "UNSET"
     },
     "target_apogee_altitude": {
+      "comparison": "within",
       "value": null,
       "unit": "m",
       "tolerance": null,
@@ -109,6 +140,7 @@
       "source": "UNSET"
     },
     "target_eccentricity": {
+      "comparison": "within",
       "value": null,
       "unit": "1",
       "tolerance": null,
@@ -117,6 +149,7 @@
       "source": "UNSET"
     },
     "target_inclination": {
+      "comparison": "within",
       "value": null,
       "unit": "deg",
       "tolerance": null,

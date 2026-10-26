@@ -27,6 +27,7 @@ def _requirement(value=1.0, tolerance=0.0, unit="test-unit"):
         "value": value,
         "unit": unit,
         "tolerance": tolerance,
+        "comparison": "within",
         "check": "synthetic_test_check",
         "evidence_field": "synthetic.test.evidence",
         "source": "synthetic test fixture; not a mission requirement",
@@ -41,6 +42,7 @@ def _contract():
         "max_angle_of_attack",
         "minimum_propellant_reserve",
         "maximum_navigation_position_error",
+        "maximum_mission_duration",
         "frame_position_closure",
         "frame_velocity_closure",
         "target_perigee_altitude",
@@ -49,6 +51,11 @@ def _contract():
         "target_inclination",
     }
     requirements = {name: _requirement() for name in requirement_names}
+    for name, requirement in requirements.items():
+        if name.startswith("max"):
+            requirement["comparison"] = "at_most"
+        elif name.startswith("min"):
+            requirement["comparison"] = "at_least"
     requirements["frame_position_closure"] = _requirement(0.0, 1.0e-6, "m")
     requirements["frame_velocity_closure"] = _requirement(0.0, 1.0e-3, "m/s")
 
@@ -69,6 +76,7 @@ def _contract():
         "phases": ["prelaunch", "ascent", "insertion"],
         "transitions": [["prelaunch", "ascent"], ["ascent", "insertion"]],
         "termination_conditions": ["invalid state"],
+        "failure_behavior": {"invalid state": "ERROR"},
         "requirements": requirements,
         "resources": [
             {
@@ -169,7 +177,7 @@ def test_preflight_keeps_missing_revisions_and_dependencies_blocked(tmp_path):
     assert report["scope"] == "PREFLIGHT ONLY"
     assert report["gates"]["G0"]["status"] == "PASS"
     assert report["gates"]["G1"]["status"] == "BLOCKED"
-    assert report["gates"]["G2"]["status"] == "PASS"
+    assert report["gates"]["G2"]["status"] == "BLOCKED"
     assert report["status"] == "BLOCKED"
     assert report["initial_state"]["closure"]["position_m"] < 1.0e-6
 

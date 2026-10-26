@@ -114,6 +114,68 @@ authoritative inputs rather than inventing them. A GEO target must include the
 transfer, coast and final-orbit maneuvers; a GTO-only endpoint is not GEO completion.
 Pause for review after each implementation step.
 
+Step 2: mission contract
+------------------------
+
+Continue in the existing ``ssatk.launch.preflight`` workflow, using
+``demos/launch/leo_preflight_template.json`` as the planning-default LEO contract.
+The template is deliberately incomplete: neither the representative vehicle
+catalog nor the Demo-2 pad comparison supplies authoritative payload, trajectory
+targets or engineering limits. Replace every ``null`` and ``UNSET`` from approved
+sources; do not copy the synthetic test fixture into a mission acceptance plan.
+The prototype version-1 schema now also requires ``failure_behavior``,
+``maximum_mission_duration`` and a ``comparison`` for every requirement.
+
+The contract records site, height, UTC epoch, catalog vehicle and payload mass;
+ordered phases and allowed transitions through deployment; software/revision pins;
+resource provenance; frame conventions; and open risks. Every numerical
+requirement includes ``value``, ``unit``, ``tolerance``, ``comparison``, ``check``,
+``evidence_field`` and ``source``. Acceptance is inclusive:
+
+* ``at_most``: measured value <= required value + tolerance (maximum limits).
+* ``at_least``: measured value >= required value - tolerance (minimum reserve).
+* ``within``: absolute measured-minus-required difference <= tolerance (targets).
+
+``failure_behavior`` must map every termination condition to ``FAIL``, ``ERROR``
+or ``BLOCKED``. These outcomes terminate the run and preserve its evidence, not
+silently continue or substitute missing inputs. The mission-duration requirement
+defines the numerical time limit. This is a contract for later dynamics, not an
+implemented ascent or Monte Carlo termination engine.
+
+The canonical preflight record is the JSON returned by ``run_launch_preflight``.
+A valid contract is retained under ``contract`` with ``contract_sha256`` computed
+over UTF-8 JSON using sorted keys and separators ``(',', ':')``. The evidence
+bundle includes the run ID, UTC start/end times, scoped status, gate results,
+software/revision/resource checks, initial state and per-requirement check status.
+The embedded contract is the requirements table, units/frame definition and
+acceptance configuration; retain it with the record rather than separate copies
+that can disagree. Incomplete contracts retain the validation errors instead.
+
+Statuses are ``NOT RUN`` (no evaluation), ``BLOCKED`` (missing prerequisites),
+``ERROR`` (execution failure), ``FAIL`` (evaluated criteria not met), ``PASS``
+(scoped criteria met), and ``WAIVED`` (requires explicit program authority;
+preflight never assigns it automatically). ``G0`` checks contract completeness,
+``G1`` checks environment/data, and ``G2`` requires schema and dependency/resource
+resolution plus initial-state checks. Frame closure alone cannot pass ``G2``
+when ``G1`` fails or is blocked. Dynamics requirements remain ``NOT RUN`` even
+when the preflight checks pass.
+
+Inspect an approved contract and retain a new evidence file::
+
+   python3 -m demos.launch.demo_launch_preflight --contract path/to/approved_contract.json --output ../SSAPy-Data/.cache/launch_validation/run_record.json
+
+Omit ``--contract`` to inspect the blocked LEO template. The command never
+overwrites an existing output and exits with code 2 unless preflight passes.
+Supply ``--repository llnl-ssapy=path/to/SSAPy``,
+``--repository ssatk=path/to/SSAPy-Toolkit`` and
+``--repository ssa-data-core=path/to/SSAPy-Data`` to verify repository revisions.
+Missing repositories stay blocked; a dirty development checkout cannot silently
+substitute for the approved clean baseline. This demo alone does not establish
+a clean-install gate.
+Step 2 remains incomplete until the selected mission's authoritative inputs,
+limits, tolerances and evidence satisfy the document's clean-environment gate.
+Pause for review before resource qualification or new propagation.
+
 Readable real-launch preflight check
 -------------------------------------
 
@@ -137,4 +199,33 @@ numerical, not a surveyed pad uncertainty. The speed allowance comes from the
 floating-point Julian-day spacing in SpacePy's central-difference reference.
 J2000/GCRF direction differences are displayed but not scored: SpacePy omits EOP
 corrections and assumes UT1 equals UTC. This is not an ascent or telemetry match,
-and it is not a GMAT comparison. Six existing preflight tests remain unchanged.
+and it is not a GMAT comparison. It does not qualify the mission contract.
+
+SSAPy-Data motor-burn simulation
+--------------------------------
+
+Run an actual variable-mass propagation using packaged propulsion inputs::
+
+   python3 -m demos.launch.demo_packaged_motor_burn
+
+This isolated Estes C6 motor example loads a public-domain RASP thrust curve and
+its motor mass/provenance sidecar from the installed ``ssa-data-propulsion`` wheel.
+It verifies the index, curve and sidecar hashes/sizes against the manifest before
+loading them, using the existing Toolkit data resolver and strict preflight
+resource verifier. No runtime downloads or Data source-checkout imports occur.
+
+The example reuses ``load_packaged_thrust_curve``, ``SpacecraftManeuverAccel``
+and ``Spacecraft.propagate``. It infers a constant effective specific impulse
+from the sampled curve's impulse and catalog propellant mass, then propagates
+mass depletion and fixed-axis motion. This is a declared demonstration model,
+not a measured specific impulse or propellant-depletion history. The user-sourced
+curve's impulse differs from the catalog value; both and their difference are
+reported without silently rescaling the input. The output retains provenance,
+resource checks, sampled states, mass balance and a rocket-equation comparison.
+
+There is no gravity, atmosphere, wind, payload, staging or rotational dynamics.
+The identity inertia does not represent calibrated motor geometry. This verifies
+a data-fed burn workflow, not the LEO mission contract, ascent or flight
+qualification. ``qualification_status`` remains ``NOT RUN``. Retained JSON
+output belongs in SSAPy-Data or an explicitly selected external evidence location,
+not in the Toolkit source commit.
