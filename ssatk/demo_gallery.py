@@ -22,6 +22,7 @@ from urllib.parse import quote, unquote
 from ssatk._paths import SSATK_OUTPUT_ENV, output_root as default_output_root
 from ssatk._gallery_layout import gallery_group, gallery_sort_key, gallery_title
 from ssatk._gallery_calls import collect_figure_calls
+from ssatk._physics_explorer import demo_anchor, write_physics_explorer
 from ssatk.gallery_validation import validate_gallery
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
@@ -556,7 +557,7 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
         command = shlex.join(["python", "-m", "demos." + r.name.replace("/", ".")])
         cards[group.key].append(
             f"""
-            <section class="card" data-category="{group.key}" data-demo="{html.escape(r.name, quote=True)}"
+            <section class="card" id="{html.escape(demo_anchor(r.name), quote=True)}" data-category="{group.key}" data-demo="{html.escape(r.name, quote=True)}"
                      data-search="{html.escape(search_text, quote=True)}">
               <div class="card-header">
                 <h3>{html.escape(r.title)}</h3>
@@ -794,6 +795,9 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
     <p class="subtitle">Space Situational Awareness Toolkit — plots, animations and interactive viewers.</p>
   </header>
   <main>
+    <a class="topic-link" href="physics-explorer.html" style="padding:24px; margin-bottom:24px;">
+      <span><strong>Explore the physics →</strong><br>Integrators, gravity, shadows, lighting, thermal emission, attitude and propulsion.</span>
+    </a>
     <section class="summary">
       <div class="summary-box"><strong>Total demos</strong><br>{total}</div>
       <div class="summary-box"><strong>Successful</strong><br>{success}</div>
@@ -853,12 +857,25 @@ def build_html_report(results: list[DemoResult], out_root: Path) -> None:
       filterCards();
     }});
     filterCards();
+    function revealLinkedDemo() {{
+      let id;
+      try {{ id = decodeURIComponent(location.hash.slice(1)); }} catch {{ return; }}
+      const target = document.getElementById(id);
+      if (!target || !target.classList.contains('card')) return;
+      search.value = '';
+      category.value = '';
+      filterCards();
+      target.scrollIntoView();
+    }}
+    window.addEventListener('hashchange', revealLinkedDemo);
+    revealLinkedDemo();
   </script>
 </body>
 </html>
 """
     (out_root / "index.html").write_text(html_text, encoding="utf-8")
     (out_root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    write_physics_explorer(results, out_root)
 
 
 def run_all_demos(

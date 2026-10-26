@@ -1,6 +1,33 @@
 Hosting and sharing the gallery
 ===============================
 
+Exploring the physics
+---------------------
+
+The gallery's **Explore the physics** link opens ``physics-explorer.html``,
+an interactive concept map covering integrators, gravity, shadows, lighting,
+thermal emission, attitude, maneuvers and finite burns. Select a topic to see
+its connections, model boundaries, Python entry points and runnable examples.
+The orbit slider and optional animation illustrate relationships; they do not
+run a propagator or produce quantitative predictions. The example cards link
+to computed outputs and retain the success, skip or failure status recorded
+by the current gallery build. Missing demos show a standalone command and
+source link without claiming an available result.
+
+In particular, the thermal topic describes prescribed-temperature emission
+and thermal recoil coefficients. It does not claim that SSATK integrates
+temperature, heat conduction or a thermal network. Transfer planning is also
+distinguished from finite-thrust propagation with mass flow.
+
+The concept map is generated with the gallery report and included in the
+portable archive. It has no external script, font or image dependencies of
+its own; thumbnails use the gallery's existing outputs. Source links require
+Internet access. Animation starts only on request and can be paused; all
+topic selection and orbit controls are keyboard accessible.
+
+Building the gallery
+--------------------
+
 Build a portable site from a source checkout with the project dependencies
 installed. The publishing environment requires a Java 17 JDK, Maven, FFmpeg,
 and Chrome in addition to these Python extras:

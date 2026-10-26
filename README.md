@@ -192,6 +192,11 @@ built with Sphinx:
   python -m sphinx -b html -W --keep-going docs /tmp/ssatk-docs
   ```
 
+Coding agents: `ssatk/skills.md` is a concise guide to the API for AI coding
+assistants and ships with the package. `ssatk-skill` installs it as an agent
+skill (`~/.claude/skills/ssatk/SKILL.md`, or `--dir` for another skills folder)
+so assistants use it in any project; rerun it after upgrading SSATK.
+
 ---
 
 ## Development

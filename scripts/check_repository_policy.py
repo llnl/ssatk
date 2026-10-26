@@ -32,7 +32,6 @@ ALLOWED_TOP_LEVEL = {
     "pyproject.toml",
     "requirements-dev.txt",
     "scripts",
-    "skills.md",
     "ssatk",
     "tests",
 }
