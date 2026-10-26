@@ -29,6 +29,20 @@ from demos.space_environment._magfield_video import save_field_videos
 
 UNDER_PYTEST = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") is not None
 
+
+def _browser_unavailable_errors():
+    """Selenium exceptions that mean no browser or driver could be started.
+
+    Selenium raises NoSuchDriverException when no driver matches the
+    configured binary, and SessionNotCreatedException when the launched
+    process is not a working Chrome. The import is lazy so the module loads
+    without selenium; an ``except`` clause's expression is only evaluated
+    when reached, after the ImportError clause has already been tried.
+    """
+    from selenium.common.exceptions import NoSuchDriverException, SessionNotCreatedException
+    return (NoSuchDriverException, SessionNotCreatedException)
+
+
 def main(make_figures=None, fast=None):
     if make_figures is None:
         make_figures = not UNDER_PYTEST
@@ -63,9 +77,18 @@ def main(make_figures=None, fast=None):
     # A PNG preview belongs on the gallery card; the HTML remains interactive.
     # Fail visibly if the configured publishing environment cannot export it.
     fig.write_image(figpath("demo_magfield_plot.png"), width=1200, height=900)
-    # gallery-call: demo_magfield_lines.mp4 | demo_magfield_belts.mp4
-    videos = save_field_videos(figpath("demo_magfield_plot.html"), fast=fast)
-    # gallery-end
+    try:
+        # gallery-call: demo_magfield_lines.mp4 | demo_magfield_belts.mp4
+        videos = save_field_videos(figpath("demo_magfield_plot.html"), fast=fast)
+        # gallery-end
+    except ImportError:
+        return {"figure": fig, "stats": stats, "videos": None, "skipped": True,
+                "reason": "Selenium is not installed; install ssatk[browser,video] "
+                          "to capture the field-line/belt camera tours."}
+    except _browser_unavailable_errors():
+        return {"figure": fig, "stats": stats, "videos": None, "skipped": True,
+                "reason": "No usable Chrome/driver could be started; install "
+                          "Chrome/Chromium or set SSATK_CHROME_BINARY."}
     print("Saved: demo_magfield_plot.html, demo_magfield_plot.png and field videos")
     return {"figure": fig, "stats": stats, "videos": videos, "skipped": False}
 
