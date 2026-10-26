@@ -457,16 +457,53 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
         identity = [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in files if p.is_file()]
         key = repr(("irene_integral_grid_v1", date.isoformat(), grid_n, extent_re, identity))
         digest = hashlib.sha256(key.encode()).hexdigest()[:20]
-        directory = _texture_cache_dir() / "irene_belt_flux" / digest
+        cache_root = _texture_cache_dir() / "irene_belt_flux"
+        directory = cache_root / digest
         if cache and (directory / "flux.json").is_file():
             result = read_irene_flux_grid(directory)
         else:
-            if directory.exists():
-                import tempfile
-                directory = Path(tempfile.mkdtemp(prefix=digest + "_", dir=directory.parent)) / "run"
-            prepare_irene_flux_grid(Q[selected] * 1000, date, directory)
+            import shutil
+            import tempfile
+            import uuid
+
+            # Always compute into a private directory and publish it with a
+            # rename, rather than ever writing straight into the canonical
+            # path: a run that writes to `directory` and is interrupted (by
+            # this process or a concurrent one) would otherwise leave a
+            # canonical directory that exists but has no flux.json, and every
+            # later call for this key would see that, divert to a fresh temp
+            # directory forever, and never repair the cache.
+            cache_root.mkdir(parents=True, exist_ok=True)
+            private = Path(tempfile.mkdtemp(prefix=digest + "_", dir=cache_root)) / "run"
+            prepare_irene_flux_grid(Q[selected] * 1000, date, private)
             print(f"  belts: evaluating official IRENE on {selected.sum()} GEO grid points", flush=True)
-            result = run_irene(directory)
+            try:
+                result = run_irene(private)
+            except Exception as exc:
+                raise RuntimeError(f"IRENE run failed; inputs and logs preserved at {private}") from exc
+            # Publish atomically. A concurrent call may finish the same key
+            # while we were computing (its result wins; ours is discarded) or
+            # may have left an incomplete canonical directory behind from an
+            # earlier interrupted run (move it aside rather than raising
+            # FileExistsError or leaving two writers unable to make progress).
+            for _ in range(8):
+                try:
+                    os.replace(private, directory)
+                except OSError:
+                    if (directory / "flux.json").is_file():
+                        result = read_irene_flux_grid(directory)
+                        break
+                    stale = directory.with_name(f"{directory.name}.stale-{os.getpid()}-{uuid.uuid4().hex[:8]}")
+                    try:
+                        os.replace(directory, stale)
+                    except FileNotFoundError:
+                        continue  # raced with another writer; retry the plain rename
+                    shutil.rmtree(stale, ignore_errors=True)
+                else:
+                    break
+            else:
+                raise RuntimeError(f"Could not publish IRENE cache to {directory}: repeated concurrent writers")
+            shutil.rmtree(private.parent, ignore_errors=True)
         if not np.array_equal(np.asarray(result["geo_m"]), np.char.mod('%.12f', Q[selected]).astype(float) * 1000):
             raise ValueError("IRENE cached flux does not match the plotting grid")
         Fp, Fe = np.zeros(len(Q)), np.zeros(len(Q))
