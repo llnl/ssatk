@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import distribution
 from importlib.metadata import version as _distribution_version
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 
@@ -504,7 +504,14 @@ def _validate_resources(resources: Any, errors: list[str]) -> None:
         path = resource.get("path")
         if isinstance(path, str) and path:
             pure_path = PurePosixPath(path)
-            if pure_path.is_absolute() or ".." in pure_path.parts or "\\" in path:
+            windows_path = PureWindowsPath(path)
+            if (
+                pure_path.is_absolute()
+                or windows_path.is_absolute()
+                or windows_path.drive
+                or ".." in pure_path.parts
+                or "\\" in path
+            ):
                 errors.append(f"{where}.path must be a safe POSIX path below ssa_data_core/data")
             paths.append(path)
     if len(paths) != len(set(paths)):
