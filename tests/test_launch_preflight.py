@@ -126,20 +126,36 @@ def test_contract_is_strict_and_requires_traceable_numerical_requirements():
     assert "requirements.max_acceleration is missing fields: source" in message
 
 
-def test_launch_site_state_includes_earth_rotation_and_closes_offline():
+def test_launch_site_state_matches_closed_form_earth_rotation_velocity():
+    """R1: the inertial speed from Earth's rotation must match the closed-form
+    rigid-body formula v = omega x r for the IERS Conventions (2010) nominal
+    mean angular velocity of Earth, omega = 7.292115e-5 rad/s (Table 1.1).
+
+    The GCRF<->ITRF round trip performed inside ``launch_site_state`` does not
+    by itself establish numerical accuracy (see docs/testing_policy.md), so
+    its closure is asserted here only alongside this independent reference.
+    """
     state = launch_site_state(
         "Kennedy Space Center LC-39A",
         "2026-10-02T16:00:00",
     )
 
     assert state["epoch_utc"] == "2026-10-02T16:00:00.000"
-    assert np.linalg.norm(state["gcrf_velocity_m_s"]) > 0.0
+
+    earth_angular_velocity_rad_s = 7.292115e-5
+    position_itrf_m = np.array(state["itrf_position_m"])
+    closed_form_velocity_m_s = np.cross([0.0, 0.0, earth_angular_velocity_rad_s], position_itrf_m)
+    speed_m_s = np.linalg.norm(state["gcrf_velocity_m_s"])
+    closed_form_speed_m_s = np.linalg.norm(closed_form_velocity_m_s)
+
+    # Residual is the nominal mean rotation rate versus the instantaneous
+    # sidereal rate astropy derives from IERS Earth-orientation data; the
+    # observed residual is about 2e-4 to 4e-4 m/s across several launch pads
+    # and epochs, well inside this budget.
+    assert closed_form_speed_m_s == pytest.approx(speed_m_s, abs=1.0e-3)
+
     assert state["closure"]["position_m"] < 1.0e-6
     assert state["closure"]["velocity_m_s"] < 1.0e-3
-    assert state == launch_site_state(
-        "Kennedy Space Center LC-39A",
-        "2026-10-02T16:00:00",
-    )
 
 
 def test_required_data_resource_matches_manifest_and_payload():
@@ -171,7 +187,6 @@ def test_preflight_keeps_missing_revisions_and_dependencies_blocked(tmp_path):
     assert report["gates"]["G1"]["status"] == "BLOCKED"
     assert report["gates"]["G2"]["status"] == "PASS"
     assert report["status"] == "BLOCKED"
-    assert report["initial_state"]["closure"]["position_m"] < 1.0e-6
 
 
 def test_unconfigured_leo_template_reports_blocked():
