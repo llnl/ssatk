@@ -12,7 +12,7 @@
         "@type": "Person",
         "givenName": "Travis R.",
         "familyName": "Yeager",
-        "email": "mailto:yeagerastro@gmail.com",
+        "email": ["mailto:yeagerastro@gmail.com", "mailto:yeager7@llnl.gov"],
         "affiliation": {
             "@type": "Organization",
             "name": "Lawrence Livermore National Laboratory"
@@ -31,7 +31,8 @@
         },
         {
             "@type": "Person",
-            "name": "Diamond",
+            "givenName": "Joel",
+            "familyName": "Diamond",
             "email": "mailto:diamond10@llnl.gov",
             "affiliation": {
                 "@type": "Organization",
@@ -53,7 +54,7 @@
         "@type": "Person",
         "givenName": "Travis R.",
         "familyName": "Yeager",
-        "email": "mailto:yeagerastro@gmail.com",
+        "email": ["mailto:yeagerastro@gmail.com", "mailto:yeager7@llnl.gov"],
         "affiliation": {
             "@type": "Organization",
             "name": "Lawrence Livermore National Laboratory"

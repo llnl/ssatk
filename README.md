@@ -237,6 +237,10 @@ Earth-orientation helpers), and the four `ssa-data-*` packages above.
 Citation metadata is in [`CITATION.cff`](CITATION.cff); GitHub's
 "Cite this repository" button formats it.
 
+SSATK was created by Travis R. Yeager, who is its corresponding author:
+[yeagerastro@gmail.com](mailto:yeagerastro@gmail.com) or
+[yeager7@llnl.gov](mailto:yeager7@llnl.gov).
+
 ---
 
 ## License
