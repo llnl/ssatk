@@ -16,6 +16,8 @@ from ssatk.io.irene import find_irene_runtime, prepare_irene_run, run_irene
 from ssatk.plots import figsave
 from ssatk.time_functions import get_times
 
+GALLERY_INCLUDE = False  # Needs the separately installed IRENE runtime, which CI does not have.
+
 
 def main(make_figures=True, fast=False):
     if find_irene_runtime() is None:
