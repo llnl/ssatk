@@ -440,7 +440,11 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
 
         runtime = find_irene_runtime()
         if runtime is None:
-            raise FileNotFoundError("IRENE is required for flux belts; configure IRENE_HOME")
+            raise FileNotFoundError(
+                "IRENE AE9/AP9 runtime not found: belt_style=\"flux\" (the default) requires it. "
+                "Set IRENE_HOME to the extracted Irene runtime directory (or IRENE_EXECUTABLE/IRENE_DB "
+                "explicitly), or call with belt_style=\"igrf\" to draw illustrative L-shells without IRENE."
+            )
         RE = EARTH_RADIUS_KM
         g = np.linspace(-extent_re * RE, extent_re * RE, grid_n)
         X, Y, Z = np.meshgrid(g, g, g, indexing='ij')

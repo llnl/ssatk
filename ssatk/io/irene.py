@@ -50,7 +50,14 @@ def find_irene_runtime(*, executable=None, model_data=None):
     executable = Path(executable).expanduser().resolve(strict=True)
     if not executable.is_file():
         raise FileNotFoundError(f"IRENE executable is not a file: {executable}")
-    model_data = model_data or executable.parent.parent.parent / "modelData"
+    if not model_data:
+        guess = executable.parent.parent.parent / "modelData"
+        if not guess.is_dir():
+            raise FileNotFoundError(
+                f"No IRENE model database found near the executable ({guess}); "
+                "set IRENE_HOME to the extracted Irene directory, or IRENE_DB to the database path"
+            )
+        model_data = guess
     database = Path(model_data).expanduser().resolve(strict=True)
     for name in ("AE9V15_runtime_tables.mat", "AP9V15_runtime_tables.mat", "igrfDB.h5", "sd2DB.h5"):
         if not (database / name).is_file():
