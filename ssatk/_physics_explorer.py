@@ -16,6 +16,33 @@ def demo_anchor(name: str) -> str:
     return "demo-" + name
 
 
+_PREFERRED_TOPIC_ORDER = (
+    "integrators", "gravity", "shadows", "lighting", "thermal", "attitude", "maneuvers", "burns",
+)
+
+
+def _explorer_topic(topic, by_name):
+    topic = dict(topic)
+    demos = []
+    for name in topic["demos"]:
+        result = by_name.get(name)
+        images = [] if result is None else [
+            file for file in result.files
+            if Path(file).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+        ]
+        demos.append({
+            "name": name,
+            "title": gallery_title(name, result.title if result else name.rsplit("/", 1)[-1].replace("_", " ").title()),
+            "status": result.status if result else "not in this build",
+            "href": "index.html#" + quote(demo_anchor(name), safe="") if result else None,
+            "preview": images[0] if images else None,
+            "command": "python -m demos." + name.replace("/", "."),
+            "source": "https://github.com/llnl/ssatk/blob/main/demos/" + quote(name, safe="/") + ".py",
+        })
+    topic["demos"] = sorted(demos, key=lambda demo: (demo["href"] is None, demo["status"] != "success"))
+    return topic
+
+
 def write_physics_explorer(results, out_root: Path) -> None:
     """Connect a schematic to the outputs actually present in this build.
 
@@ -24,27 +51,12 @@ def write_physics_explorer(results, out_root: Path) -> None:
     """
     by_name = {result.name: result for result in results}
     topics = {topic["id"]: topic for topic in DYNAMICS_TOPICS + RADIATION_TOPICS}
-    ordered = []
-    for key in ("integrators", "gravity", "shadows", "lighting", "thermal", "attitude", "maneuvers", "burns"):
-        topic = dict(topics[key])
-        demos = []
-        for name in topic["demos"]:
-            result = by_name.get(name)
-            images = [] if result is None else [
-                file for file in result.files
-                if Path(file).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
-            ]
-            demos.append({
-                "name": name,
-                "title": gallery_title(name, result.title if result else name.rsplit("/", 1)[-1].replace("_", " ").title()),
-                "status": result.status if result else "not in this build",
-                "href": "index.html#" + quote(demo_anchor(name), safe="") if result else None,
-                "preview": images[0] if images else None,
-                "command": "python -m demos." + name.replace("/", "."),
-                "source": "https://github.com/llnl/ssatk/blob/main/demos/" + quote(name, safe="/") + ".py",
-            })
-        topic["demos"] = sorted(demos, key=lambda demo: (demo["href"] is None, demo["status"] != "success"))
-        ordered.append(topic)
+    # A topic id can be renamed or removed from the catalog between releases;
+    # skip it here instead of failing the whole gallery report, and still show
+    # any catalog topic that isn't in the preferred order.
+    ordered = [_explorer_topic(topics[key], by_name) for key in _PREFERRED_TOPIC_ORDER if key in topics]
+    ordered += [_explorer_topic(topic, by_name) for key, topic in topics.items()
+                if key not in _PREFERRED_TOPIC_ORDER]
     # JSON is placed in a script element; escape HTML delimiters even for
     # externally supplied manifests, not just the package's own demo names.
     payload = json.dumps(ordered, ensure_ascii=True).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
