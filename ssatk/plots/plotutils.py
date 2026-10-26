@@ -18,6 +18,7 @@ from PIL import Image as PILImage
 
 # --- Local modules ---
 from ssapy.utils import find_file
+from ._body_surfaces import _read_map
 from ._textures import earth_texture_path, moon_texture_path
 from .rendering import gallery_max_textures
 from ..constants import EARTH_RADIUS, MOON_RADIUS
@@ -575,7 +576,8 @@ def valid_orbits(r, t, drop_empty=True, warn=True):
 def load_earth_file():
     if is_low_spec():
         return PILImage.new("RGB", (2, 1), "#1a4f8a")
-    earth = PILImage.open(earth_texture_path())
+    path = earth_texture_path()
+    earth = PILImage.fromarray(_read_map(str(path), None, None, path.stat().st_mtime_ns, raw=True).copy())
     if not gallery_max_textures():
         earth = earth.resize((5400 // 5, 2700 // 5))
     return earth
@@ -643,7 +645,8 @@ def draw_earth(time, ngrid=100, R=EARTH_RADIUS, rfactor=1):
 def load_moon_file():
     if is_low_spec():
         return PILImage.new("RGB", (2, 1), "white")
-    moon = PILImage.open(moon_texture_path())
+    path = moon_texture_path()
+    moon = PILImage.fromarray(_read_map(str(path), None, None, path.stat().st_mtime_ns, raw=True).copy())
     if not gallery_max_textures():
         moon = moon.resize((5400 // 5, 2700 // 5))
     return moon
