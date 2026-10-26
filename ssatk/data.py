@@ -12,7 +12,6 @@ installs its own import package with files below ``<package>/data``:
 * ``ssa-data-benchmarks`` → ``ssa_data_benchmarks`` (``[benchmarks]`` extra)
 
 When no ``package`` is given, the helpers below search these packages in order
-(then any user-supplied legacy package, if present)
 and return the first match. This module wraps ``importlib.resources`` so
 toolkit functions read those files from a normal wheel install without Git LFS,
 git submodules, or runtime GitHub pulls.

@@ -611,7 +611,7 @@ def ssa_data_dirs():
 
     Public rather than private because it is what you want printed when an
     asset can't be found: "not found" is not actionable, "not found in these
-    four places" is. `ssatk-magnetosphere --check` prints it.
+    places" is. `ssatk-magnetosphere --check` prints it.
     """
     from pathlib import Path as _Path
 
