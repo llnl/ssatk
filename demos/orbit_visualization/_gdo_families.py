@@ -11,7 +11,7 @@ import h5py
 import numpy as np
 from astropy.time import Time
 from scipy.signal import find_peaks
-from ssapy import get_body
+from ssatk import get_body
 
 from demos.orbit_visualization._remote_hdf5 import TemporaryHTTPFile
 from ssatk.coordinates.lunar import gcrf_to_lunar, gcrf_to_lunar_fixed

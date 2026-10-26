@@ -5,7 +5,7 @@ Demo: self-contained Three.js satellite viewer with an 8K NASA Earth map.
 Run scripts.prepare_gallery_data first for the 8192 x 4096 day texture;
 otherwise the installed 2K texture is used. The page accepts satellite
 catalogs from JSON, CSV, or HDF5, and starts with three synthetic low-Earth
-orbits propagated by SSAPy. These are examples, not a live satellite catalog.
+orbits propagated with SSATK. These are examples, not a live satellite catalog.
 Its PNG is a capture of the actual viewer,
 requiring the browser extra and Chrome; set SSATK_CHROME_BINARY to point at a
 specific browser, or the capture is skipped and only the HTML viewer is written.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 from astropy.time import Time
-from ssapy import Orbit, rv
+from ssatk import Orbit, rv
 
 from ssatk.constants import EARTH_RADIUS
 from ssatk.plots.build_satellite_viewer import satellite_viewer

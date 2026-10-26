@@ -130,7 +130,7 @@ bounds and orbit-sweep phase. The existing 24-hour GEO gallery example selects
 ``limb`` explicitly, retaining its close-up and 45-second duration.
 
 The :mod:`demos.orbit_visualization.demo_camera_modes` example compares all four
-shared shots over one SSAPy circular orbit in a 15-second, four-panel movie.
+shared shots over one circular orbit in a 15-second, four-panel movie.
 Its Earth uses an analytic mapped sphere for both standalone and gallery runs,
 including fast mode. Both modes export 1920 × 1440 pixels; fast mode reduces
 the frame rate to 12 fps instead of 24 fps. Follow and chase use a 36000 km

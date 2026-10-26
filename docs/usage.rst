@@ -65,7 +65,7 @@ do not add another ``"figures/"`` prefix.
 
 The Cape Canaveral example is runnable with
 ``python -m demos.orbit_visualization.demo_groundtrack_cape_canaveral``. It uses
-SSAPy's circular two-body orbit at 408 km above the WGS84 equatorial radius and
+a circular two-body orbit at 408 km above the WGS84 equatorial radius and
 51.6 degrees inclination, samples one period at no more than 10-second intervals,
 and plots day/night, eclipse state and access above a 10-degree elevation mask.
 It is a synthetic site-pass example, not an ISS tracking prediction.
