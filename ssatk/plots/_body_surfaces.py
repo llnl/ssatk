@@ -161,7 +161,7 @@ def body_mesh_plotly(body, center, radius, rotation=None, *, n=90, path=None, su
         # single constant colour to each quad's two triangles.
         from scipy.ndimage import map_coordinates
         path = texture_path(body)
-        rgb = _read_map(str(path), 8192, 4096, path.stat().st_mtime_ns, raw=True)
+        rgb = _read_map(str(path), None, None, path.stat().st_mtime_ns, raw=True)
         normals = fixed[unique]
         lon = np.arctan2(normals[:, 1], normals[:, 0])
         lat = np.arcsin(np.clip(normals[:, 2], -1, 1))
@@ -206,12 +206,12 @@ def body_disc(ax, body, radius, center=(0, 0, 0), rotation=None, view="xy", *, r
         # Bilinear texel lookup avoids magnifying nearest-neighbour blocks.
         from scipy.ndimage import map_coordinates
         full = gallery_max_textures()
-        width, height = (8192, 4096) if full else (4096, 2048)
         if full:
             path = texture_path(body)
-            rgb = _read_map(str(path), width, height, path.stat().st_mtime_ns, raw=True)
+            rgb = _read_map(str(path), None, None, path.stat().st_mtime_ns, raw=True)
         else:
-            rgb = surface_map(body, width, height)
+            rgb = surface_map(body, 4096, 2048)
+        height, width = rgb.shape[:2]
         col = (lon+np.pi)/(2*np.pi)*width-.5
         row = np.clip((np.pi/2-lat)/np.pi*height-.5, 0, height-1)
         mapped = np.stack([map_coordinates(rgb[..., channel], [row, col], order=1,
