@@ -11,6 +11,7 @@ import io
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -106,6 +107,35 @@ class TemporaryHTTPFile(io.RawIOBase):
         expected_length = end - start + 1
         if self.bytes_downloaded + expected_length > self.max_bytes:
             raise OSError("download byte cap exceeded")
+        data = self._fetch_range(start, end, expected_length)
+        if self._temporary_directory is None:
+            raise ValueError("temporary storage is unavailable")
+        path = Path(self._temporary_directory.name) / f"{start:020d}.block"
+        with path.open("wb") as stream:
+            stream.write(data)
+        self._cache[start] = path
+        self.bytes_downloaded += expected_length
+        return path
+
+    def _fetch_range(self, start: int, end: int, expected_length: int) -> bytes:
+        """Retry a dropped connection; never retry a verified mismatch.
+
+        ETag, Content-Range, Content-Length and truncated-body checks mean the
+        remote object no longer matches what was pinned, so repeating the
+        request could silently accept a changed file instead of failing
+        loudly. Only the connection attempt and the body read can fail for
+        purely transient reasons, so only those are retried.
+        """
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._request_range(start, end, expected_length)
+            except (URLError, TimeoutError, ConnectionError):
+                if attempt == attempts:
+                    raise
+                time.sleep(0.2 * attempt)
+
+    def _request_range(self, start: int, end: int, expected_length: int) -> bytes:
         request = Request(
             self.url,
             headers={
@@ -118,8 +148,6 @@ class TemporaryHTTPFile(io.RawIOBase):
             response = urlopen(request, timeout=self.timeout)
         except HTTPError as exc:
             raise OSError(f"range request failed for {self.url}: {exc}") from exc
-        except URLError:
-            raise
         try:
             status = getattr(response, "status", response.getcode())
             if status != 206:
@@ -155,14 +183,7 @@ class TemporaryHTTPFile(io.RawIOBase):
             raise OSError(
                 f"range response contained {len(data)} bytes, expected {expected_length}"
             )
-        if self._temporary_directory is None:
-            raise ValueError("temporary storage is unavailable")
-        path = Path(self._temporary_directory.name) / f"{start:020d}.block"
-        with path.open("wb") as stream:
-            stream.write(data)
-        self._cache[start] = path
-        self.bytes_downloaded += expected_length
-        return path
+        return data
 
     def _read_at(self, position: int, size: int) -> bytes:
         result = bytearray()

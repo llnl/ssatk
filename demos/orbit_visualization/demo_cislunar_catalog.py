@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import sys
-from urllib.error import URLError
 
 
 from demos.orbit_visualization._gdo_families import (
@@ -85,7 +84,11 @@ def main(make_figures=None, fast=None):
         return {"skipped": True, "reason": "figures_disabled; no download attempted"}
     try:
         tracks, provenance = load_catalog_sample()
-    except (URLError, TimeoutError) as exc:
+    except OSError as exc:
+        # URLError and TimeoutError are OSError subclasses; so are the
+        # integrity failures _remote_hdf5 raises directly (ETag, Content-
+        # Range, Content-Length and truncated-read mismatches), which also
+        # belong on the skip path rather than crashing the gallery build.
         print(f"Skipped cislunar catalog demo: public data unavailable: {exc}")
         return {"skipped": True, "reason": str(exc)}
     # SSATK owns scene geometry, frame conversion, mapped bodies and styling.
