@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from ssapy import EarthObserver
 
 from ..coordinates.earth_fixed import itrf_to_gcrf
+from ..coordinates.geodetic import llh_to_gcrf
 from ..coordinates.satellite_frames import enu_to_ecef_matrix
 from ..time_functions import to_gps
 
@@ -78,18 +78,28 @@ class GroundStationMeasurement:
 
 @dataclass(frozen=True)
 class GroundStation:
-    """Earth-fixed ground station using SSAPy's ``EarthObserver``.
+    """Earth-fixed ground station using SSATK's single GCRF<->ITRF route.
 
     Longitude and latitude are geodetic degrees. State vectors are six-element
     GCRF ``[x, y, z, vx, vy, vz]`` arrays in metres and metres per second;
     ``time`` is numeric GPS seconds.
+
+    The station's own GCRF position/velocity and its local ENU basis used to
+    come from two different Earth-rotation models: ``ssapy.EarthObserver``
+    (IAU 1976/1980) for the position, ``ssatk.coordinates.eci_to_ecf_matrix``
+    (now IAU 2006/2000A) for the basis. Resolving a target's displacement
+    against that basis then carried a systematic error of the same size as
+    the gap between the two models (tests/test_navigation_measurements.py
+    caught this as a ~6e-9 "up versus station radial direction" mismatch at
+    1e-12 tolerance). Both now come from the same route
+    (:func:`ssatk.coordinates.geodetic.llh_to_gcrf`).
     """
 
     lon_deg: float
     lat_deg: float
     elevation_m: float = 0.0
     min_elevation_rad: float = 0.0
-    fast: bool = False
+    fast: bool = False  # unused: kept for constructor compatibility.
 
     def __post_init__(self):
         for name in ("lon_deg", "lat_deg", "elevation_m", "min_elevation_rad"):
@@ -104,13 +114,11 @@ class GroundStation:
         if not -np.pi / 2 <= self.min_elevation_rad <= np.pi / 2:
             raise ValueError("min_elevation_rad must be in [-pi/2, pi/2].")
 
-    def _observer(self) -> EarthObserver:
-        return EarthObserver(
-            lon=self.lon_deg,
-            lat=self.lat_deg,
-            elevation=self.elevation_m,
-            fast=self.fast,
-        )
+    def _station_rv(self, time: float) -> tuple[np.ndarray, np.ndarray]:
+        """GCRF position and velocity of the station (SSATK's single route)."""
+
+        r_gcrf, v_gcrf = llh_to_gcrf(self.lon_deg, self.lat_deg, time, height=self.elevation_m)
+        return np.asarray(r_gcrf, dtype=float), np.asarray(v_gcrf, dtype=float)
 
     def _local_basis(self, time: float) -> tuple[np.ndarray, ...]:
         """Return GCRF (east, north, up) from geodetic ENU and ITRS."""
@@ -141,10 +149,9 @@ class GroundStation:
         if state.shape != (6,) or not np.all(np.isfinite(state)):
             raise ValueError("state must be a finite six-element GCRF SI vector.")
 
-        observer = self._observer()
-        station_r, station_v = (np.asarray(item, dtype=float) for item in observer.getRV(time))
+        station_r, station_v = self._station_rv(time)
         if station_r.shape != (3,) or station_v.shape != (3,):
-            raise ValueError("EarthObserver.getRV must return two three-element vectors.")
+            raise ValueError("station position/velocity must be three-element vectors.")
         dr = state[:3] - station_r
         dv = state[3:] - station_v
         rho = float(np.linalg.norm(dr))

@@ -10,6 +10,7 @@ import warnings
 
 import numpy as np
 import pytest
+import astropy.units as u
 from astropy.utils import iers
 from scipy.integrate import solve_ivp
 from scipy.stats import ncx2
@@ -17,7 +18,7 @@ from scipy.stats import ncx2
 import ssatk
 
 
-from ssapy import EarthObserver, Orbit, get_body
+from ssapy import Orbit, get_body
 from ssapy.accel import AccelSolRad
 from ssapy.utils import rv_to_ntw
 from ssatk.constants import EARTH_MU
@@ -79,12 +80,30 @@ def test_force_factory_respects_each_spacecraft_area(name, cache, monkeypatch):
     ("sez", [0.0, 0.0, 1.0]),
 ])
 def test_local_frame_dispatcher_returns_inertial_axes(frame, local_up):
-    """At the equator geodetic up is parallel to SSAPy's station position."""
-    station = EarthObserver(lon=0.0, lat=0.0, fast=True)
-    position, _ = station.getRV(1.4e9)
+    """R2: at the equator geodetic up is parallel to Astropy's GCRS station
+    position, Astropy configured with SSATK's packaged finals2000A.all so
+    both sides use the same Earth-orientation data.
+
+    Previously compared against ``ssapy.EarthObserver`` (IAU 1976/1980);
+    ``frame_to_gcrf_matrix``'s local-tangent frames share SSATK's single IAU
+    2006/2000A route (``ssatk.coordinates.eci_to_ecf_matrix``), so that
+    comparison measured a ~9.3e-8 (unit-vector) model difference, not a bug.
+    The measured agreement here is ~1.1e-9 (about 7 mm at Earth's radius).
+    """
+    from ssatk.data import data_path
+
+    with data_path("environment/eop/finals2000A.all") as path:
+        table = iers.IERS_A.open(str(path))
+    with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(table):
+        from astropy.coordinates import EarthLocation
+        from astropy.time import Time
+
+        t = Time(1.4e9, format="gps")
+        location = EarthLocation(lon=0.0 * u.deg, lat=0.0 * u.deg, height=0.0 * u.m)
+        position = location.get_gcrs(obstime=t).cartesian.xyz.to_value(u.m)
     expected = position / np.linalg.norm(position)
     actual = frame_to_gcrf_matrix(frame, lat=0.0, lon=0.0, t=1.4e9) @ local_up
-    np.testing.assert_allclose(actual, expected, atol=1e-10, rtol=0)
+    np.testing.assert_allclose(actual, expected, atol=2e-9, rtol=0)
 
 
 def test_nadir_frame_is_a_rotation_for_an_eccentric_state():

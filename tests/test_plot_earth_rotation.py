@@ -55,24 +55,41 @@ def test_earth_texture_rotation_is_gcrf_right_ascension_of_greenwich(utc):
 
 
 @pytest.mark.parametrize("scale", ["utc", "tt", "tdb", "tai"])
-def test_groundtrack_enhanced_itrf_matches_ssapy_ground_track_in_any_time_scale(scale):
-    # R2: SSAPy groundTrack (cartesian ITRF) is the reference; tolerance 1 m
-    # at 7000 km. The same instant passed in TT used to move points 32.2 km,
-    # because a scalar Time was rebuilt from its ISO string as UTC.
-    from ssapy.compute import groundTrack
+def test_groundtrack_enhanced_itrf_matches_astropy_in_any_time_scale(scale):
+    """R2: Astropy GCRS->ITRS, configured with SSATK's packaged
+    finals2000A.all, as the reference; tolerance 2 cm at 7000 km.
 
+    Previously compared against ``ssapy.compute.groundTrack`` (IAU
+    1976/1980). ``groundtrack_enhanced.gcrf_to_itrf`` shares SSATK's single
+    IAU 2006/2000A route, so that comparison measured a ~1.7 m model
+    difference, not a bug; feeding Astropy the same packaged EOP data gives
+    1.07 cm agreement (same across all four time scales below). The
+    parametrization over time scales guards a past regression: a scalar
+    ``Time`` passed in a non-UTC scale used to be rebuilt from its ISO string
+    and silently reinterpreted as UTC, moving points by 32.2 km in TT.
+    """
+    from astropy.utils import iers
+
+    from ssatk.data import data_path
     from ssatk.plots.groundtrack_enhanced import gcrf_to_itrf
+
+    with data_path("environment/eop/finals2000A.all") as path:
+        table = iers.IERS_A.open(str(path))
 
     t = Time("2026-10-09T12:00:00", scale="utc")
     rng = np.random.default_rng(3)
     r_km = rng.normal(size=(50, 3))
     r_km *= 7000.0 / np.linalg.norm(r_km, axis=1)[:, None]
     ours_km = gcrf_to_itrf(r_km, getattr(t, scale))
-    # One trajectory (N, 3) needs N times; with a scalar time groundTrack
-    # silently returns only the first row.
-    x, y, z = groundTrack(r_km * 1000.0, np.full(len(r_km), float(t.gps)), format="cartesian")
-    reference_km = np.column_stack([np.ravel(x), np.ravel(y), np.ravel(z)]) / 1000.0
-    np.testing.assert_allclose(ours_km, reference_km, rtol=0.0, atol=1.0e-3)
+
+    with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(table):
+        import astropy.units as u
+        from astropy.coordinates import GCRS, ITRS, CartesianRepresentation
+
+        itrs = GCRS(CartesianRepresentation(r_km.T * u.km), obstime=t).transform_to(ITRS(obstime=t))
+        reference_km = itrs.cartesian.xyz.to_value(u.km).T
+
+    np.testing.assert_allclose(ours_km, reference_km, rtol=0.0, atol=2.0e-5)
 
 
 def test_groundtrack_enhanced_geodetic_matches_astropy_wgs84():
