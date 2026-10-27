@@ -21,10 +21,30 @@ A preflight run evaluates three gates against a JSON mission contract:
   ``RECORD`` manifest and rejects an unresolved Git LFS pointer.
 * **G2 -- launch-pad state.** :func:`~ssatk.launch.preflight.launch_site_state`
   builds the stationary pad position and the inertial velocity caused by
-  Earth's rotation in GCRF, using the installed IERS Earth-orientation data
-  with network access disabled. The contract's ``frame_position_closure`` and
-  ``frame_velocity_closure`` requirements bound how well the ITRF-to-GCRF
-  transform and its inverse agree on the same state.
+  Earth's rotation in GCRF. Both the epoch-coverage check and the Astropy
+  ITRS<->GCRS transform use SSATK's packaged Earth-orientation snapshot
+  (:func:`ssatk.environment_eop.load_packaged_eop` and the matching
+  ``finals2000A.all`` loaded as an Astropy ``IERS_A`` table), with network
+  access disabled throughout. This avoids depending on whichever IERS table
+  ships with the installed Astropy, and avoids Astropy's silent
+  UT1-UTC=0/mean-polar-motion fallback for an epoch its own bundled table
+  does not cover. An epoch that falls in the packaged table's predicted
+  region raises :class:`~ssatk.launch.preflight.EOPCoverageError` unless the
+  caller passes ``allow_predicted_eop=True`` (or the mission contract sets
+  ``allow_predicted_eop``); an epoch past the end of the table always raises
+  it, since no opt-in can produce data the table does not have. In
+  :func:`~ssatk.launch.preflight.run_launch_preflight`, that error BLOCKS
+  G2 with a readable reason rather than failing the run -- a preflight for a
+  future launch legitimately needs predicted EOP, so the contract's opt-in
+  controls whether that is acceptable. The contract's
+  ``frame_position_closure`` and ``frame_velocity_closure`` requirements
+  bound a self-consistency check: transforming the computed GCRF state back
+  to ITRS and comparing it with the starting ITRF state. An internally
+  consistent but wrong rotation (for example, a sign error that cancels
+  going out and back) still closes, so this closure is not independent
+  evidence of accuracy; ``tests/test_launch_preflight.py`` pairs
+  ``launch_site_state`` with a closed-form WGS84 reference and with SSATK's
+  independent erfa-based ``itrf_to_gcrf_eop`` path for that.
 
 :func:`~ssatk.launch.preflight.run_launch_preflight` runs all three gates and
 returns a JSON-serializable report; it does not raise, so a caller can inspect
@@ -39,7 +59,10 @@ with the mission's actual site, epoch, vehicle, payload, targets, limits and
 tolerances before using it; loading it unmodified reports gate G0 as
 ``BLOCKED``. The EOP resource entry is pre-filled because the Earth-orientation
 data it names is a fixed dependency of the frame-closure checks, independent
-of the mission.
+of the mission. The template's ``allow_predicted_eop`` defaults to ``false``;
+set it to ``true`` only when the mission epoch is known to need predicted
+Earth-orientation data (for example, a launch date beyond the latest IERS
+bulletin), and record why in the contract's risk entries.
 
 ``ssatk.launch.sites`` and ``ssatk.launch.vehicles`` hold the launch pad and
 vehicle catalogs that ``launch_site`` and ``vehicle`` are checked against.
