@@ -256,9 +256,12 @@ def _solar_surface_apparent_geometry(
         to_moon = np.asarray(moon, dtype=float) - observer
         sun_distance = float(np.linalg.norm(to_sun))
         moon_distance = float(np.linalg.norm(to_moon))
-        separation = float(np.arccos(np.clip(
-            np.dot(to_sun, to_moon) / (sun_distance * moon_distance), -1.0, 1.0,
-        )))
+        # atan2 keeps the small-angle separation well-conditioned near the
+        # central path, unlike arccos of a dot product rounded to one.
+        separation = float(np.arctan2(
+            np.linalg.norm(np.cross(to_sun, to_moon)),
+            np.dot(to_sun, to_moon),
+        ))
         return (
             separation,
             float(np.arcsin(np.clip(R_SUN_KM / sun_distance, 0.0, 1.0))),
