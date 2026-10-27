@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from ssatk.launch.preflight import (
+    EOPCoverageError,
     LAUNCH_CONVENTIONS,
     MissionContractError,
     ResourceVerificationError,
@@ -20,6 +21,7 @@ from ssatk.launch.preflight import (
     validate_mission_contract,
     verify_data_resources,
 )
+
 
 
 def _requirement(value=1.0, tolerance=0.0, unit="test-unit"):
@@ -63,7 +65,8 @@ def _contract():
         "profile": "LEO",
         "launch_site": "Kennedy Space Center LC-39A",
         "launch_height_m": 0.0,
-        "epoch_utc": "2026-10-02T16:00:00",
+        "epoch_utc": "2024-10-02T16:00:00",
+        "allow_predicted_eop": False,
         "vehicle": "Falcon 9 Full Thrust",
         "payload_mass_kg": 1.0,
         "phases": ["prelaunch", "ascent", "insertion"],
@@ -126,6 +129,11 @@ def test_contract_is_strict_and_requires_traceable_numerical_requirements():
     assert "requirements.max_acceleration is missing fields: source" in message
 
 
+_OBSERVED_EPOCH = "2024-06-01T16:00:00"  # polar_motion/ut1 flag 'I' in the packaged EOP table
+_PREDICTED_EPOCH = "2026-10-02T16:00:00"  # flag 'P'; inside the table but past the observed data
+_UNCOVERED_EPOCH = "2027-09-01T00:00:00"  # just past the end of the packaged EOP table
+
+
 def test_launch_site_state_matches_closed_form_earth_rotation_velocity():
     """R1: the inertial speed from Earth's rotation must match the closed-form
     rigid-body formula v = omega x r for the IERS Conventions (2010) nominal
@@ -135,12 +143,7 @@ def test_launch_site_state_matches_closed_form_earth_rotation_velocity():
     by itself establish numerical accuracy (see docs/testing_policy.md), so
     its closure is asserted here only alongside this independent reference.
     """
-    state = launch_site_state(
-        "Kennedy Space Center LC-39A",
-        "2026-10-02T16:00:00",
-    )
-
-    assert state["epoch_utc"] == "2026-10-02T16:00:00.000"
+    state = launch_site_state("Kennedy Space Center LC-39A", _OBSERVED_EPOCH)
 
     earth_angular_velocity_rad_s = 7.292115e-5
     position_itrf_m = np.array(state["itrf_position_m"])
@@ -149,13 +152,33 @@ def test_launch_site_state_matches_closed_form_earth_rotation_velocity():
     closed_form_speed_m_s = np.linalg.norm(closed_form_velocity_m_s)
 
     # Residual is the nominal mean rotation rate versus the instantaneous
-    # sidereal rate astropy derives from IERS Earth-orientation data; the
-    # observed residual is about 2e-4 to 4e-4 m/s across several launch pads
-    # and epochs, well inside this budget.
+    # sidereal rate astropy derives from the packaged Earth-orientation data;
+    # the observed residual is about 2e-4 to 4e-4 m/s across several launch
+    # pads and epochs, well inside this budget.
     assert closed_form_speed_m_s == pytest.approx(speed_m_s, abs=1.0e-3)
 
     assert state["closure"]["position_m"] < 1.0e-6
     assert state["closure"]["velocity_m_s"] < 1.0e-3
+
+
+def test_launch_site_state_predicted_eop_requires_opt_in():
+    with pytest.raises(EOPCoverageError, match="predicted"):
+        launch_site_state("Kennedy Space Center LC-39A", _PREDICTED_EPOCH)
+
+
+def test_launch_site_state_predicted_eop_succeeds_with_opt_in():
+    state = launch_site_state(
+        "Kennedy Space Center LC-39A", _PREDICTED_EPOCH, allow_predicted_eop=True,
+    )
+    assert state["earth_orientation"]["predicted"] is True
+    assert state["earth_orientation"]["allow_predicted"] is True
+    assert state["closure"]["position_m"] < 1.0e-6
+    assert state["closure"]["velocity_m_s"] < 1.0e-3
+
+
+def test_launch_site_state_rejects_epoch_outside_eop_table():
+    with pytest.raises(EOPCoverageError, match="outside"):
+        launch_site_state("Kennedy Space Center LC-39A", _UNCOVERED_EPOCH, allow_predicted_eop=True)
 
 
 def test_required_data_resource_matches_manifest_and_payload():
@@ -187,6 +210,23 @@ def test_preflight_keeps_missing_revisions_and_dependencies_blocked(tmp_path):
     assert report["gates"]["G1"]["status"] == "BLOCKED"
     assert report["gates"]["G2"]["status"] == "PASS"
     assert report["status"] == "BLOCKED"
+
+
+def test_run_launch_preflight_blocks_g2_for_predicted_eop_without_contract_opt_in():
+    """A mission whose epoch needs predicted EOP must BLOCK G2, not crash or
+    pass, unless the contract explicitly opts in with ``allow_predicted_eop``.
+    """
+    contract = deepcopy(_contract())
+    contract["epoch_utc"] = _PREDICTED_EPOCH
+
+    blocked = run_launch_preflight(contract)
+    assert blocked["gates"]["G2"]["status"] == "BLOCKED"
+    assert "predicted" in blocked["gates"]["G2"]["detail"]
+
+    contract["allow_predicted_eop"] = True
+    passed = run_launch_preflight(contract)
+    assert passed["gates"]["G2"]["status"] == "PASS"
+    assert passed["initial_state"]["earth_orientation"]["predicted"] is True
 
 
 def test_unconfigured_leo_template_reports_blocked():

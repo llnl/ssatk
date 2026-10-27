@@ -6,6 +6,7 @@
   "launch_site": null,
   "launch_height_m": null,
   "epoch_utc": null,
+  "allow_predicted_eop": false,
   "vehicle": null,
   "payload_mass_kg": null,
   "phases": [
