@@ -107,6 +107,41 @@ def test_de430_discovery_matches_nasa_solar_2024_contacts():
         assert abs(record.contacts_jd_utc[name] - SOLAR_2024.contacts_jd[name]) * 86400.0 < 25.0, name
 
 
+@pytest.mark.parametrize(
+    ("start", "end", "expected"),
+    [
+        ("2024-04-07", "2024-04-10", 1.0566),
+        ("2023-10-12", "2023-10-16", 0.9520),
+        ("2025-03-27", "2025-03-31", 0.9376),
+        ("2025-09-19", "2025-09-23", 0.8550),
+        ("2022-10-23", "2022-10-27", 0.8619),
+    ],
+)
+def test_de430_solar_magnitudes_match_nasa_published_values(start, end, expected):
+    """R3: topocentric central and WGS-84 projected partial magnitudes.
+
+    NASA/GSFC values are checked to 0.005. Central events use the WGS-84
+    greatest-eclipse surface point; partial events use the minimum-separation
+    WGS-84 surface view and projected obscured diameter.
+    """
+    from ssatk.compute.eclipse_event_search import discover_eclipses
+
+    (record,) = discover_eclipses(start, end, kind="solar")
+    assert record.magnitude == pytest.approx(expected, abs=0.005)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [("2023-04-18", "2023-04-22"), ("2013-11-01", "2013-11-05")],
+)
+def test_de430_known_hybrid_solar_eclipses_are_classified_hybrid(start, end):
+    """R3: topocentric radius sign changes across the central contact span."""
+    from ssatk.compute.eclipse_event_search import discover_eclipses
+
+    (record,) = discover_eclipses(start, end, kind="solar")
+    assert record.eclipse_type == "hybrid"
+
+
 def test_equal_disc_overlap_matches_closed_form():
     """R1: equal unit discs one radius apart have the analytic lens area (abs 2e-15)."""
     from ssatk.compute.eclipse_core import circle_overlap_visible_fraction

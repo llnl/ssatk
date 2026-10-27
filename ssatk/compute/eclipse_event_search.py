@@ -18,13 +18,22 @@ import json
 import numpy as np
 
 from ssatk.compute.eclipse_core import shadow_cone
-from ssatk.compute.eclipse_runtime import resolve_backend, ephemeris_positions_km
+from ssatk.compute.eclipse_runtime import (
+    gcrf_to_itrf_km,
+    itrf_to_gcrf_km,
+    resolve_backend,
+    ephemeris_positions_km,
+)
+from ssatk.compute.eclipse_brightness import shadow_axis_surface_point
 from ssatk.compute.eclipse_state import solar_visibility_and_separation
 from ssatk.compute.eclipse_reference_events import (
     LUNAR_DANJON_FACTOR,
     RE_KM,
+    RP_KM,
     R_MOON_MEAN_KM,
     R_SUN_KM,
+    geodetic_from_itrf,
+    itrf_surface_point,
     ReferenceDefinition,
     ReferenceEvent,
     center_visibility_and_separation,
@@ -208,6 +217,93 @@ def _lunar_shadow_geometry(sun: np.ndarray, moon: np.ndarray) -> tuple[float, fl
     return miss, downstream, float(cone.penumbra_radius(downstream)), float(cone.umbra_radius(downstream))
 
 
+def _solar_surface_apparent_geometry(
+    sun: np.ndarray,
+    moon: np.ndarray,
+    jd_utc: float,
+) -> tuple[float, float, float, float, float]:
+    """Return topocentric solar disc radii at the closest WGS-84 surface view.
+
+    The view is selected by minimizing apparent centre separation over the
+    ellipsoid.  This is the standard projected-diameter definition for a
+    partial eclipse and also supplies the radius sign needed to distinguish a
+    hybrid central path.
+    """
+    try:
+        from scipy.optimize import minimize
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("SciPy is required for surface eclipse geometry") from exc
+
+    sun_itrf, moon_itrf = gcrf_to_itrf_km(np.asarray([sun, moon]), float(jd_utc))
+    axis = moon_itrf - sun_itrf
+    axis /= np.linalg.norm(axis)
+    downstream = max(0.0, -float(np.dot(moon_itrf, axis)))
+    closest = moon_itrf + downstream * axis
+    norm = np.linalg.norm(closest)
+    initial = (
+        np.degrees(np.arcsin(np.clip(closest[2] / norm, -1.0, 1.0))),
+        np.degrees(np.arctan2(closest[1], closest[0])),
+    ) if norm > 0.0 else (0.0, 0.0)
+
+    def geometry(latitude_deg: float, longitude_deg: float) -> tuple[float, float, float]:
+        observer_itrf = itrf_surface_point(latitude_deg, longitude_deg, 0.0)
+        observer = itrf_to_gcrf_km(observer_itrf, float(jd_utc))
+        to_sun = np.asarray(sun, dtype=float) - observer
+        to_moon = np.asarray(moon, dtype=float) - observer
+        sun_distance = float(np.linalg.norm(to_sun))
+        moon_distance = float(np.linalg.norm(to_moon))
+        separation = float(np.arccos(np.clip(
+            np.dot(to_sun, to_moon) / (sun_distance * moon_distance), -1.0, 1.0,
+        )))
+        return (
+            separation,
+            float(np.arcsin(np.clip(R_SUN_KM / sun_distance, 0.0, 1.0))),
+            float(np.arcsin(np.clip(R_MOON_MEAN_KM / moon_distance, 0.0, 1.0))),
+        )
+
+    def objective(values: np.ndarray) -> float:
+        latitude = float(np.clip(values[0], -90.0, 90.0))
+        longitude = float(values[1])
+        return geometry(latitude, longitude)[0]
+
+    result = minimize(
+        objective,
+        np.asarray(initial, dtype=float),
+        method="Nelder-Mead",
+        options={"xatol": 1.0e-9, "fatol": 1.0e-15, "maxiter": 1000},
+    )
+    latitude = float(np.clip(result.x[0], -90.0, 90.0))
+    longitude = float(result.x[1])
+    separation, sun_radius, moon_radius = geometry(latitude, longitude)
+    return moon_radius, sun_radius, separation, latitude, longitude
+
+
+def _solar_central_apparent_geometry(
+    sun: np.ndarray,
+    moon: np.ndarray,
+    jd_utc: float,
+) -> tuple[float, float, float, float, float]:
+    """Return apparent radii at the WGS-84 shadow-axis surface intersection."""
+    sun_itrf, moon_itrf = gcrf_to_itrf_km(np.asarray([sun, moon]), float(jd_utc))
+    point = shadow_axis_surface_point(
+        moon_itrf, sun_itrf, target_axes_km=(RE_KM, RE_KM, RP_KM),
+    )
+    if point is None:
+        return _solar_surface_apparent_geometry(sun, moon, jd_utc)
+    observer = itrf_to_gcrf_km(point, float(jd_utc))
+    to_sun = np.asarray(sun, dtype=float) - observer
+    to_moon = np.asarray(moon, dtype=float) - observer
+    sun_distance = float(np.linalg.norm(to_sun))
+    moon_distance = float(np.linalg.norm(to_moon))
+    separation = float(np.arccos(np.clip(
+        np.dot(to_sun, to_moon) / (sun_distance * moon_distance), -1.0, 1.0,
+    )))
+    sun_radius = float(np.arcsin(np.clip(R_SUN_KM / sun_distance, 0.0, 1.0)))
+    moon_radius = float(np.arcsin(np.clip(R_MOON_MEAN_KM / moon_distance, 0.0, 1.0)))
+    latitude, longitude, _ = geodetic_from_itrf(point)
+    return moon_radius, sun_radius, separation, latitude, longitude
+
+
 def _roots(function: Callable[[float], float], start: float, stop: float, *, samples: int = 721) -> list[float]:
     try:
         from scipy.optimize import brentq
@@ -311,19 +407,41 @@ def discover_with_position_provider(
             u_roots = _roots(u_eq, search_lo, search_hi)
             central = len(u_roots) >= 2
             if central:
-                eclipse_type = "total" if umb > 0.0 else "annular"
+                central_span = np.linspace(u_roots[0], u_roots[-1], 5)
+                radius_signs = []
+                for value in central_span:
+                    sun_value, moon_value = state(float(value))
+                    surface = _solar_surface_apparent_geometry(
+                        sun_value, moon_value, float(value),
+                    )
+                    radius_signs.append(surface[0] - surface[1])
+                has_total = any(sign > 0.0 for sign in radius_signs)
+                has_annular = any(sign < 0.0 for sign in radius_signs)
+                eclipse_type = (
+                    "hybrid" if has_total and has_annular
+                    else "total" if has_total
+                    else "annular"
+                )
             else:
                 eclipse_type = "partial"
             contacts = {"P1": p_roots[0], "MAX": maximum, "P4": p_roots[-1]}
             if central:
                 contacts.update({"U1": u_roots[0], "U4": u_roots[-1]})
-            magnitude = (R_MOON_MEAN_KM / np.linalg.norm(moon_max)) / (
-                R_SUN_KM / np.linalg.norm(sun_max)
+            surface_at_max = (
+                _solar_central_apparent_geometry(sun_max, moon_max, maximum)
+                if central else _solar_surface_apparent_geometry(sun_max, moon_max, maximum)
+            )
+            moon_radius, sun_radius, separation, surface_lat, surface_lon = surface_at_max
+            magnitude = (
+                moon_radius / sun_radius if central
+                else (moon_radius + sun_radius - separation) / (2.0 * sun_radius)
             )
             metadata = {
                 "axis_miss_km": miss,
                 "penumbra_radius_at_earth_plane_km": pen,
                 "signed_umbra_radius_at_earth_plane_km": umb,
+                "surface_greatest_lat_deg": surface_lat,
+                "surface_greatest_lon_east_deg": surface_lon,
             }
         else:
             miss, _, pen, umb = _lunar_shadow_geometry(sun_max, moon_max)
