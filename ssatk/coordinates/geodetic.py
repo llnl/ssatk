@@ -19,7 +19,10 @@ def gcrf_to_llh(r_gcrf, t, *, allow_predicted: bool = True):
     ``r_gcrf``. Uses the shared IAU 2006/2000A route
     (:mod:`ssatk.coordinates._earth_rotation`) to get ITRF, then WGS84
     geodetic coordinates from ``erfa.gc2gd``. ``allow_predicted`` defaults
-    ``True``; see ``ssatk.coordinates.earth_fixed``'s module docstring.
+    ``True``; see ``ssatk.coordinates.earth_fixed``'s module docstring. An
+    epoch outside the packaged EOP table holds the nearest end record's
+    values and warns once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
     """
     r_input = np.asarray(r_gcrf, dtype=float)
     r = np.atleast_2d(r_input)
@@ -27,7 +30,7 @@ def gcrf_to_llh(r_gcrf, t, *, allow_predicted: bool = True):
         raise ValueError("r_gcrf must be shape (3,) or (N,3)")
 
     gps = _time_array(to_gps(t), len(r))
-    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted)
+    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted, extrapolate=True)
     r_itrf = np.einsum("nij,nj->ni", rotation, r)
     lon, lat, height = erfa.gc2gd(_WGS84, r_itrf)
 
@@ -60,11 +63,14 @@ def llh_to_gcrf(lon: float, lat: float, t: Time, height: float = 0.0, *, allow_p
     (:mod:`ssatk.coordinates._earth_rotation`): ``r = R^T r_itrf`` and
     ``v = (dR/dt)^T r_itrf`` (the site's ITRF velocity is zero).
     ``allow_predicted`` defaults ``True``; see
-    ``ssatk.coordinates.earth_fixed``'s module docstring.
+    ``ssatk.coordinates.earth_fixed``'s module docstring. An epoch outside
+    the packaged EOP table holds the nearest end record's values and warns
+    once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
     """
     r_itrf = np.asarray(erfa.gd2gc(_WGS84, np.radians(lon), np.radians(lat), height), dtype=float)
     gps = to_gps(t)
-    rotation, rate = gcrs_to_itrs_matrix_and_rate(gps, allow_predicted=allow_predicted)
+    rotation, rate = gcrs_to_itrs_matrix_and_rate(gps, allow_predicted=allow_predicted, extrapolate=True)
     r_gcrf = rotation.T @ r_itrf
     v_gcrf = rate.T @ r_itrf
     return r_gcrf, v_gcrf

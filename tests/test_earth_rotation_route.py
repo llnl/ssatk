@@ -15,6 +15,7 @@ from ssatk.constants import WGS84_EARTH_OMEGA
 from ssatk.coordinates import gcrf_to_itrf, itrf_to_gcrf
 from ssatk.coordinates.geodetic import llh_to_gcrf
 from ssatk.data import data_path
+from ssatk.environment_eop import EarthOrientationExtrapolationWarning
 
 iers = pytest.importorskip("astropy.utils.iers")
 
@@ -116,3 +117,105 @@ def test_stationary_wgs84_surface_point_speed_matches_omega_times_rho(lat_deg):
 
     expected_speed = WGS84_EARTH_OMEGA * rho
     assert np.linalg.norm(v_gcrf) == pytest.approx(expected_speed, abs=5e-4)
+
+
+# ---------------------------------------------------------------------------
+# Epochs outside the packaged EOP table's span.
+# ---------------------------------------------------------------------------
+#
+# Strict functions (gcrs_to_itrs_matrix*, gcrf_to_itrf_eop, itrf_to_gcrf_eop)
+# raise outside the table. Lenient public functions (gcrf_to_itrf,
+# itrf_to_gcrf, gcrf_to_itrf_astropy, eci_to_ecf_matrix, and the
+# geodetic/yastropy conversions) hold the nearest end record's values and
+# warn once with EarthOrientationExtrapolationWarning instead -- matching
+# SSAPy's iers_interp, which held the table's end values via numpy.interp
+# rather than raising.
+
+
+def _far_future_gps(eop):
+    return eop.end_gps + 10.0 * 365.25 * 86400.0  # ten years past the table
+
+
+def test_strict_core_functions_raise_outside_the_eop_table():
+    from ssatk.coordinates._earth_rotation import gcrs_to_itrs_matrix, gcrs_to_itrs_matrix_and_rate
+    from ssatk.coordinates.earth_fixed import gcrf_to_itrf_eop, itrf_to_gcrf_eop
+    from ssatk.environment_eop import load_packaged_eop
+
+    eop = load_packaged_eop()
+    future = _far_future_gps(eop)
+
+    with pytest.raises(ValueError, match="outside"):
+        gcrs_to_itrs_matrix(future, allow_predicted=True)
+    with pytest.raises(ValueError, match="outside"):
+        gcrs_to_itrs_matrix_and_rate(future, allow_predicted=True)
+    with pytest.raises(ValueError, match="outside"):
+        gcrf_to_itrf_eop(_POSITIONS_M[:1], [future], allow_predicted=True)
+    with pytest.raises(ValueError, match="outside"):
+        itrf_to_gcrf_eop(_POSITIONS_M[:1], [future], allow_predicted=True)
+
+
+def test_core_extrapolation_holds_the_table_end_record_exactly():
+    """The extrapolated rotation (and its rate) must equal evaluating the
+    core with a synthetic table that simply continues the real table's last
+    record's UT1-UTC/polar motion/dX,dY out to the requested epoch -- an
+    exact match, not merely "close", since both use the same held values and
+    the same (true, un-held) TT/UT1-date arguments for precession-nutation
+    and the Earth Rotation Angle.
+    """
+    from dataclasses import replace
+
+    from ssatk.coordinates._earth_rotation import gcrs_to_itrs_matrix, gcrs_to_itrs_matrix_and_rate
+    from ssatk.environment_eop import EarthOrientationTable, load_packaged_eop
+
+    eop = load_packaged_eop()
+    future = _far_future_gps(eop)
+    end_record = eop.records[-1]
+    held_table = EarthOrientationTable((
+        replace(end_record, gps_seconds=eop.start_gps),
+        replace(end_record, gps_seconds=future + 86400.0),
+    ))
+
+    with pytest.warns(EarthOrientationExtrapolationWarning, match="outside the packaged EOP table"):
+        actual = gcrs_to_itrs_matrix(future, allow_predicted=True, extrapolate=True)
+    expected = gcrs_to_itrs_matrix(future, eop=held_table, allow_predicted=True)
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=0)
+
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        actual_r, actual_rate = gcrs_to_itrs_matrix_and_rate(future, allow_predicted=True, extrapolate=True)
+    expected_r, expected_rate = gcrs_to_itrs_matrix_and_rate(future, eop=held_table, allow_predicted=True)
+    np.testing.assert_allclose(actual_r, expected_r, rtol=0, atol=0)
+    np.testing.assert_allclose(actual_rate, expected_rate, rtol=0, atol=0)
+
+
+def test_lenient_public_functions_warn_and_hold_outside_the_eop_table():
+    from ssatk.coordinates import (
+        eci_to_ecf_matrix,
+        gcrf_to_itrf,
+        gcrf_to_itrf_astropy,
+        gcrf_to_llh,
+        itrf_to_gcrf,
+        llh_to_gcrf,
+    )
+    from ssatk.environment_eop import load_packaged_eop
+    from ssatk.yastropy import astropy_gcrf_to_llh, astropy_llh_to_gcrf
+
+    eop = load_packaged_eop()
+    future = _far_future_gps(eop)
+    r = _POSITIONS_M[:1]
+
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        gcrf_to_itrf(r, [future])
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        itrf_to_gcrf(r, [future])
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        gcrf_to_itrf_astropy(r, [future])
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        eci_to_ecf_matrix(future)
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        gcrf_to_llh(r, [future])
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        llh_to_gcrf(0.0, 0.0, future)
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        astropy_llh_to_gcrf(lon=[0.0], lat=[0.0], t=future)
+    with pytest.warns(EarthOrientationExtrapolationWarning):
+        astropy_gcrf_to_llh(r, [future])

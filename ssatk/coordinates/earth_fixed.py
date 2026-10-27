@@ -19,6 +19,20 @@ the predicted side of SSATK's packaged snapshot, so making every ordinary call
 raise by default would be a much larger behavior change than switching models.
 They default ``allow_predicted=True``, preserving that prior behavior, while
 still exposing the argument for a caller that wants the stricter check.
+
+Epochs outside the packaged EOP table's span: SSAPy's ``iers_interp`` held the
+table's end values via ``numpy.interp``, so a long propagation or a far-future
+or historical ground track never raised. ``gcrf_to_itrf``, ``itrf_to_gcrf``,
+``gcrf_to_itrf_astropy`` and the ``geodetic``/``yastropy`` conversions keep
+that leniency: outside the table they hold the nearest end record's UT1-UTC,
+polar motion and celestial-pole offsets constant (Earth keeps rotating at its
+last known rate; only those slowly-varying corrections freeze) and warn once
+per call with
+:class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
+``gcrf_to_itrf_eop``/``itrf_to_gcrf_eop`` and the lower-level
+``ssatk.coordinates._earth_rotation`` functions stay strict: they raise
+``ValueError`` outside the table unless a caller opts into extrapolation
+explicitly.
 """
 
 import numpy as np
@@ -54,16 +68,22 @@ def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=1.0, allow_predicted=True):
     numpy.ndarray or tuple
         ITRF positions in meters, or ``(position, velocity)`` when ``v`` is
         given. The velocity is Earth-relative: ``R v + (dR/dt) r``.
+
+    Warns
+    -----
+    ssatk.environment_eop.EarthOrientationExtrapolationWarning
+        If any epoch in ``t`` falls outside the packaged EOP table; see the
+        module docstring.
     """
     gps = to_gps(t)
     r_gcrf = _state_matrix(r_gcrf, "r_gcrf")
     gps_arr = _time_array(gps, len(r_gcrf))
 
     if v is None or v is False:
-        rotation = gcrs_to_itrs_matrix(gps_arr, allow_predicted=allow_predicted)
+        rotation = gcrs_to_itrs_matrix(gps_arr, allow_predicted=allow_predicted, extrapolate=True)
         return np.einsum("nij,nj->ni", rotation, r_gcrf)
     if v is True:
-        rotation = gcrs_to_itrs_matrix(gps_arr, allow_predicted=allow_predicted)
+        rotation = gcrs_to_itrs_matrix(gps_arr, allow_predicted=allow_predicted, extrapolate=True)
         pos = np.einsum("nij,nj->ni", rotation, r_gcrf)
         return pos, v_from_r(pos, gps_arr)
 
@@ -71,7 +91,7 @@ def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=1.0, allow_predicted=True):
     if v_gcrf.shape != r_gcrf.shape:
         raise ValueError("v must have the same shape as r_gcrf.")
     rotation, rate = gcrs_to_itrs_matrix_and_rate(
-        gps_arr, step_s=step_s, allow_predicted=allow_predicted
+        gps_arr, step_s=step_s, allow_predicted=allow_predicted, extrapolate=True
     )
     pos = np.einsum("nij,nj->ni", rotation, r_gcrf)
     vel = np.einsum("nij,nj->ni", rotation, v_gcrf) + np.einsum("nij,nj->ni", rate, r_gcrf)
@@ -81,13 +101,15 @@ def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=1.0, allow_predicted=True):
 def itrf_to_gcrf(r_itrf: np.ndarray, time: np.ndarray, *, allow_predicted: bool = True) -> np.ndarray:
     """Convert ITRF positions to GCRF.
 
-    ``allow_predicted`` defaults ``True``; see the module docstring.
+    ``allow_predicted`` defaults ``True``; see the module docstring. Warns
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning` for
+    an epoch outside the packaged EOP table instead of raising.
     """
     gps = to_gps(time)
     r_itrf = _state_matrix(r_itrf, "r_itrf")
     gps_arr = _time_array(gps, len(r_itrf))
 
-    rotation = gcrs_to_itrs_matrix(gps_arr, allow_predicted=allow_predicted)
+    rotation = gcrs_to_itrs_matrix(gps_arr, allow_predicted=allow_predicted, extrapolate=True)
     return np.einsum("nji,nj->ni", rotation, r_itrf)
 
 
@@ -99,11 +121,13 @@ def gcrf_to_itrf_astropy(state_vectors, t, *, allow_predicted: bool = True):
     this name. It used to call Astropy's GCRS->ITRS transform directly, which
     needs Astropy's own (network-backed) IERS table; it now shares SSATK's
     packaged-EOP route, so it no longer touches the network.
-    ``allow_predicted`` defaults ``True``; see the module docstring.
+    ``allow_predicted`` defaults ``True``; see the module docstring. Warns
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning` for
+    an epoch outside the packaged EOP table instead of raising.
     """
     state_vectors = _state_matrix(state_vectors, "state_vectors")
     gps = _time_array(to_gps(t), len(state_vectors))
-    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted)
+    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted, extrapolate=True)
     return np.einsum("nij,nj->ni", rotation, state_vectors)
 
 

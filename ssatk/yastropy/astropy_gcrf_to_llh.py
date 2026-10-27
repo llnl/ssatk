@@ -27,7 +27,9 @@ def astropy_gcrf_to_llh(r_gcrf, t, *, allow_predicted=True):
     Despite the "astropy" name, this shares SSATK's IAU 2006/2000A route
     (:mod:`ssatk.coordinates._earth_rotation`) rather than calling Astropy's
     GCRS/ITRS transform directly, so it uses SSATK's packaged EOP data
-    instead of Astropy's own (network-backed) IERS table.
+    instead of Astropy's own (network-backed) IERS table. An epoch outside
+    that table holds the nearest end record's values and warns once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
     """
     # Deferred: ssatk.coordinates imports this package (for astropy_surface_rv),
     # so importing it at module load time would be circular.
@@ -37,7 +39,7 @@ def astropy_gcrf_to_llh(r_gcrf, t, *, allow_predicted=True):
 
     r_gcrf = np.asarray(r_gcrf, dtype=float)
     gps = _time_array(to_gps(t), len(r_gcrf))
-    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted)
+    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted, extrapolate=True)
     r_itrf = np.einsum("nij,nj->ni", rotation, r_gcrf)
 
     longitude, latitude, altitude = erfa.gc2gd(_WGS84, r_itrf)

@@ -84,7 +84,11 @@ def eci_to_ecf_matrix(t_gps, *, allow_predicted: bool = True) -> np.ndarray:
     ``r_itrf = M @ r_gcrf``. ``allow_predicted`` defaults ``True``: see the
     note in ``ssatk.coordinates.earth_fixed``'s module docstring on why this
     (and ``gcrf_to_itrf``/``itrf_to_gcrf``/``gcrf_to_itrf_astropy``) default
-    differently than the explicit ``_eop``-suffixed functions.
+    differently than the explicit ``_eop``-suffixed functions. An epoch
+    outside the packaged EOP table holds the nearest end record's values and
+    warns once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`,
+    also documented there, instead of raising.
 
     This used to chain ``erfa.pnm80`` (IAU 1976/1980 precession-nutation) and
     ``erfa.gst94`` (Greenwich apparent sidereal time) -- the same convention
@@ -96,7 +100,7 @@ def eci_to_ecf_matrix(t_gps, *, allow_predicted: bool = True) -> np.ndarray:
     """
     from ._earth_rotation import gcrs_to_itrs_matrix
 
-    return gcrs_to_itrs_matrix(t_gps, allow_predicted=allow_predicted)
+    return gcrs_to_itrs_matrix(t_gps, allow_predicted=allow_predicted, extrapolate=True)
 
 
 def greenwich_azimuth_rad(t_gps):

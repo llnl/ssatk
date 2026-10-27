@@ -29,10 +29,13 @@ dX/dY correction that convenience function omits.
 
 from __future__ import annotations
 
+import warnings
+
 import erfa
 import numpy as np
 from astropy.time import Time
 
+from ..environment_eop import EarthOrientationExtrapolationWarning
 from ..time_functions import to_gps
 
 __all__ = ["gcrs_to_itrs_matrix", "gcrs_to_itrs_matrix_and_rate"]
@@ -66,8 +69,37 @@ def _eop_table(eop):
     return load_packaged_eop()
 
 
-def _records(gps: np.ndarray, eop, allow_predicted: bool):
-    return [eop.at(value, allow_predicted=allow_predicted) for value in gps]
+def _records(gps: np.ndarray, eop, allow_predicted: bool, *, extrapolate: bool = False):
+    """EOP records for ``gps``, each from ``eop.at``.
+
+    With ``extrapolate=False`` (the default; used by the strict functions),
+    an epoch outside ``[eop.start_gps, eop.end_gps]`` raises ``ValueError``
+    from ``eop.at`` unchanged. With ``extrapolate=True`` (used by SSATK's
+    lenient public functions), such an epoch is clamped to the nearest table
+    end instead, holding that record's UT1-UTC, polar motion and
+    celestial-pole offsets constant, and a single
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`
+    reports the actual epoch range that needed it. The (observed vs.
+    predicted) ``allow_predicted`` check still applies to the clamped record.
+    """
+
+    if not extrapolate:
+        return [eop.at(value, allow_predicted=allow_predicted) for value in gps]
+
+    out_of_range = (gps < eop.start_gps) | (gps > eop.end_gps)
+    if np.any(out_of_range):
+        lo = float(gps[out_of_range].min())
+        hi = float(gps[out_of_range].max())
+        warnings.warn(
+            f"{int(out_of_range.sum())} of {gps.size} epoch(s) (GPS seconds "
+            f"{lo:.0f}..{hi:.0f}) fall outside the packaged EOP table "
+            f"[{eop.start_gps:.0f}, {eop.end_gps:.0f}] s; holding the nearest "
+            "table record's UT1-UTC, polar motion and dX/dY constant.",
+            EarthOrientationExtrapolationWarning,
+            stacklevel=4,
+        )
+    clamped = np.clip(gps, eop.start_gps, eop.end_gps)
+    return [eop.at(value, allow_predicted=allow_predicted) for value in clamped]
 
 
 def _cip_and_polar_terms(gps: np.ndarray, records):
@@ -109,7 +141,9 @@ def _rotation_matrices(gps: np.ndarray, records) -> np.ndarray:
     return erfa.c2txy(tta, ttb, uta, utb, x, y, xp, yp)
 
 
-def gcrs_to_itrs_matrix(t, *, eop=None, allow_predicted: bool = False) -> np.ndarray:
+def gcrs_to_itrs_matrix(
+    t, *, eop=None, allow_predicted: bool = False, extrapolate: bool = False
+) -> np.ndarray:
     """GCRS->ITRS rotation matrix/matrices at ``t`` (``r_itrs = R @ r_gcrs``).
 
     Parameters
@@ -121,6 +155,14 @@ def gcrs_to_itrs_matrix(t, *, eop=None, allow_predicted: bool = False) -> np.nda
     allow_predicted : bool, optional
         Forwarded to ``EarthOrientationTable.at``; default ``False`` rejects
         an epoch that falls on a predicted (not observed) EOP record.
+    extrapolate : bool, optional
+        Default ``False``: an epoch outside the EOP table's span raises
+        ``ValueError`` (see below). ``True`` instead holds the nearest table
+        record's values constant and warns once with
+        :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`;
+        SSATK's lenient public functions (``gcrf_to_itrf``, ``itrf_to_gcrf``,
+        ``gcrf_to_itrf_astropy``, ``eci_to_ecf_matrix``, and the
+        ``geodetic``/``yastropy`` conversions) pass ``True`` here.
 
     Returns
     -------
@@ -130,41 +172,49 @@ def gcrs_to_itrs_matrix(t, *, eop=None, allow_predicted: bool = False) -> np.nda
     Raises
     ------
     ValueError
-        If ``t`` lies outside the EOP table's span, or (unless
-        ``allow_predicted``) intersects a predicted record. Earth orientation
-        is never silently assumed (e.g. UT1-UTC = 0) outside the table.
+        If ``t`` lies outside the EOP table's span and ``extrapolate`` is
+        ``False``, or (unless ``allow_predicted``) intersects a predicted
+        record. Earth orientation is never silently assumed (e.g.
+        UT1-UTC = 0) outside the table.
     """
 
     t_arr = np.asarray(to_gps(t), dtype=float)
     scalar = t_arr.ndim == 0
     gps = np.atleast_1d(t_arr)
     eop_table = _eop_table(eop)
-    records = _records(gps, eop_table, allow_predicted)
+    records = _records(gps, eop_table, allow_predicted, extrapolate=extrapolate)
     matrices = _rotation_matrices(gps, records)
     return matrices[0] if scalar else matrices
 
 
 def gcrs_to_itrs_matrix_and_rate(
-    t, *, eop=None, allow_predicted: bool = False, step_s: float = _RATE_STEP_S
+    t,
+    *,
+    eop=None,
+    allow_predicted: bool = False,
+    extrapolate: bool = False,
+    step_s: float = _RATE_STEP_S,
 ):
     """Return ``(R, dR/dt)`` at ``t``.
 
     ``dR/dt`` is a central difference restricted to the Earth Rotation Angle
     term: precession-nutation, polar motion and TT are evaluated once at the
-    requested epoch (via the EOP table, so this still rejects an epoch the
-    table can't support) and held fixed, while the UT1 Julian date that feeds
-    ``erfa.era00`` inside the same ``erfa.c2txy`` composition is shifted by
-    ``+-step_s`` to form the difference. See the module-level note on
-    ``_RATE_STEP_S`` for the measured accuracy this buys over differencing
-    the full table lookup (and the epoch-independent float64 floor either
-    way). Use the result as ``v_itrs = R @ v_gcrs + (dR/dt) @ r_gcrs``.
+    requested epoch (via the EOP table, so this still rejects -- or, with
+    ``extrapolate=True``, extrapolates -- an epoch the table can't support)
+    and held fixed, while the UT1 Julian date that feeds ``erfa.era00`` inside
+    the same ``erfa.c2txy`` composition is shifted by ``+-step_s`` to form the
+    difference. See the module-level note on ``_RATE_STEP_S`` for the
+    measured accuracy this buys over differencing the full table lookup (and
+    the epoch-independent float64 floor either way), and
+    :func:`gcrs_to_itrs_matrix` for ``extrapolate``. Use the result as
+    ``v_itrs = R @ v_gcrs + (dR/dt) @ r_gcrs``.
     """
 
     t_arr = np.asarray(to_gps(t), dtype=float)
     scalar = t_arr.ndim == 0
     gps = np.atleast_1d(t_arr)
     eop_table = _eop_table(eop)
-    records = _records(gps, eop_table, allow_predicted)
+    records = _records(gps, eop_table, allow_predicted, extrapolate=extrapolate)
 
     tta, ttb, uta, utb, x, y, xp, yp = _cip_and_polar_terms(gps, records)
     step_days = step_s / 86400.0
