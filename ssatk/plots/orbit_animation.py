@@ -6,12 +6,14 @@ from .rendering import _with_low_spec
 
 from contextlib import contextmanager
 from pathlib import Path
+from types import MethodType
 
 import matplotlib.cm as _cm
 import matplotlib.pyplot as _plt
 from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter
 from matplotlib.collections import LineCollection
 import numpy as _np
+from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from ssapy import get_body as _get_body
@@ -585,6 +587,27 @@ def _set_3d_limits(ax, bounds):
     ax.set_box_aspect([1, 1, 1])
 
 
+def _fast_line3d_projection(self):
+    """Batch-projected stand-in for ``Line3DCollection.do_3d_projection``.
+
+    Matplotlib's own implementation projects each segment with a separate
+    Python-level call, which is the dominant per-frame cost once a
+    constellation-sized tail collection carries thousands of segments: every
+    segment here is an independent 2-point pair sampled through the same
+    camera matrix, so the whole batch can go through ``axes.M`` at once
+    instead. This produces the identical coordinates, just without that
+    per-segment loop. Anything outside that shape -- axes-limit clipping, or
+    a segment that is not a plain pair -- defers to Matplotlib's own method.
+    """
+    segments = self._segments3d
+    if self._axlim_clip or not len(segments) or any(len(segment) != 2 for segment in segments):
+        return Line3DCollection.do_3d_projection(self)
+    points = _np.asarray(segments, dtype=float).reshape(-1, 3)
+    xs, ys, zs = proj3d.proj_transform(points[:, 0], points[:, 1], points[:, 2], self.axes.M)
+    LineCollection.set_segments(self, list(_np.column_stack((xs, ys)).reshape(-1, 2, 2)))
+    return float(zs.min())
+
+
 class _ConstellationArtists:
     """Batch common-epoch globe/map tracks into two collections per panel.
 
@@ -601,6 +624,10 @@ class _ConstellationArtists:
             if view == "globe":
                 self.heads[view] = ax.scatter([], [], [], s=4, depthshade=False, zorder=3)
                 self.tails[view] = Line3DCollection(_np.empty((0, 2, 3)), linewidths=.45, zorder=2)
+                # A constellation's tail segments number in the thousands;
+                # Matplotlib's per-segment projection loop otherwise dominates
+                # every frame's render time.
+                self.tails[view].do_3d_projection = MethodType(_fast_line3d_projection, self.tails[view])
                 # Bounds already include all tracks. Matplotlib 3.11 cannot
                 # autoscale an empty collection before its first frame.
                 ax.add_collection3d(self.tails[view], autolim=False)
