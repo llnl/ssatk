@@ -391,6 +391,31 @@ def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad, in
     }
 
 
+def _animation_earth_background(fig):
+    """A ground-track basemap sized for this figure, not the raw 8K source.
+
+    ``load_earth_file`` returns the full gallery texture untouched, which is
+    appropriate for a still image drawn once. An animation panel redraws its
+    static background on every frame (Matplotlib has no per-artist skip for a
+    full, non-blit figure draw), so handing it the untouched map resampled the
+    same ~33-megapixel source hundreds of times for a target that never
+    exceeds the figure's own pixel size. Downsampling once to double the
+    figure's pixel dimensions keeps texel density well above what any panel
+    in this figure can display while cutting that repeated resample cost by
+    more than an order of magnitude.
+    """
+    from .plotutils import load_earth_file
+
+    earth = load_earth_file()
+    width_in, height_in = fig.get_size_inches()
+    target = (max(1, round(2*width_in*fig.dpi)), max(1, round(2*height_in*fig.dpi)))
+    if earth.size[0] > target[0] or earth.size[1] > target[1]:
+        from PIL import Image as _PILImage
+
+        earth = earth.resize(target, _PILImage.Resampling.BOX)
+    return earth
+
+
 def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
     stn = prepared["stn"]
     unit_label = prepared["unit_label"]
@@ -399,8 +424,7 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
     for view in views:
         ax = axes[view]
         if view == "groundtrack":
-            from .plotutils import load_earth_file
-            ax.imshow(load_earth_file(), extent=(-180, 180, -90, 90),
+            ax.imshow(_animation_earth_background(ax.figure), extent=(-180, 180, -90, 90),
                       origin="upper", aspect="auto", zorder=0)
             ax.set_xlim(-180, 180)
             ax.set_ylim(-90, 90)
