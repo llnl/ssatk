@@ -16,6 +16,9 @@ def accel_equatorial(r, v=None, magnitude=None):
         (Unused; kept for signature consistency.)
     magnitude : float
         Desired magnitude of the equatorial-plane acceleration in m/s^2.
+        Required: there is no fallback to ``v``. ``accel_add`` maps a
+        parameter named ``v`` to the real velocity vector, so a fallback
+        here would silently turn that vector into ``magnitude``.
 
     Returns
     -------
@@ -23,7 +26,15 @@ def accel_equatorial(r, v=None, magnitude=None):
         Equatorial-plane acceleration vector in m/s^2.
     """
     if magnitude is None:
-        magnitude = v
+        if v is not None and np.ndim(v) == 0:
+            # Preserve the historical accel_equatorial(r, magnitude) form.
+            magnitude = v
+        else:
+            raise TypeError(
+                "accel_equatorial() requires magnitude; bind it (e.g. via "
+                "functools.partial(accel_equatorial, magnitude=...)) before "
+                "passing this model to accel_add"
+            )
     r = position(r)
 
     if magnitude == 0:

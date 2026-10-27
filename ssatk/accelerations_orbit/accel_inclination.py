@@ -19,6 +19,9 @@ def accel_inclination(r, v=None, magnitude=None):
     magnitude : float
         Desired magnitude of the inclination-change acceleration in m/s^2.
         Positive -> northward; negative -> southward.
+        Required: there is no fallback to ``v``. ``accel_add`` maps a
+        parameter named ``v`` to the real velocity vector, so a fallback
+        here would silently turn that vector into ``magnitude``.
 
     Returns
     -------
@@ -26,7 +29,15 @@ def accel_inclination(r, v=None, magnitude=None):
         Inclination-change acceleration vector in m/s^2.
     """
     if magnitude is None:
-        magnitude = v
+        if v is not None and np.ndim(v) == 0:
+            # Preserve the historical accel_inclination(r, magnitude) form.
+            magnitude = v
+        else:
+            raise TypeError(
+                "accel_inclination() requires magnitude; bind it (e.g. via "
+                "functools.partial(accel_inclination, magnitude=...)) before "
+                "passing this model to accel_add"
+            )
     r = position(r)
     norm_r = np.linalg.norm(r)
     if norm_r == 0.0 or magnitude == 0.0:

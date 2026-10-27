@@ -61,6 +61,14 @@ def _role_signature(func):
     silently receive a GPS epoch as its ``magnitude``); such a model must be
     bound (e.g. via ``functools.partial``) before being passed to
     ``accel_add``.
+
+    A ``magnitude=None`` default like ``accel_equatorial``'s only looks
+    optional here: this function cannot tell "genuinely optional" from
+    "required, but defaulted so a role parameter can follow it positionally"
+    apart, so it never raises for that case. The callee must still validate
+    the value it receives and raise its own ``TypeError`` if left at that
+    default -- do not resurrect the fallback this once had, which read the
+    real velocity vector out of ``v`` and silently used it as ``magnitude``.
     """
     try:
         sig = inspect.signature(func)

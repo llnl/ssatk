@@ -18,6 +18,10 @@ def accel_plane(r, v=None, magnitude=None):
         Desired acceleration magnitude in m/s^2.
         Positive → along the direction of motion;
         negative → opposite direction.
+        Required: there is no fallback to ``v``. ``accel_add`` maps a
+        parameter named ``v`` to the real velocity vector, so a fallback
+        here would silently turn that vector into ``magnitude`` and drop
+        the real velocity.
 
     Returns
     -------
@@ -25,8 +29,16 @@ def accel_plane(r, v=None, magnitude=None):
         Tangential acceleration vector in m/s^2.
     """
     if magnitude is None:
-        magnitude = v
-        v = None
+        if v is not None and np.ndim(v) == 0:
+            # Preserve the historical accel_plane(r, magnitude) form.
+            magnitude = v
+            v = None
+        else:
+            raise TypeError(
+                "accel_plane() requires magnitude; bind it (e.g. via "
+                "functools.partial(accel_plane, magnitude=...)) before "
+                "passing this model to accel_add"
+            )
     r, v, _ = state(r, v)
 
     if magnitude == 0:
