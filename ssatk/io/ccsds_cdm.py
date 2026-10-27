@@ -23,7 +23,6 @@ import numpy as np
 from astropy import units as u
 from astropy.coordinates import (
     GCRS,
-    ITRS,
     CartesianDifferential,
     CartesianRepresentation,
     PrecessedGeocentric,
@@ -314,19 +313,23 @@ def _utc_time(value):
 def _state_gcrf(state, frame, epoch):
     if frame == "GCRF":
         result = np.array(state, dtype=float, copy=True)
+    elif frame == "ITRF":
+        # Same Earth-orientation route and packaged EOP as the rest of SSATK.
+        from ssatk.coordinates._earth_rotation import gcrs_to_itrs_matrix_and_rate
+
+        rotation, rate = gcrs_to_itrs_matrix_and_rate(epoch, allow_predicted=True, extrapolate=True)
+        position = rotation.T @ np.asarray(state[:3], dtype=float)
+        velocity = rotation.T @ (np.asarray(state[3:], dtype=float) - rate @ position)
+        result = np.concatenate((position, velocity))
     else:
         representation = CartesianRepresentation(
             state[:3] * u.m,
             differentials=CartesianDifferential(state[3:] * u.m / u.s),
         )
-        source = (
-            ITRS(representation, obstime=epoch)
-            if frame == "ITRF"
-            else PrecessedGeocentric(
-                representation,
-                obstime=epoch,
-                equinox=Time("J2000", scale="tt"),
-            )
+        source = PrecessedGeocentric(
+            representation,
+            obstime=epoch,
+            equinox=Time("J2000", scale="tt"),
         )
         transformed = source.transform_to(GCRS(obstime=epoch))
         result = np.concatenate(
