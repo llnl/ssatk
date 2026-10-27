@@ -152,8 +152,10 @@ def _definition(kind: str | ReferenceDefinition | ReferenceEvent) -> ReferenceDe
     return SOLAR_2024 if str(kind).lower().startswith("solar") else LUNAR_2025
 
 
-def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str, dict[str, object]]:
-    """Embed a texture as an in-memory WebP derivative of the installed PNG/JPEG."""
+@lru_cache(maxsize=8)
+def _texture_uri_cached(path: str, modified_ns: int, size: int, max_width: int,
+                        quality: int) -> tuple[str, dict[str, object]]:
+    """Build one immutable cache entry for a source texture revision."""
     from PIL import Image
 
     with Image.open(path) as image:
@@ -166,6 +168,18 @@ def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str,
         image.save(buffer, format="WEBP", quality=int(quality), method=6)
     uri = "data:image/webp;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
     return uri, {"source_name": Path(path).name, "embedded_bytes": len(buffer.getvalue())}
+
+
+def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str, dict[str, object]]:
+    """Embed a texture, reusing only an unchanged source/option combination."""
+    path = Path(path)
+    stat = path.stat()
+    uri, metadata = _texture_uri_cached(
+        str(path), int(stat.st_mtime_ns), int(stat.st_size),
+        int(max_width), int(quality),
+    )
+    # Callers may annotate their copy without corrupting future cache hits.
+    return uri, dict(metadata)
 
 
 def _rotation_rows_itrf_to_scene(state: PublicPeakState) -> np.ndarray:

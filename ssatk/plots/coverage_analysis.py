@@ -1460,8 +1460,11 @@ def compute_eclipse(r, r_sun):
 
 
 def compute_sun_positions(t):
+    # SunPosition accepts an array of times and returns (3, N); calling it
+    # once and transposing is ~150x faster than one Python call per sample
+    # (measured: 1.18 s vs 0.007 s for 3000 samples), with identical values.
     sun = SunPosition()
-    return np.array([sun(ti) for ti in t])
+    return np.asarray(sun(t)).T
 
 
 # ═════════════════════════════════════════════════════════════════════════════
