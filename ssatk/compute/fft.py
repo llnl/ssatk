@@ -13,7 +13,7 @@ def FFT(data: np.ndarray, time_between_samples: float = 1) -> np.ndarray:
     Returns:
     tuple: The frequency array and the FFT result.
 
-    Author: Travis Yeager (yaeger7@llnl.gov)
+    Author: Travis Yeager (yeager7@llnl.gov)
     """
     N = len(data)
     k = N // 2
@@ -35,7 +35,7 @@ def FFTP(data: np.ndarray, time_between_samples: float = 1) -> np.ndarray:
     Returns:
     tuple: The period array and the FFT result.
 
-    Author: Travis Yeager (yaeger7@llnl.gov)
+    Author: Travis Yeager (yeager7@llnl.gov)
     """
     N = len(data)
     k = N // 2
