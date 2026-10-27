@@ -9,7 +9,7 @@
 - [ ] Each new test compares against a named independent reference with a stated tolerance (`docs/testing_policy.md`).
 - [ ] New user-facing workflows include a runnable demo under `demos/`, or no demo is needed because:
 - [ ] No generated outputs, downloaded data, images, notebooks with embedded outputs, binary media, or large artifacts are committed.
-- [ ] Persistent data needed by this work is stored in SSAPy-Data or documented as an external input.
+- [ ] Persistent data needed by this work is stored in the split `ssa-data-*` packages or documented as an external input.
 
 ## Validation
 
