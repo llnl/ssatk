@@ -9,6 +9,9 @@ description = "Space Situational Awareness Toolkit (SSATK): orbit and 6-DoF prop
 authors = [
   { name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }
 ]
+maintainers = [
+  { name = "Travis R. Yeager", email = "yeager7@llnl.gov" }
+]
 readme = "README.md"
 requires-python = ">=3.10"
 license = "BSD-3-Clause"
