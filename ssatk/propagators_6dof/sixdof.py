@@ -1360,21 +1360,10 @@ def _bind_spacecraft_acceleration(model, spacecraft, *, suppress_depleted=True):
         acceleration.accepts_mass = True
         acceleration.accepts_wheel_momentum = True
         acceleration._source_model = model
-        if hasattr(model, "_acceleration_torque"):
-            def combined_force_torque(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
-                state = _spacecraft_at_state(
-                    spacecraft, t, r, v, q, omega, mass, wheel_momentum,
-                    getattr(model, "tank_name", None),
-                )
-                if (
-                    suppress_depleted
-                    and _is_propulsive_model(model)
-                    and not getattr(model, "_depletion_handled", False)
-                    and _propellant_depleted(state, getattr(model, "tank_name", None))
-                ):
-                    return np.zeros(3), np.zeros(3)
-                return model._acceleration_torque(t, r, v, q, omega, state)
-            acceleration._combined_evaluator = combined_force_torque
+        if hasattr(model, "_acceleration_torque") or hasattr(model, "_models"):
+            acceleration._combined_evaluator = _make_combined_evaluator(
+                model, spacecraft, suppress_depleted
+            )
         return acceleration
     return model
 
@@ -1405,21 +1394,10 @@ def _bind_spacecraft_torque(model, spacecraft, *, suppress_depleted=True):
         torque.accepts_mass = True
         torque.accepts_wheel_momentum = True
         torque._source_model = model
-        if hasattr(model, "_acceleration_torque"):
-            def combined_force_torque(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
-                state = _spacecraft_at_state(
-                    spacecraft, t, r, v, q, omega, mass, wheel_momentum,
-                    getattr(model, "tank_name", None),
-                )
-                if (
-                    suppress_depleted
-                    and _is_propulsive_model(model)
-                    and not getattr(model, "_depletion_handled", False)
-                    and _propellant_depleted(state, getattr(model, "tank_name", None))
-                ):
-                    return np.zeros(3), np.zeros(3)
-                return model._acceleration_torque(t, r, v, q, omega, state)
-            torque._combined_evaluator = combined_force_torque
+        if hasattr(model, "_acceleration_torque") or hasattr(model, "_models"):
+            torque._combined_evaluator = _make_combined_evaluator(
+                model, spacecraft, suppress_depleted
+            )
         return torque
     return model
 
@@ -1465,6 +1443,58 @@ def _bind_spacecraft_mass_flow_rate(model, spacecraft):
     return model
 
 
+def _make_combined_evaluator(model, spacecraft, suppress_depleted):
+    def combined_force_torque(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
+        state = _spacecraft_at_state(
+            spacecraft, t, r, v, q, omega, mass, wheel_momentum,
+            getattr(model, "tank_name", None),
+        )
+
+        def active(child):
+            return not (
+                suppress_depleted
+                and _is_propulsive_model(child)
+                and not getattr(child, "_depletion_handled", False)
+                and _propellant_depleted(state, getattr(child, "tank_name", None))
+            )
+
+        if hasattr(model, "_acceleration_torque"):
+            if not active(model):
+                return np.zeros(3), np.zeros(3)
+            return model._acceleration_torque(t, r, v, q, omega, state)
+
+        total_acceleration = np.zeros(3)
+        total_torque = np.zeros(3)
+        for child in model._models:
+            if not active(child):
+                continue
+            if getattr(child, "spacecraft_acceleration_model", False):
+                if hasattr(child, "_acceleration_torque"):
+                    acceleration, torque = child._acceleration_torque(
+                        t, r, v, q, omega, state
+                    )
+                    total_acceleration += _as_vector3(acceleration, "acceleration")
+                    total_torque += _as_vector3(torque, "torque")
+                else:
+                    total_acceleration += _as_vector3(
+                        child(spacecraft=state, t=t, r=r, v=v, q=q, omega=omega),
+                        "acceleration",
+                    )
+            if (
+                getattr(child, "spacecraft_torque_model", False)
+                and not getattr(child, "spacecraft_wheel_torque_model", False)
+                and not hasattr(child, "_acceleration_torque")
+            ):
+                evaluator = child.torque if hasattr(child, "torque") else child
+                total_torque += _as_vector3(
+                    evaluator(spacecraft=state, t=t, r=r, v=v, q=q, omega=omega),
+                    "torque",
+                )
+        return total_acceleration, total_torque
+
+    return combined_force_torque
+
+
 def _coast_mass_flow_rate(model, spacecraft, *, tank_name=None):
     def mass_flow_rate(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
         return _evaluate_mass_flow_rate(model, t, r, v, q, omega, mass, wheel_momentum)
@@ -1488,7 +1518,15 @@ def _paired_force_torque_evaluator(acceleration, torque):
     """Return a combined evaluator for one model used in both RHS channels."""
     if acceleration is None or torque is None:
         return None
-    if getattr(acceleration, "_source_model", None) is not getattr(torque, "_source_model", None):
+    acceleration_source = getattr(acceleration, "_source_model", None)
+    torque_source = getattr(torque, "_source_model", None)
+    same_source = acceleration_source is torque_source
+    acceleration_models = getattr(acceleration_source, "_models", None)
+    torque_models = getattr(torque_source, "_models", None)
+    same_model_set = (
+        acceleration_models is not None and acceleration_models is torque_models
+    )
+    if not same_source and not same_model_set:
         return None
     evaluator = getattr(acceleration, "_combined_evaluator", None)
     if evaluator is None or getattr(torque, "_combined_evaluator", None) is None:
