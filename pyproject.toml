@@ -136,6 +136,7 @@ packages = { find = { where = ["."], include = ["ssatk*", "demos*"] } }
 
 [tool.setuptools.package-data]
 demos = ["README.md"]
+"demos.launch" = ["leo_preflight_template.json"]
 "demos.benchmarks" = ["README.md", "orekit/*.java", "orekit/*.xml"]
 ssatk = ["skills.md"]
 "ssatk.plots" = ["*.js", "three_license.txt"]
