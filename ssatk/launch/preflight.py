@@ -507,10 +507,10 @@ def run_launch_preflight(
         ])
         g2_detail = "schema, dependency/resource resolution and initial-state checks; not an ascent"
     except EOPCoverageError as exc:
-        g2_status = "BLOCKED"
+        g2_status = _combined_status([report["gates"]["G1"]["status"], "BLOCKED"])
         g2_detail = str(exc)
     except (KeyError, OSError, TypeError, ValueError) as exc:
-        g2_status = "ERROR"
+        g2_status = _combined_status([report["gates"]["G1"]["status"], "ERROR"])
         g2_detail = f"{type(exc).__name__}: {exc}"
     report["gates"]["G2"] = {"status": g2_status, "detail": g2_detail}
 
