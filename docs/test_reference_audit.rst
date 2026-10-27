@@ -194,6 +194,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_lambert_reference.py,2,R1 R2,Circular arc velocities and SSAPy Kepler boundary propagation,Zero-revolution cases
    tests/test_lambertian_photometry.py,3,R1 R2 R3,Independent Planck quadrature; Lambert phase geometry; solar magnitude,Shared geometric Sun input; apparent-Sun model difference checked separately
    tests/test_launch_gravity_turn.py,1,R1,Known vertical/azimuth/half-turn thrust directions plus gravity,Prescribed steering law
+   tests/test_launch_preflight.py,13,R1 R2 R4 C,Closed-form WGS84 pad position; independent erfa-based EOP rotation and SpacePy pad/speed; offline frame closure; schema/resource/EOP-coverage contracts,Initialization only; not ascent or telemetry validation
    tests/test_low_precision_moon.py,1,R2,Astropy lunar coordinates over 2000-2040,200 samples; 6/3.5 arcmin and 550 km budgets
    tests/test_lunar_rotating_frame.py,1,R1 R4,Earth at negative lunar X and constructed frame vectors,Paired exact circular-ephemeris kinematics in review regressions
    tests/test_magfield_physics.py,22,R1 R2 R3 R4,Geopack; ppigrf; dipole field theory; IRBEM when present; Astropy star frames,Contains approximate geographic/model sanity bounds; AE8/AP8 cache and IRBEM optional
@@ -211,6 +212,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_orbital_maneuver_reference_cases.py,5,R1 R3,Curtis/Bate transfer equations; plane-change impulse; rocket equation; Gauss node rate,Textbook numeric anchors recomputed with configured Earth constants
    tests/test_orekit_j2_external.py,1,R2 R3,Orekit 10.3.1 Holmes-Featherstone EIGEN-6S J2 trajectory,Optional Java/data; unavailable reference is explicitly skipped
    tests/test_packaged_eop_reference.py,2,R2 R3,Packaged finals2000A versus bundled IERS-B/C04 UT1,0.5 ms separate-series budget; historical leap seconds
+   tests/test_packaged_motor_burn.py,1,R1 R4,Tsiolkovsky rocket equation; propellant mass balance; independent trapezoid impulse versus catalog totImpulseNs,Isolated fixed-axis burn with inferred constant Isp; not launch qualification
    tests/test_plot_earth_rotation.py,4,R2,Astropy GCRS/ITRS/WGS84; two tests configure Astropy with the packaged finals2000A.all,1 mas packaged-EOP budget for the eci_to_ecf_matrix test (measured 0.30-0.64 mas: the dX/dY offsets Astropy omits); 0.5 arcsec budget for the texture-angle and WGS84 tests; 2 cm packaged-EOP budget for the groundtrack_enhanced test; no rendering correctness claim
    tests/test_plot_sun_and_stars.py,3,R2,Astropy apparent Sun and proper-motion/TEME transformations,Geometric/apparent Sun difference budget 60 arcsec
    tests/test_propagators.py,5,R1 R5,Circular orbit throughout arc; gravity Jacobian; rocket equation; wheel momentum,Specified ideal forces and simple body
