@@ -4,13 +4,16 @@ from ._body_surfaces import BodySurface, body_rotation, body_disc
 
 from .rendering import _with_low_spec
 
+from contextlib import contextmanager
 from pathlib import Path
+from types import MethodType
 
 import matplotlib.cm as _cm
 import matplotlib.pyplot as _plt
 from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter
 from matplotlib.collections import LineCollection
 import numpy as _np
+from mpl_toolkits.mplot3d import proj3d
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from ssapy import get_body as _get_body
@@ -256,7 +259,8 @@ def orbit_animation(
     )
     writer = _animation_writer(suffix, fps=fps, bitrate=bitrate)
     try:
-        animation.save(save_path, writer=writer, dpi=dpi)
+        with _no_idle_redraw(fig):
+            animation.save(save_path, writer=writer, dpi=dpi)
         if show:
             _plt.show()
     finally:
@@ -305,6 +309,29 @@ def _animation_writer(suffix, *, fps, bitrate):
         codec="libx264",
         extra_args=["-pix_fmt", "yuv420p"],
     )
+
+
+@contextmanager
+def _no_idle_redraw(fig):
+    """Skip the unused idle-draw pass between animation frames while saving.
+
+    ``Animation.save`` calls ``canvas.draw_idle()`` after every frame (via
+    ``_post_draw``) and then immediately calls ``Figure.savefig`` to grab the
+    frame, which performs its own independent full draw to rasterize the
+    output. Nothing ever reads the pixels from the idle draw before savefig
+    overwrites them, so on a non-interactive Agg canvas -- where draw_idle
+    runs synchronously rather than deferring to a GUI event loop -- that call
+    is pure waste. It roughly doubles the cost of every frame for the heavy
+    textured/occluded 3-D scenes this module draws. Skipping it changes no
+    saved pixel.
+    """
+    canvas = fig.canvas
+    original = canvas.draw_idle
+    canvas.draw_idle = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        canvas.draw_idle = original
 
 
 def _animation_indices(r_list, *, max_frames):
@@ -366,6 +393,37 @@ def _prepare_animation_tracks(r_list, t_list, *, frame, lunar_transform, pad, in
     }
 
 
+def _animation_earth_background(fig):
+    """A ground-track basemap sized for this figure, not the raw 8K source.
+
+    ``load_earth_file`` returns the full gallery texture untouched, which is
+    appropriate for a still image drawn once. An animation panel redraws its
+    static background on every frame (Matplotlib has no per-artist skip for a
+    full, non-blit figure draw), so handing it the untouched map resampled the
+    same ~33-megapixel source hundreds of times for a target that never
+    exceeds the figure's own pixel size. Downsampling once to double the
+    figure's pixel dimensions keeps texel density well above what any panel
+    in this figure can display while cutting that repeated resample cost by
+    more than an order of magnitude.
+    """
+    from PIL import Image as _PILImage
+
+    from .plotutils import load_earth_file
+
+    earth = load_earth_file()
+    if not isinstance(earth, _PILImage.Image):
+        return earth
+    width_in, height_in = fig.get_size_inches()
+    # Never upsample either axis: cap each target dimension at the source size.
+    target = (
+        min(earth.size[0], max(1, round(2*width_in*fig.dpi))),
+        min(earth.size[1], max(1, round(2*height_in*fig.dpi))),
+    )
+    if target != earth.size:
+        earth = earth.resize(target, _PILImage.Resampling.BOX)
+    return earth
+
+
 def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
     stn = prepared["stn"]
     unit_label = prepared["unit_label"]
@@ -374,8 +432,7 @@ def _draw_animation_backgrounds(axes, views, prepared, title, textcolor):
     for view in views:
         ax = axes[view]
         if view == "groundtrack":
-            from .plotutils import load_earth_file
-            ax.imshow(load_earth_file(), extent=(-180, 180, -90, 90),
+            ax.imshow(_animation_earth_background(ax.figure), extent=(-180, 180, -90, 90),
                       origin="upper", aspect="auto", zorder=0)
             ax.set_xlim(-180, 180)
             ax.set_ylim(-90, 90)
@@ -536,6 +593,32 @@ def _set_3d_limits(ax, bounds):
     ax.set_box_aspect([1, 1, 1])
 
 
+def _fast_line3d_projection(self):
+    """Batch-projected stand-in for ``Line3DCollection.do_3d_projection``.
+
+    Matplotlib's own implementation projects each segment with a separate
+    Python-level call, which is the dominant per-frame cost once a
+    constellation-sized tail collection carries thousands of segments: every
+    segment here is an independent 2-point pair sampled through the same
+    camera matrix, so the whole batch can go through ``axes.M`` at once
+    instead. This produces the identical coordinates, just without that
+    per-segment loop. Anything outside that shape -- axes-limit clipping, or
+    a segment that is not a plain pair -- defers to Matplotlib's own method.
+    """
+    # These are private Matplotlib attributes; if a release renames them,
+    # fall back to Matplotlib's own projection instead of failing.
+    try:
+        segments, clipped, camera = self._segments3d, self._axlim_clip, self.axes.M
+    except AttributeError:
+        return Line3DCollection.do_3d_projection(self)
+    if clipped or not len(segments) or any(len(segment) != 2 for segment in segments):
+        return Line3DCollection.do_3d_projection(self)
+    points = _np.asarray(segments, dtype=float).reshape(-1, 3)
+    xs, ys, zs = proj3d.proj_transform(points[:, 0], points[:, 1], points[:, 2], camera)
+    LineCollection.set_segments(self, list(_np.column_stack((xs, ys)).reshape(-1, 2, 2)))
+    return float(zs.min())
+
+
 class _ConstellationArtists:
     """Batch common-epoch globe/map tracks into two collections per panel.
 
@@ -552,6 +635,10 @@ class _ConstellationArtists:
             if view == "globe":
                 self.heads[view] = ax.scatter([], [], [], s=4, depthshade=False, zorder=3)
                 self.tails[view] = Line3DCollection(_np.empty((0, 2, 3)), linewidths=.45, zorder=2)
+                # A constellation's tail segments number in the thousands;
+                # Matplotlib's per-segment projection loop otherwise dominates
+                # every frame's render time.
+                self.tails[view].do_3d_projection = MethodType(_fast_line3d_projection, self.tails[view])
                 # Bounds already include all tracks. Matplotlib 3.11 cannot
                 # autoscale an empty collection before its first frame.
                 ax.add_collection3d(self.tails[view], autolim=False)
