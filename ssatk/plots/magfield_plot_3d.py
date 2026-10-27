@@ -771,7 +771,7 @@ def _model_provenance(date, external_field, kp, belt_style, sw_bz_nT, sw_dp_nPa,
         lines.append("BELTS  IRENE AE9/AP9, OMNIDIRECTIONAL INTEGRAL MEAN" if radiation_model == "irene"
                      else "BELTS  NASA AE-8 / AP-8 MAX, CLIMATOLOGICAL MEAN")
         if radiation_model == "irene":
-            lines.append("IRENE IGRF DATABASE FIXED AFTER 2020; SEP/GCR EXCLUDED")
+            lines.append("SEP/GCR EXCLUDED")
     lines.append("EARTH  WGS84 ELLIPSOID  &#183;  SKY  J2000 CATALOGUE, PRECESSED TO EPOCH")
     for key in ("geo", "geo_storm", "depth", "sheath", "boundary", "sky"):
         when, what = VALIDATION[key]
@@ -1206,7 +1206,7 @@ def plot_magfield_3d(
         showarrow=False))
     if show_van_allen and belt_style == "flux":
         _annotations.append(dict(x=0.01, y=0.105, xref='paper', yref='paper', xanchor='left',
-            text=('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED; IRENE IGRF FIXED AFTER 2020'
+            text=('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED'
                   if radiation_model == "irene" else 'BELTS: LEGACY AE-8/AP-8 MEAN FLUX'),
             font=dict(color=_INK_SOFT, size=10, family='Helvetica, Arial'), showarrow=False))
     if show_provenance:

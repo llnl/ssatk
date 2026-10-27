@@ -407,7 +407,7 @@ def plot_van_allen_3d(
     # ------------------------------------------------------------------
     # Annotations
     # ------------------------------------------------------------------
-    src = {'_done': ('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED; IRENE IGRF FIXED AFTER 2020'
+    src = {'_done': ('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED'
                      if radiation_model == "irene" else
                      'BELTS: NASA AE-8/AP-8 CLIMATOLOGICAL MEAN FLUX ON IGRF FIELD GEOMETRY '
                      '&#183; MEASURED ~18x ABOVE GOES &gt;2.1 MeV ELECTRONS, WHICH VARY 82x IN 8 DAYS'),

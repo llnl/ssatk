@@ -785,11 +785,10 @@ Missing IRENE raises an error instead of substituting AE-8/AP-8.
 ``radiation_model="ae8ap8"`` explicitly selects the legacy backend.
 
 IRENE evaluates its own internal magnetic-coordinate database; the rendered
-field lines remain IGRF/T96. The supplied IRENE field database is fixed after
-2020, and mean flux is a statistical environment, not a forecast of current
-particle observations. SEP/GCR are excluded. The display grid covers
-1.02–7 Earth radii and uses interpolation to draw flux contours; it does not
-depict a sharply bounded physical belt.
+field lines remain IGRF/T96. Mean flux is a statistical environment, not a
+forecast of current particle observations. SEP/GCR are excluded. The display
+grid covers 1.02–7 Earth radii and uses interpolation to draw flux contours; it
+does not depict a sharply bounded physical belt.
 
 With ``IRENE_HOME`` configured, run
 ``python -m demos.space_environment.demo_magfield_plot`` for the field and
