@@ -13,15 +13,13 @@ def accel_plane(r, v=None, magnitude=None):
     r : array_like, shape (3,)
         Position vector in meters.
     v : array_like, shape (3,)
-        Velocity vector in meters per second.
+        Velocity vector in meters per second; a scalar is accepted as
+        magnitude shorthand in direct calls.
     magnitude : float
         Desired acceleration magnitude in m/s^2.
         Positive → along the direction of motion;
         negative → opposite direction.
-        Required: there is no fallback to ``v``. ``accel_add`` maps a
-        parameter named ``v`` to the real velocity vector, so a fallback
-        here would silently turn that vector into ``magnitude`` and drop
-        the real velocity.
+        Required when composing the helper with ``accel_add``.
 
     Returns
     -------
@@ -30,7 +28,7 @@ def accel_plane(r, v=None, magnitude=None):
     """
     if magnitude is None:
         if v is not None and np.ndim(v) == 0:
-            # Preserve the historical accel_plane(r, magnitude) form.
+            # Support the direct scalar magnitude shorthand.
             magnitude = v
             v = None
         else:

@@ -15,13 +15,12 @@ def accel_inclination(r, v=None, magnitude=None):
     r : array_like, shape (3,)
         Position (radial) vector in meters.
     v : array_like, shape (3,)
-        (Unused; kept for signature consistency.)
+        Unused in direct calls; a scalar here is accepted as magnitude
+        shorthand.
     magnitude : float
         Desired magnitude of the inclination-change acceleration in m/s^2.
         Positive -> northward; negative -> southward.
-        Required: there is no fallback to ``v``. ``accel_add`` maps a
-        parameter named ``v`` to the real velocity vector, so a fallback
-        here would silently turn that vector into ``magnitude``.
+        Required when composing the helper with ``accel_add``.
 
     Returns
     -------
@@ -30,7 +29,7 @@ def accel_inclination(r, v=None, magnitude=None):
     """
     if magnitude is None:
         if v is not None and np.ndim(v) == 0:
-            # Preserve the historical accel_inclination(r, magnitude) form.
+            # Support the direct scalar magnitude shorthand.
             magnitude = v
         else:
             raise TypeError(
