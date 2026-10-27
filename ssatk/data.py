@@ -12,7 +12,6 @@ installs its own import package with files below ``<package>/data``:
 * ``ssa-data-benchmarks`` → ``ssa_data_benchmarks`` (``[benchmarks]`` extra)
 
 When no ``package`` is given, the helpers below search these packages in order
-(then any user-supplied legacy package, if present)
 and return the first match. This module wraps ``importlib.resources`` so
 toolkit functions read those files from a normal wheel install without Git LFS,
 git submodules, or runtime GitHub pulls.
@@ -41,9 +40,6 @@ DEFAULT_DATA_PACKAGES = (
 )
 """Split data import packages, searched in this order when ``package`` is None."""
 
-LEGACY_DATA_PACKAGE = "ssapy_data"
-"""Import name of the pre-split single data package, searched last if installed."""
-
 DEFAULT_DATA_PACKAGE = DEFAULT_DATA_PACKAGES[0]
 """Kept for backward compatibility; prefer ``package=None`` (search all)."""
 
@@ -60,7 +56,7 @@ _DEFAULT_INSTALL_HINT = (
 
 
 class DataPackageNotFoundError(ModuleNotFoundError):
-    """Raised when the configured SSAPy data package is not installed."""
+    """Raised when no requested ``ssa-data-*`` package is installed."""
 
 
 class DataResourceNotFoundError(FileNotFoundError):
@@ -70,16 +66,16 @@ class DataResourceNotFoundError(FileNotFoundError):
 def data_package_available(package: str | None = None) -> bool:
     """Return ``True`` when the named data package (or, by default, any) is installed."""
 
-    names = (package,) if package else (*DEFAULT_DATA_PACKAGES, LEGACY_DATA_PACKAGE)
+    names = (package,) if package else DEFAULT_DATA_PACKAGES
     return any(find_spec(name) is not None for name in names)
 
 
 def installed_data_packages() -> tuple[str, ...]:
-    """Return the split (and legacy) data import packages that are installed."""
+    """Return the split data import packages that are installed."""
 
     return tuple(
         name
-        for name in (*DEFAULT_DATA_PACKAGES, LEGACY_DATA_PACKAGE)
+        for name in DEFAULT_DATA_PACKAGES
         if find_spec(name) is not None
     )
 
@@ -100,8 +96,8 @@ def data_resource(
         paths and ``..`` traversal are rejected.
     package
         Import package that owns the resource. ``None`` (the default) searches
-        :data:`DEFAULT_DATA_PACKAGES`, then :data:`LEGACY_DATA_PACKAGE`, and
-        returns the first package that contains ``relative_path``.
+        :data:`DEFAULT_DATA_PACKAGES` and returns the first package that
+        contains ``relative_path``.
     data_root
         Directory inside ``package`` that contains data resources.
     must_exist
@@ -111,7 +107,7 @@ def data_resource(
 
     root_parts = _safe_parts(data_root)
     rel_parts = _safe_parts(relative_path)
-    candidates = (package,) if package else (*DEFAULT_DATA_PACKAGES, LEGACY_DATA_PACKAGE)
+    candidates = (package,) if package else DEFAULT_DATA_PACKAGES
 
     installed = []
     for name in candidates:
@@ -147,7 +143,7 @@ def resource_package(
     """Return the import package that :func:`data_resource` resolves ``relative_path`` to."""
 
     rel_parts = _safe_parts(relative_path)
-    for name in (*DEFAULT_DATA_PACKAGES, LEGACY_DATA_PACKAGE):
+    for name in DEFAULT_DATA_PACKAGES:
         try:
             resource = _package_root(name)
         except DataPackageNotFoundError:

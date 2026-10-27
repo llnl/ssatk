@@ -115,13 +115,13 @@ def main() -> None:
     for kind, url, expected in INPUTS:
         _download(url, directories[kind], expected)
     prepare_earth_texture()
-    # Normals retain the native 5760x2880 LOLA grid. The gallery uses a 4K
-    # albedo and 720x360 horizon grid to limit browser memory and build time.
+    # Preserve the native 8192x4096 LROC colour map and 5760x2880 LOLA
+    # normals. The independent shadow-horizon grid remains 720x360.
     moon_maps.main([
         "--outdir", str(directories["moon"]),
         "--dem", str(directories["moon"] / moon_maps.DEM_URL.rsplit("/", 1)[-1]),
         "--albedo", str(directories["moon"] / moon_maps.ALBEDO_URL.rsplit("/", 1)[-1]),
-        "--albedo-max", "4096", "--horizon-width", "720", "--n-step", "128",
+        "--albedo-max", "8192", "--horizon-width", "720", "--n-step", "128",
     ])
 
 

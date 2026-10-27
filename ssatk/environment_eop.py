@@ -12,11 +12,27 @@ from astropy.time import Time
 from .data import data_path, resource_package
 
 __all__ = [
+    "EarthOrientationExtrapolationWarning",
     "EarthOrientationRecord",
     "EarthOrientationTable",
     "load_packaged_eop",
     "read_eop",
 ]
+
+
+class EarthOrientationExtrapolationWarning(UserWarning):
+    """An epoch fell outside the packaged EOP table and was held constant.
+
+    Raised by SSATK's lenient GCRF<->ITRF functions (``gcrf_to_itrf``,
+    ``itrf_to_gcrf``, ``gcrf_to_itrf_astropy``, ``eci_to_ecf_matrix``, and the
+    ``geodetic``/``yastropy`` conversions) when an epoch is outside
+    :attr:`EarthOrientationTable.start_gps`/:attr:`EarthOrientationTable.end_gps`:
+    rather than raise, they hold the nearest table record's UT1-UTC, polar
+    motion and celestial-pole offsets constant and warn once per call. The
+    stricter functions (``gcrs_to_itrs_matrix``/``gcrs_to_itrs_matrix_and_rate``,
+    ``gcrf_to_itrf_eop``, ``itrf_to_gcrf_eop``) still raise ``ValueError``
+    instead.
+    """
 
 
 @dataclass(frozen=True)

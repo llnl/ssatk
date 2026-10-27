@@ -86,6 +86,11 @@ def set_equal_3d(ax, *arrays_km):
 
 def plot_earth(ax):
     radius_km = EARTH_RADIUS / 1000.0
+    from ssatk.plots.rendering import gallery_max_textures
+    if gallery_max_textures():
+        from ssatk.plots._body_surfaces import BodySurface
+        BodySurface(ax, "earth", radius_km, zorder=0)
+        return
     u = np.linspace(0.0, 2.0 * np.pi, 36)
     v = np.linspace(0.0, np.pi, 18)
     x = radius_km * np.outer(np.cos(u), np.sin(v))

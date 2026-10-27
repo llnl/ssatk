@@ -1,53 +1,78 @@
+import erfa
 import numpy as np
-from astropy import units as u
-from astropy.coordinates import CartesianRepresentation, EarthLocation, GCRS, ITRS
 from astropy.time import Time
-from ssapy import groundTrack
 from ssapy.orbit import EarthObserver, Orbit
 
 from ..constants import EARTH_MU, EARTH_RADIUS
 from ..time_functions import to_gps
 from ..yastropy import astropy_surface_rv
+from ._earth_rotation import gcrs_to_itrs_matrix, gcrs_to_itrs_matrix_and_rate
+from .earth_fixed import _time_array
+
+_WGS84 = 1  # erfa ellipsoid identifier for gc2gd/gd2gc
 
 
-def gcrf_to_llh(r_gcrf, t):
-    """Convert GCRF position(s) to geodetic ``(lon_deg, lat_deg, height_m)``."""
-    r_input = np.asarray(r_gcrf)
+def gcrf_to_llh(r_gcrf, t, *, allow_predicted: bool = True):
+    """Convert GCRF position(s) to geodetic ``(lon_deg, lat_deg, height_m)``.
+
+    ``t`` is GPS seconds or an astropy Time, scalar or one per row of
+    ``r_gcrf``. Uses the shared IAU 2006/2000A route
+    (:mod:`ssatk.coordinates._earth_rotation`) to get ITRF, then WGS84
+    geodetic coordinates from ``erfa.gc2gd``. ``allow_predicted`` defaults
+    ``True``; see ``ssatk.coordinates.earth_fixed``'s module docstring. An
+    epoch outside the packaged EOP table holds the nearest end record's
+    values and warns once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
+    """
+    r_input = np.asarray(r_gcrf, dtype=float)
     r = np.atleast_2d(r_input)
     if r.shape[1] != 3:
         raise ValueError("r_gcrf must be shape (3,) or (N,3)")
 
-    cart = CartesianRepresentation(
-        x=r[:, 0] * u.m,
-        y=r[:, 1] * u.m,
-        z=r[:, 2] * u.m,
-    )
-    itrs = GCRS(cart, obstime=t).transform_to(ITRS(obstime=t))
-    xyz = itrs.cartesian.xyz.to(u.m).value.T
-    loc = EarthLocation(x=xyz[..., 0] * u.m, y=xyz[..., 1] * u.m, z=xyz[..., 2] * u.m)
+    gps = _time_array(to_gps(t), len(r))
+    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted, extrapolate=True)
+    r_itrf = np.einsum("nij,nj->ni", rotation, r)
+    lon, lat, height = erfa.gc2gd(_WGS84, r_itrf)
 
-    lon = loc.lon.to_value(u.deg)
-    lat = loc.lat.to_value(u.deg)
-    height = loc.height.to_value(u.m)
+    lon = np.degrees(lon)
+    lat = np.degrees(lat)
     if r_input.ndim == 1:
         return lon.item(), lat.item(), height.item()
     return lon, lat, height
 
 
 def gcrf_to_lonlat(r_gcrf: np.ndarray, t: np.ndarray):
-    """Convert GCRF position(s) to ``(lon_deg, lat_deg, height_m)`` using SSAPy."""
+    """Convert GCRF position(s) to ``(lon_deg, lat_deg, height_m)``.
+
+    Thin wrapper around :func:`gcrf_to_llh` for callers that always pass
+    array-like ``r_gcrf``/``t``; previously called ``ssapy.groundTrack``
+    directly (SSAPy's IAU 1976/1980 route) instead of sharing SSATK's own.
+    """
     t = np.atleast_1d(t)
     r_gcrf = np.atleast_2d(r_gcrf)
-    lon, lat, height = groundTrack(r_gcrf, to_gps(t), format="geodetic")
-    return np.degrees(lon), np.degrees(lat), height
+    lon, lat, height = gcrf_to_llh(r_gcrf, t)
+    return np.asarray(lon), np.asarray(lat), np.asarray(height)
 
 
-def llh_to_gcrf(lon: float, lat: float, t: Time, height: float = 0.0):
-    """Convert geodetic ``(lon_deg, lat_deg, height_m)`` to GCRF position/velocity."""
-    loc = EarthLocation(lon=lon * u.deg, lat=lat * u.deg, height=height * u.m)
-    gcrs = loc.get_gcrs(obstime=t)
-    r_gcrf = gcrs.cartesian.xyz.to(u.m).value
-    v_gcrf = gcrs.cartesian.differentials["s"].d_xyz.to(u.m / u.s).value
+def llh_to_gcrf(lon: float, lat: float, t: Time, height: float = 0.0, *, allow_predicted: bool = True):
+    """Convert geodetic ``(lon_deg, lat_deg, height_m)`` to GCRF position/velocity.
+
+    ``t`` is a scalar GPS time or astropy Time. The site is fixed in ITRF
+    (``erfa.gd2gc``, WGS84); its GCRF position and velocity come from the
+    shared IAU 2006/2000A rotation and its time derivative
+    (:mod:`ssatk.coordinates._earth_rotation`): ``r = R^T r_itrf`` and
+    ``v = (dR/dt)^T r_itrf`` (the site's ITRF velocity is zero).
+    ``allow_predicted`` defaults ``True``; see
+    ``ssatk.coordinates.earth_fixed``'s module docstring. An epoch outside
+    the packaged EOP table holds the nearest end record's values and warns
+    once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
+    """
+    r_itrf = np.asarray(erfa.gd2gc(_WGS84, np.radians(lon), np.radians(lat), height), dtype=float)
+    gps = to_gps(t)
+    rotation, rate = gcrs_to_itrs_matrix_and_rate(gps, allow_predicted=allow_predicted, extrapolate=True)
+    r_gcrf = rotation.T @ r_itrf
+    v_gcrf = rate.T @ r_itrf
     return r_gcrf, v_gcrf
 
 

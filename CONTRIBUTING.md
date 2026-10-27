@@ -33,7 +33,6 @@ Use the existing top-level structure for new work:
 | `scripts/` | Maintainer/development utilities, not importable package code. |
 | `.github/` | GitHub Actions, issue/PR templates, and ownership policy. |
 | `AGENTS.md` | Working rules and checks for changes to this repository. |
-| `skills.md` | Concise guide to using the package from code. |
 
 Do not introduce new top-level directories or project-level configuration files
 unless the pull request explains why the existing layout cannot support the
@@ -58,7 +57,7 @@ builds media artifacts from source during CI.
 Before requesting review, run the focused checks that match the change:
 
 ```bash
-python -m pip install -e .[dev]
+python -m pip install -e ".[dev,geomagnetics,atmosphere,propulsion]"
 node --check ssatk/plots/satellite_viewer_scene.js  # requires Node.js 20+
 pytest tests
 python -m ssatk.run_all_demos

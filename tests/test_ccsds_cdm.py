@@ -114,16 +114,28 @@ def test_supported_frames_transform_to_gcrf(frame):
     obj = message.object1
     assert obj.reference_frame == frame
     import erfa
+    from astropy import units as u
     from astropy.time import TimeDelta
-    from astropy.utils.iers import earth_orientation_table
-    # ERFA matrices form an independent path from the Astropy frame graph
-    # used by the CDM reader. Check both positions and rotating velocities.
+    from ssatk.environment_eop import load_packaged_eop
+    # The ITRF reference is assembled here from low-level ERFA routines
+    # (CIP X,Y plus the IERS dX,dY offsets, s06, c2ixys, era00, sp00, pom00,
+    # c2tcio) with SSATK's packaged EOP, independent of the reader's code
+    # path. Check both positions and rotating velocities.
+    eop = load_packaged_eop()
+    arcsec = np.pi / (180.0 * 3600.0)
+
     def rotation(time):
         if frame == "EME2000":
             return erfa.bp00(2451545.0, 0.0)[0].T
-        xp, yp = earth_orientation_table.get().pm_xy(time)
-        return erfa.c2t06a(time.tt.jd1, time.tt.jd2, time.ut1.jd1, time.ut1.jd2,
-                          xp.to_value("rad"), yp.to_value("rad")).T
+        record = eop.at(time, allow_predicted=True)
+        tt, ut1 = time.tt, time.utc + record.ut1_minus_utc_s * u.s
+        x, y, _ = erfa.xys06a(tt.jd1, tt.jd2)
+        x += (record.dx_mas or 0.0) * arcsec / 1000.0
+        y += (record.dy_mas or 0.0) * arcsec / 1000.0
+        c2i = erfa.c2ixys(x, y, erfa.s06(tt.jd1, tt.jd2, x, y))
+        pom = erfa.pom00(record.polar_motion_x_arcsec * arcsec, record.polar_motion_y_arcsec * arcsec,
+                         erfa.sp00(tt.jd1, tt.jd2))
+        return erfa.c2tcio(c2i, erfa.era00(ut1.jd1, ut1.jd2), pom).T
     matrix = rotation(obj.epoch)
     dt = TimeDelta(.5, format="sec")
     rate = rotation(obj.epoch+dt) - rotation(obj.epoch-dt)

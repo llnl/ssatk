@@ -7,7 +7,7 @@ See ``docs/spacecraft_view.rst`` for camera, interpolation, and rendering limits
 
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 from ._body_surfaces import BODY_COLORS
 
 from functools import lru_cache
@@ -129,20 +129,32 @@ def _rasterize_mesh(uv, depth, triangles, colors, width, height, boundaries=None
     return image, zbuffer
 
 
-@lru_cache(maxsize=2)
 def _texture(name):
-    from PIL import Image
+    from ._textures import earth_texture_path, moon_texture_path
     from .starfield import find_data_file
 
-    filename = "earth_day_2048.jpg" if name == "earth" else "moon.png"
-    path = find_data_file(filename)
+    full = gallery_max_textures()
+    if full:
+        path = earth_texture_path() if name == "earth" else moon_texture_path()
+    else:
+        path = find_data_file("earth_day_2048.jpg" if name == "earth" else "moon.png")
     if path is None:
-        warnings.warn(f"Missing {filename}; rendering an untextured {name} sphere", stacklevel=2)
+        warnings.warn(f"Missing {name} texture; rendering an untextured {name} sphere", stacklevel=2)
         return None
+    path = Path(path)
+    return _read_texture(str(path), path.stat().st_mtime_ns, full)
+
+
+@lru_cache(maxsize=2)
+def _read_texture(path, modified, full):
+    from PIL import Image
+
     with Image.open(path) as image:
         image = image.convert("RGB")
-        image.thumbnail((1024, 512))
-        return np.asarray(image, dtype=float) / 255
+        if not full:
+            image.thumbnail((1024, 512))
+        # Normalize only the visible texels, not an entire 8K float64 image.
+        return np.asarray(image)
 
 
 class SpacecraftView:
@@ -245,7 +257,7 @@ class SpacecraftView:
             self._shot = _CameraPath(spec, self.r, self._camera_bounds, times=self.gps,
                                      default_distance=5*self.mesh_radius)
         self.low_spec = is_low_spec(low_spec)
-        self.stars, self.textures, self.title = bool(stars), bool(textures) and not self.low_spec, str(title)
+        self.stars, self.textures, self.title = bool(stars), (bool(textures) or gallery_max_textures()) and not self.low_spec, str(title)
         self._star_data = None
         if self.stars:
             from .starfield import star_directions
@@ -346,7 +358,7 @@ class SpacecraftView:
                 latitude = np.arcsin(np.clip(fixed[:, 2], -1, 1))
                 rows = np.clip(((0.5 - latitude / np.pi) * texture.shape[0]).astype(int), 0, texture.shape[0] - 1)
                 cols = (((longitude / (2 * np.pi) + 0.5) % 1) * texture.shape[1]).astype(int)
-                color = texture[rows, cols]
+                color = texture[rows, cols] / 255.
             color *= (0.055 + 0.945 * light[:, None] ** 0.65)
             if name == "earth":
                 limb = (1 - np.clip(np.sum(normal * -rays[mask], axis=1), 0, 1)) ** 8

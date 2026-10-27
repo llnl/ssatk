@@ -12,7 +12,7 @@ def calculate_errors(data: np.ndarray, CI: float = 0.05) -> np.ndarray:
     Returns:
     tuple: A tuple containing the error bounds and the median of the data.
 
-    Author: Travis Yeager (yaeger7@llnl.gov)
+    Author: Travis Yeager (yeager7@llnl.gov)
     """
     data_median = []
     # Drop NaNs before sorting: np.sort puts them last, so they would shift the
