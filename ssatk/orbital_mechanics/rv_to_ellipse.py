@@ -108,6 +108,7 @@ def rv_to_ellipse(
     v_samples[0] = v
 
     if total > 1:
+        sample_ta = ta
         if elliptical:
             # uniform Δf through 0→2π, excluding the initial point
             f_steps = np.linspace(0, 2*np.pi, total, endpoint=False)[1:]
@@ -116,17 +117,16 @@ def rv_to_ellipse(
             cos_f_lim = (p/(2*r_mag) - 1)/e
             cos_f_lim = np.clip(cos_f_lim, -1.0, 1.0)
             f_lim = np.arccos(cos_f_lim)          # true anomaly where r = 2|r0|, outbound
-            # ta is stored in [0, 2 pi); an inbound state has a negative true
-            # anomaly. The steps are increments from ta, so they run to f_lim - ta.
-            ta_signed = ta - 2*np.pi if ta > np.pi else ta
-            f_steps = np.linspace(0, f_lim - ta_signed, total)[1:]
-            ta = ta_signed
+            # Use a signed anomaly for sampling inbound hyperbolic states,
+            # without changing the state-derived metadata anomaly.
+            sample_ta = ta - 2*np.pi if ta > np.pi else ta
+            f_steps = np.linspace(0, f_lim - sample_ta, total)[1:]
 
         # generate the remaining samples
         # u_hat points at r0, which sits at true anomaly ta, so a sample at
         # true anomaly ta + df lies at angle df from u_hat.
         for k, df in enumerate(f_steps, start=1):
-            f = ta + df
+            f = sample_ta + df
             r_k = p / (1 + e*np.cos(f))
             r_hat = np.cos(df)*u_hat + np.sin(df)*v_hat
             t_hat = -np.sin(df)*u_hat + np.cos(df)*v_hat
@@ -138,7 +138,9 @@ def rv_to_ellipse(
             v_samples[k] = v_r*r_hat + v_t*t_hat
 
         # relative times from Kepler's equation
-        t_rel[1:] = _time_since(ta, ta + f_steps, e=e, a=a, p=p, mu=mu)
+        t_rel[1:] = _time_since(
+            sample_ta, sample_ta + f_steps, e=e, a=a, p=p, mu=mu
+        )
 
     # ── absolute times array ─────────────────────────────────────────
     if t0 is not None:
