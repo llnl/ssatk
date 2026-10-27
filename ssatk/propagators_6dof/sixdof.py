@@ -1360,6 +1360,7 @@ def _bind_spacecraft_acceleration(model, spacecraft, *, suppress_depleted=True):
         acceleration.accepts_mass = True
         acceleration.accepts_wheel_momentum = True
         acceleration._source_model = model
+        acceleration._binding_key = (id(spacecraft), bool(suppress_depleted))
         if hasattr(model, "_acceleration_torque") or hasattr(model, "_models"):
             acceleration._combined_evaluator = _make_combined_evaluator(
                 model, spacecraft, suppress_depleted
@@ -1394,6 +1395,7 @@ def _bind_spacecraft_torque(model, spacecraft, *, suppress_depleted=True):
         torque.accepts_mass = True
         torque.accepts_wheel_momentum = True
         torque._source_model = model
+        torque._binding_key = (id(spacecraft), bool(suppress_depleted))
         if hasattr(model, "_acceleration_torque") or hasattr(model, "_models"):
             torque._combined_evaluator = _make_combined_evaluator(
                 model, spacecraft, suppress_depleted
@@ -1521,6 +1523,8 @@ def _evaluate_acceleration(model, t, r, v, q, omega, mass=None, wheel_momentum=N
 def _paired_force_torque_evaluator(acceleration, torque):
     """Return a combined evaluator for one model used in both RHS channels."""
     if acceleration is None or torque is None:
+        return None
+    if getattr(acceleration, "_binding_key", None) != getattr(torque, "_binding_key", None):
         return None
     acceleration_source = getattr(acceleration, "_source_model", None)
     torque_source = getattr(torque, "_source_model", None)
