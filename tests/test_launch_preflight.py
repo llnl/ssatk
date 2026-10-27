@@ -9,10 +9,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import astropy.units as u
+from astropy.coordinates import EarthLocation
 from astropy.time import Time
 
-from ssatk.coordinates.earth_fixed import itrf_to_gcrf_eop
-from ssatk.environment_eop import load_packaged_eop
 from ssatk.launch.preflight import (
     EOPCoverageError,
     LAUNCH_CONVENTIONS,
@@ -209,24 +209,31 @@ def test_launch_site_state_velocity_matches_earth_rotation():
         assert state["closure"]["velocity_m_s"] < 1.0e-3
 
 
-def test_launch_site_state_matches_independent_eop_rotation():
-    """R2: compare against SSATK's independent erfa-based ITRF->GCRF path
-    (``itrf_to_gcrf_eop``: IAU 1976/1980 precession-nutation plus GST94),
-    fed the same packaged EOP snapshot, instead of the Astropy ITRS<->GCRS
-    implementation ``launch_site_state`` uses. The two models differ by
-    about 0.6-1.4 m at the surface for 2020-2024 (measured here); a 5 ms
-    UT1 error moves a Cape Canaveral-latitude pad by about 2 m, so a 2.0 m
-    tolerance still catches a UT1/EOP mistake such as Astropy's silent
-    UT1-UTC=0 fallback for an uncovered epoch.
+def test_launch_site_state_matches_astropy_with_packaged_eop():
+    """R2: compare against Astropy's own ITRS->GCRS implementation
+    (EarthLocation.get_gcrs_posvel), fed the same packaged finals2000A.all,
+    instead of SSATK's Earth-rotation route that launch_site_state uses.
+    Measured residuals for these pads and epochs are 6-22 mm and about
+    2e-5 m/s, almost entirely the IERS dX/dY celestial-pole offsets that
+    SSATK applies and Astropy's built-in transform omits. The 5 cm budget
+    still catches a UT1 error of about 0.1 ms at these latitudes.
     """
+    from astropy.utils import iers
+
+    from ssatk.data import data_path
+
+    with data_path("environment/eop/finals2000A.all") as path:
+        table = iers.IERS_A.open(str(path))
     epoch = Time(_OBSERVED_EPOCH, scale="utc")
-    eop = load_packaged_eop()
     for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
         state = launch_site_state(site, epoch)
-        itrf_position = np.array([state["itrf_position_m"]])
-        independent_gcrf = itrf_to_gcrf_eop(itrf_position, epoch.gps, eop=eop, allow_predicted=False)[0]
-        residual_m = np.linalg.norm(independent_gcrf - np.array(state["gcrf_position_m"]))
-        assert residual_m == pytest.approx(0.0, abs=2.0)
+        location = EarthLocation.from_geodetic(
+            state["longitude_deg"] * u.deg, state["latitude_deg"] * u.deg, state["height_m"] * u.m
+        )
+        with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(table):
+            position, velocity = location.get_gcrs_posvel(epoch)
+        np.testing.assert_allclose(state["gcrf_position_m"], position.xyz.to_value(u.m), rtol=0, atol=0.05)
+        np.testing.assert_allclose(state["gcrf_velocity_m_s"], velocity.xyz.to_value(u.m / u.s), rtol=0, atol=1.0e-4)
 
 
 def test_launch_site_state_predicted_eop_requires_opt_in():

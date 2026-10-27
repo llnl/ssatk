@@ -21,14 +21,10 @@ A preflight run evaluates three gates against a JSON mission contract:
   ``RECORD`` manifest and rejects an unresolved Git LFS pointer.
 * **G2 -- launch-pad state.** :func:`~ssatk.launch.preflight.launch_site_state`
   builds the stationary pad position and the inertial velocity caused by
-  Earth's rotation in GCRF. Both the epoch-coverage check and the Astropy
-  ITRS<->GCRS transform use SSATK's packaged Earth-orientation snapshot
-  (:func:`ssatk.environment_eop.load_packaged_eop` and the matching
-  ``finals2000A.all`` loaded as an Astropy ``IERS_A`` table), with network
-  access disabled throughout. This avoids depending on whichever IERS table
-  ships with the installed Astropy, and avoids Astropy's silent
-  UT1-UTC=0/mean-polar-motion fallback for an epoch its own bundled table
-  does not cover. An epoch that falls in the packaged table's predicted
+  Earth's rotation in GCRF. Both the epoch-coverage check and the transform
+  use SSATK's packaged Earth-orientation table
+  (:func:`ssatk.environment_eop.load_packaged_eop`) through SSATK's IAU
+  2006/2000A Earth-rotation route, with no network access. An epoch that falls in the packaged table's predicted
   region raises :class:`~ssatk.launch.preflight.EOPCoverageError` unless the
   caller passes ``allow_predicted_eop=True`` (or the mission contract sets
   ``allow_predicted_eop``); an epoch past the end of the table always raises
@@ -43,8 +39,9 @@ A preflight run evaluates three gates against a JSON mission contract:
   consistent but wrong rotation (for example, a sign error that cancels
   going out and back) still closes, so this closure is not independent
   evidence of accuracy; ``tests/test_launch_preflight.py`` pairs
-  ``launch_site_state`` with a closed-form WGS84 reference and with SSATK's
-  independent erfa-based ``itrf_to_gcrf_eop`` path for that.
+  ``launch_site_state`` with a closed-form WGS84 reference and with
+  Astropy's own ITRS->GCRS implementation fed the same packaged table for
+  that.
 
 :func:`~ssatk.launch.preflight.run_launch_preflight` runs all three gates and
 returns a JSON-serializable report; it does not raise, so a caller can inspect
