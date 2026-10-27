@@ -1,7 +1,4 @@
 from astropy.time import Time
-import numpy as np
-
-from .astropy_llh_to_gcrf import astropy_llh_to_gcrf
 
 
 def astropy_surface_rv(lon, lat, elevation=0.0, t=Time(0, format="gps", scale="utc")):
@@ -25,14 +22,13 @@ def astropy_surface_rv(lon, lat, elevation=0.0, t=Time(0, format="gps", scale="u
         Position vector in GCRF coordinates (m).
     v : ndarray, shape (3,)
         Velocity vector in GCRF coordinates (m/s).
+
+    Uses :func:`ssatk.coordinates.geodetic.llh_to_gcrf`: a WGS84 site fixed
+    in ITRF, transformed with the shared IAU 2006/2000A rotation and its
+    time derivative. Epochs outside the packaged EOP table use the nearest
+    record and emit an EarthOrientationExtrapolationWarning.
     """
-    # Position in GCRF (meters)
-    r_gcrf = astropy_llh_to_gcrf(lon, lat, t, alt=elevation).reshape(3)
+    # Geodetic imports this module, so resolve the shared route at call time.
+    from ..coordinates.geodetic import llh_to_gcrf
 
-    # Earth's angular velocity vector (rad/s)
-    omega_earth = np.array([0.0, 0.0, 7.2921150e-5])  # rotation about Z-axis
-
-    # Velocity in GCRF: v = omega × r
-    v_gcrf = np.cross(omega_earth, r_gcrf)
-
-    return r_gcrf, v_gcrf
+    return llh_to_gcrf(lon, lat, t, height=elevation)

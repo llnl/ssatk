@@ -77,7 +77,7 @@ def llh_to_gcrf(lon: float, lat: float, t: Time, height: float = 0.0, *, allow_p
 
 
 def surface_rv(lon, lat, elevation=0.0, t=Time(0, format="gps", scale="utc")):
-    """Return GCRF position and velocity of a surface point from Astropy."""
+    """Return a WGS84 site's GCRF state using the shared Earth-rotation route."""
     return astropy_surface_rv(lon=lon, lat=lat, elevation=elevation, t=t)
 
 
