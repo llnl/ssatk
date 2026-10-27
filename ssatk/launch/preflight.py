@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import distribution
 from importlib.metadata import version as _distribution_version
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 
@@ -31,11 +31,14 @@ from astropy.coordinates import ITRS, EarthLocation
 from astropy.time import Time
 from astropy.utils import iers
 
+from ..coordinates.geodetic import llh_to_gcrf
 from ..data import data_path, resource_package
+from ..environment_eop import load_packaged_eop
 from .sites import launch_pads
 from .vehicles import launch_vehicles
 
 __all__ = [
+    "EOPCoverageError",
     "LAUNCH_CONVENTIONS",
     "MissionContractError",
     "ResourceVerificationError",
@@ -72,6 +75,7 @@ _TOP_LEVEL_FIELDS = frozenset(
         "launch_site",
         "launch_height_m",
         "epoch_utc",
+        "allow_predicted_eop",
         "vehicle",
         "payload_mass_kg",
         "phases",
@@ -155,6 +159,15 @@ class ResourceVerificationError(ValueError):
     """Raised when a required packaged resource fails strict verification."""
 
 
+class EOPCoverageError(ValueError):
+    """Raised when the packaged Earth-orientation table cannot support an epoch.
+
+    This covers both an epoch past the end of the table and an epoch that
+    falls in the table's predicted region without the caller opting in; the
+    message states which one applies.
+    """
+
+
 def load_mission_contract(source: str | Path) -> dict[str, Any]:
     """Load and validate one JSON launch mission contract."""
 
@@ -202,6 +215,7 @@ def validate_mission_contract(contract: Mapping[str, Any]) -> dict[str, Any]:
     _require_finite(contract.get("launch_height_m"), "launch_height_m", errors)
     _require_finite(contract.get("payload_mass_kg"), "payload_mass_kg", errors, minimum=0.0)
     _validate_epoch(contract.get("epoch_utc"), errors)
+    _require_bool(contract.get("allow_predicted_eop"), "allow_predicted_eop", errors)
     _validate_phases(contract.get("phases"), contract.get("transitions"), errors)
     _validate_string_list(contract.get("termination_conditions"), "termination_conditions", errors)
     _validate_failure_behavior(
@@ -312,12 +326,38 @@ def verify_data_resources(
     return results
 
 
-def launch_site_state(site: str, epoch_utc: str | Time, *, height_m: float = 0.0) -> dict[str, Any]:
+def launch_site_state(
+    site: str,
+    epoch_utc: str | Time,
+    *,
+    height_m: float = 0.0,
+    allow_predicted_eop: bool = False,
+) -> dict[str, Any]:
     """Build a stationary pad state in ITRF and its rotating GCRF state.
 
     The returned velocity is the inertial velocity caused by Earth rotation.
-    Astropy network access is disabled for the transform so the result depends
-    only on the installed IERS data package.
+    Both the coverage check and the Astropy ITRS<->GCRS transform use
+    SSATK's packaged Earth-orientation snapshot
+    (:func:`ssatk.environment_eop.load_packaged_eop` and the same
+    ``finals2000A.all`` file read as an Astropy ``IERS_A`` table), with
+    network access disabled throughout. This makes the result depend on one
+    pinned, versioned dataset rather than whichever IERS table happens to
+    ship with the installed Astropy, and avoids Astropy's silent
+    UT1-UTC=0/mean-polar-motion fallback for an epoch its bundled table does
+    not cover.
+
+    Raises :class:`EOPCoverageError` if ``epoch_utc`` falls in the table's
+    predicted region and ``allow_predicted_eop`` is ``False``, or if
+    ``epoch_utc`` is outside the table altogether (predicted data cannot
+    cover that case either).
+
+    ``closure`` records the residual of transforming the computed GCRF state
+    back to ITRS and comparing it with the starting ITRF state. This is a
+    self-consistency check on the transform implementation -- an internally
+    consistent but wrong rotation (for example, a sign error that cancels
+    going out and back) would still close -- not independent evidence of
+    accuracy; see ``tests/test_launch_preflight.py`` for the closed-form and
+    independent-implementation references used for that.
     """
 
     if site not in launch_pads:
@@ -331,20 +371,42 @@ def launch_site_state(site: str, epoch_utc: str | Time, *, height_m: float = 0.0
     site_record = launch_pads[site]
     longitude_deg = float(site_record["longitude"])
     latitude_deg = float(site_record["latitude"])
+
+    eop_table = load_packaged_eop()
+    try:
+        eop_record = eop_table.at(epoch, allow_predicted=allow_predicted_eop)
+    except ValueError as exc:
+        if epoch.gps < eop_table.start_gps or epoch.gps > eop_table.end_gps:
+            table_start = Time(eop_table.start_gps, format="gps", scale="utc").isot
+            table_end = Time(eop_table.end_gps, format="gps", scale="utc").isot
+            raise EOPCoverageError(
+                f"{epoch.isot} UTC is outside the packaged Earth-orientation table "
+                f"({table_start} to {table_end} UTC); no Earth-orientation data is "
+                "available for this epoch at any allow_predicted_eop setting."
+            ) from exc
+        raise EOPCoverageError(
+            f"{epoch.isot} UTC falls in the predicted part of the packaged "
+            "Earth-orientation table; pass allow_predicted_eop=True to "
+            "launch_site_state (or set allow_predicted_eop in the mission "
+            "contract) to opt in explicitly."
+        ) from exc
+
     location = EarthLocation.from_geodetic(
         longitude_deg * u.deg,
         latitude_deg * u.deg,
         height_m * u.m,
     )
 
-    with iers.conf.set_temp("auto_download", False):
+    with data_path("environment/eop/finals2000A.all") as eop_path:
+        astropy_iers_table = iers.IERS_A.open(str(eop_path))
+
+    with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(astropy_iers_table):
         itrf = location.get_itrs(obstime=epoch)
+        gcrf_position, gcrf_velocity = llh_to_gcrf(longitude_deg, latitude_deg, epoch, height_m)
         gcrf = location.get_gcrs(obstime=epoch)
         closed = gcrf.transform_to(ITRS(obstime=epoch))
 
     itrf_position = itrf.cartesian.xyz.to_value(u.m)
-    gcrf_position = gcrf.cartesian.xyz.to_value(u.m)
-    gcrf_velocity = gcrf.velocity.d_xyz.to_value(u.m / u.s)
     closed_position = closed.cartesian.xyz.to_value(u.m)
     closed_velocity = closed.velocity.d_xyz.to_value(u.m / u.s)
 
@@ -357,11 +419,19 @@ def launch_site_state(site: str, epoch_utc: str | Time, *, height_m: float = 0.0
         "epoch_gps_s": float(epoch.gps),
         "itrf_position_m": itrf_position.tolist(),
         "itrf_velocity_m_s": [0.0, 0.0, 0.0],
-        "gcrf_position_m": gcrf_position.tolist(),
-        "gcrf_velocity_m_s": gcrf_velocity.tolist(),
+        "gcrf_position_m": np.asarray(gcrf_position).tolist(),
+        "gcrf_velocity_m_s": np.asarray(gcrf_velocity).tolist(),
         "closure": {
             "position_m": float(np.linalg.norm(closed_position - itrf_position)),
             "velocity_m_s": float(np.linalg.norm(closed_velocity)),
+        },
+        "earth_orientation": {
+            "source": eop_table.source,
+            "ut1_minus_utc_s": eop_record.ut1_minus_utc_s,
+            "polar_motion_x_arcsec": eop_record.polar_motion_x_arcsec,
+            "polar_motion_y_arcsec": eop_record.polar_motion_y_arcsec,
+            "predicted": eop_record.predicted,
+            "allow_predicted": allow_predicted_eop,
         },
         "conventions": dict(LAUNCH_CONVENTIONS),
     }
@@ -428,6 +498,7 @@ def run_launch_preflight(
             contract["launch_site"],
             contract["epoch_utc"],
             height_m=contract["launch_height_m"],
+            allow_predicted_eop=contract["allow_predicted_eop"],
         )
         position_requirement = contract["requirements"]["frame_position_closure"]
         velocity_requirement = contract["requirements"]["frame_velocity_closure"]
@@ -442,6 +513,9 @@ def run_launch_preflight(
             report["gates"]["G1"]["status"], *(item["status"] for item in frame_checks)
         ])
         g2_detail = "schema, dependency/resource resolution and initial-state checks; not an ascent"
+    except EOPCoverageError as exc:
+        g2_status = "BLOCKED"
+        g2_detail = str(exc)
     except (KeyError, OSError, TypeError, ValueError) as exc:
         g2_status = "ERROR"
         g2_detail = f"{type(exc).__name__}: {exc}"
@@ -555,7 +629,14 @@ def _validate_resources(resources: Any, errors: list[str]) -> None:
         path = resource.get("path")
         if isinstance(path, str) and path:
             pure_path = PurePosixPath(path)
-            if pure_path.is_absolute() or ".." in pure_path.parts or "\\" in path:
+            windows_path = PureWindowsPath(path)
+            if (
+                pure_path.is_absolute()
+                or windows_path.is_absolute()
+                or windows_path.drive
+                or ".." in pure_path.parts
+                or "\\" in path
+            ):
                 errors.append(f"{where}.path must be a safe POSIX path below the selected data package data root")
             paths.append(path)
     if len(paths) != len(set(paths)):
@@ -567,8 +648,11 @@ def _validate_software(software: Any, errors: list[str]) -> None:
         errors.append("software must be an object of exact version pins")
         return
     missing = _SOFTWARE_PINS - set(software)
+    unknown = set(software) - _SOFTWARE_PINS
     if missing:
         errors.append(f"missing software pins: {', '.join(sorted(missing))}")
+    if unknown:
+        errors.append(f"unknown software pins: {', '.join(sorted(unknown))}")
     for name, value in software.items():
         _require_text(value, f"software.{name}", errors)
         if isinstance(value, str) and any(token in value for token in (">", "<", "*", ",")):
@@ -630,6 +714,11 @@ def _require_text(value: Any, name: str, errors: list[str]) -> None:
         errors.append(f"{name} must be a non-empty string")
     elif value.strip().upper() == "UNSET":
         errors.append(f"{name} must replace UNSET with an authoritative input")
+
+
+def _require_bool(value: Any, name: str, errors: list[str]) -> None:
+    if not isinstance(value, bool):
+        errors.append(f"{name} must be a boolean")
 
 
 def _require_finite(value: Any, name: str, errors: list[str], *, minimum: float | None = None) -> None:

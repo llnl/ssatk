@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import platform
+import subprocess
 from base64 import urlsafe_b64decode
 from copy import deepcopy
 from importlib.metadata import distribution, version
@@ -9,8 +10,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from astropy.time import Time
 
+from ssatk.coordinates.earth_fixed import itrf_to_gcrf_eop
+from ssatk.environment_eop import load_packaged_eop
 from ssatk.launch.preflight import (
+    EOPCoverageError,
     LAUNCH_CONVENTIONS,
     MissionContractError,
     ResourceVerificationError,
@@ -70,7 +75,8 @@ def _contract():
         "profile": "LEO",
         "launch_site": "Kennedy Space Center LC-39A",
         "launch_height_m": 0.0,
-        "epoch_utc": "2026-10-02T16:00:00",
+        "epoch_utc": "2024-10-02T16:00:00",
+        "allow_predicted_eop": False,
         "vehicle": "Falcon 9 Full Thrust",
         "payload_mass_kg": 1.0,
         "phases": ["prelaunch", "ascent", "insertion"],
@@ -117,6 +123,25 @@ def _contract():
     }
 
 
+def _init_synthetic_repo(path: Path) -> str:
+    """Create a one-commit Git repository at ``path`` and return its HEAD revision.
+
+    Used to give ``run_launch_preflight`` a real, clean, matching repository
+    for every pinned ``source_revisions`` entry, so G1 can genuinely PASS in a
+    test without depending on the Git state of whatever packages happen to be
+    installed in the environment running the test.
+    """
+    path.mkdir()
+    run = lambda *args: subprocess.run(args, cwd=path, check=True, capture_output=True, text=True)
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "preflight-test@example.com")
+    run("git", "config", "user.name", "preflight test fixture")
+    (path / "README").write_text("Synthetic fixture repository; not a real source checkout.\n")
+    run("git", "add", "README")
+    run("git", "commit", "-q", "-m", "synthetic fixture commit")
+    return run("git", "rev-parse", "HEAD").stdout.strip()
+
+
 def test_contract_is_strict_and_requires_traceable_numerical_requirements():
     contract = _contract()
     assert validate_mission_contract(contract)["mission_id"] == "synthetic_preflight_test"
@@ -134,20 +159,122 @@ def test_contract_is_strict_and_requires_traceable_numerical_requirements():
     assert "requirements.max_acceleration is missing fields: source" in message
 
 
-def test_launch_site_state_includes_earth_rotation_and_closes_offline():
-    state = launch_site_state(
-        "Kennedy Space Center LC-39A",
-        "2026-10-02T16:00:00",
-    )
+_OBSERVED_EPOCH = "2024-06-01T16:00:00"  # polar_motion/ut1 flag 'I' in the packaged EOP table
+_PREDICTED_EPOCH = "2026-10-02T16:00:00"  # flag 'P'; inside the table but past the observed data
+_UNCOVERED_EPOCH = "2027-09-01T00:00:00"  # just past the end of the packaged EOP table
 
-    assert state["epoch_utc"] == "2026-10-02T16:00:00.000"
-    assert np.linalg.norm(state["gcrf_velocity_m_s"]) > 0.0
+
+def _wgs84_ecef(latitude_deg, longitude_deg, height_m):
+    """Closed-form geodetic->ECEF conversion, independent of SSATK/Astropy."""
+    a = 6378137.0
+    f = 1.0 / 298.257223563
+    e2 = f * (2.0 - f)
+    phi = np.radians(latitude_deg)
+    lam = np.radians(longitude_deg)
+    n = a / np.sqrt(1.0 - e2 * np.sin(phi) ** 2)
+    x = (n + height_m) * np.cos(phi) * np.cos(lam)
+    y = (n + height_m) * np.cos(phi) * np.sin(lam)
+    z = (n * (1.0 - e2) + height_m) * np.sin(phi)
+    return np.array([x, y, z])
+
+
+def test_launch_site_state_itrf_position_matches_wgs84_closed_form():
+    """R1: ITRF position must match the closed-form WGS84 geodetic->ECEF
+    formula (a = 6378137 m, f = 1/298.257223563), independent of the
+    Astropy/SSATK code path, to 1e-6 m (floating-point precision at this
+    magnitude, not pad survey accuracy). Checked at two pads of different
+    latitude so a spherical-Earth or flattening mistake cannot cancel out.
+    """
+    for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
+        state = launch_site_state(site, _OBSERVED_EPOCH)
+        expected_m = _wgs84_ecef(state["latitude_deg"], state["longitude_deg"], state["height_m"])
+        residual_m = np.linalg.norm(np.array(state["itrf_position_m"]) - expected_m)
+        assert residual_m == pytest.approx(0.0, abs=1.0e-6)
+
+
+def test_launch_site_state_velocity_matches_earth_rotation():
+    """R1: the pad's inertial velocity must be the rigid-body Earth-rotation
+    velocity v = omega x rho for the IERS Conventions (2010) nominal mean
+    angular velocity omega = 7.292115e-5 rad/s (Table 1.1), where rho is the
+    ITRF distance from the spin axis. rho must come from the ITRF position:
+    using the GCRF x/y components instead confounds the spin-axis distance
+    with the pad's declination, which is wrong by kilometres once a pad is
+    off the equator.
+
+    Also checks that v is perpendicular to r (no radial component for a
+    stationary point) and that rotation is eastward (right-handed about
+    +z): the position component perpendicular to GCRF z, crossed with v,
+    must point within 1 degree of GCRF +z. GCRF z stays within a fraction of
+    a degree of the true pole from 2000-2030 (precession/nutation), which is
+    why 1 degree is a safe tolerance for this direction check while still
+    catching a sign-flipped velocity (which fails by ~180 degrees).
+    """
+    earth_angular_velocity_rad_s = 7.292115e-5
+    for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
+        state = launch_site_state(site, _OBSERVED_EPOCH)
+        r_itrf = np.array(state["itrf_position_m"])
+        r_gcrf = np.array(state["gcrf_position_m"])
+        v_gcrf = np.array(state["gcrf_velocity_m_s"])
+
+        rho_m = np.linalg.norm(r_itrf[:2])
+        speed_m_s = np.linalg.norm(v_gcrf)
+        # Residual is the nominal mean rotation rate versus the instantaneous
+        # sidereal rate Astropy derives from the packaged Earth-orientation
+        # data; observed residual is about 2e-4 to 4e-4 m/s across several
+        # launch pads and epochs, well inside this budget.
+        assert speed_m_s == pytest.approx(earth_angular_velocity_rad_s * rho_m, abs=1.0e-3)
+
+        cosine_r_v = abs(np.dot(v_gcrf, r_gcrf)) / (speed_m_s * np.linalg.norm(r_gcrf))
+        assert cosine_r_v < 1.0e-6
+
+        z_hat = np.array([0.0, 0.0, 1.0])
+        rho_vector_gcrf = r_gcrf - np.dot(r_gcrf, z_hat) * z_hat
+        spin_axis_estimate = np.cross(rho_vector_gcrf, v_gcrf)
+        spin_axis_estimate /= np.linalg.norm(spin_axis_estimate)
+        assert np.dot(spin_axis_estimate, z_hat) > np.cos(np.radians(1.0))
+
+        assert state["closure"]["position_m"] < 1.0e-6
+        assert state["closure"]["velocity_m_s"] < 1.0e-3
+
+
+def test_launch_site_state_matches_independent_eop_rotation():
+    """R2: compare against SSATK's independent erfa-based ITRF->GCRF path
+    (``itrf_to_gcrf_eop``: IAU 1976/1980 precession-nutation plus GST94),
+    fed the same packaged EOP snapshot, instead of the Astropy ITRS<->GCRS
+    implementation ``launch_site_state`` uses. The two models differ by
+    about 0.6-1.4 m at the surface for 2020-2024 (measured here); a 5 ms
+    UT1 error moves a Cape Canaveral-latitude pad by about 2 m, so a 2.0 m
+    tolerance still catches a UT1/EOP mistake such as Astropy's silent
+    UT1-UTC=0 fallback for an uncovered epoch.
+    """
+    epoch = Time(_OBSERVED_EPOCH, scale="utc")
+    eop = load_packaged_eop()
+    for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
+        state = launch_site_state(site, epoch)
+        itrf_position = np.array([state["itrf_position_m"]])
+        independent_gcrf = itrf_to_gcrf_eop(itrf_position, epoch.gps, eop=eop, allow_predicted=False)[0]
+        residual_m = np.linalg.norm(independent_gcrf - np.array(state["gcrf_position_m"]))
+        assert residual_m == pytest.approx(0.0, abs=2.0)
+
+
+def test_launch_site_state_predicted_eop_requires_opt_in():
+    with pytest.raises(EOPCoverageError, match="predicted"):
+        launch_site_state("Kennedy Space Center LC-39A", _PREDICTED_EPOCH)
+
+
+def test_launch_site_state_predicted_eop_succeeds_with_opt_in():
+    state = launch_site_state(
+        "Kennedy Space Center LC-39A", _PREDICTED_EPOCH, allow_predicted_eop=True,
+    )
+    assert state["earth_orientation"]["predicted"] is True
+    assert state["earth_orientation"]["allow_predicted"] is True
     assert state["closure"]["position_m"] < 1.0e-6
     assert state["closure"]["velocity_m_s"] < 1.0e-3
-    assert state == launch_site_state(
-        "Kennedy Space Center LC-39A",
-        "2026-10-02T16:00:00",
-    )
+
+
+def test_launch_site_state_rejects_epoch_outside_eop_table():
+    with pytest.raises(EOPCoverageError, match="outside"):
+        launch_site_state("Kennedy Space Center LC-39A", _UNCOVERED_EPOCH, allow_predicted_eop=True)
 
 
 def test_required_data_resource_matches_manifest_and_payload():
@@ -179,7 +306,36 @@ def test_preflight_keeps_missing_revisions_and_dependencies_blocked(tmp_path):
     assert report["gates"]["G1"]["status"] == "BLOCKED"
     assert report["gates"]["G2"]["status"] == "BLOCKED"
     assert report["status"] == "BLOCKED"
-    assert report["initial_state"]["closure"]["position_m"] < 1.0e-6
+
+
+def test_run_launch_preflight_blocks_g2_for_predicted_eop_without_contract_opt_in(tmp_path):
+    """A mission whose epoch needs predicted EOP must BLOCK G2, not crash or
+    pass, unless the contract explicitly opts in with ``allow_predicted_eop``.
+
+    G2 now also carries forward a BLOCKED/FAILED G1 (prerequisite-aware
+    gating), so this test gives every ``source_revisions`` entry a matching,
+    clean, synthetic Git repository: without that, G1 would stay BLOCKED on
+    missing revisions regardless of the EOP behavior under test, and the
+    second assertion below could never observe G2 reach PASS.
+    """
+    contract = deepcopy(_contract())
+    contract["epoch_utc"] = _PREDICTED_EPOCH
+    repositories = {}
+    for name in ("llnl-ssapy", "ssatk", "ssa-data-core"):
+        repo_path = tmp_path / name
+        contract["source_revisions"][name] = _init_synthetic_repo(repo_path)
+        repositories[name] = repo_path
+
+    blocked = run_launch_preflight(contract, repositories=repositories)
+    assert blocked["gates"]["G1"]["status"] == "PASS"
+    assert blocked["gates"]["G2"]["status"] == "BLOCKED"
+    assert "predicted" in blocked["gates"]["G2"]["detail"]
+
+    contract["allow_predicted_eop"] = True
+    passed = run_launch_preflight(contract, repositories=repositories)
+    assert passed["gates"]["G1"]["status"] == "PASS"
+    assert passed["gates"]["G2"]["status"] == "PASS"
+    assert passed["initial_state"]["earth_orientation"]["predicted"] is True
 
 
 def test_unconfigured_leo_template_reports_blocked():
