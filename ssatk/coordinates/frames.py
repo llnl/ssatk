@@ -28,6 +28,7 @@ from enum import Enum
 import numpy as np
 
 from ssatk.constants import WGS84_EARTH_OMEGA
+from ssatk.time_functions import to_gps
 
 # Sourced from ssatk.constants rather than a hardcoded literal --
 # this was independently duplicated (at the same value, by coincidence)
@@ -283,7 +284,7 @@ class FrameTransform:
         ----------
         r_eci : (N, 3) km
         v_eci : (N, 3) km/s
-        t_gps : (N,) GPS seconds — required for ECF
+        t_gps : (N,) GPS seconds or astropy.time.Time, required for ECF
         r_ref, v_ref : (3,) km, km/s, optional
             Reference ECI state (e.g. a chief spacecraft, or the
             trajectory's own first sample) that fixes a single LVLH/RTN/NTW
@@ -310,9 +311,15 @@ class FrameTransform:
         if self.frame == Frame.ECF:
             if t_gps is None:
                 raise ValueError("t_gps required for ECF transform")
-            for i in range(N):
-                out[i] = eci_to_ecf_matrix(t_gps[i]) @ r[i]
-            return out
+            try:
+                times = np.asarray(to_gps(t_gps), dtype=float)
+            except (TypeError, ValueError):
+                # to_gps leaves singleton sequences of Time objects unchanged.
+                times = np.asarray([to_gps(epoch) for epoch in t_gps], dtype=float)
+            if times.shape != (N,):
+                raise ValueError("t_gps must contain one epoch per trajectory row")
+            matrices = eci_to_ecf_matrix(times)
+            return (matrices @ r[..., None])[..., 0]
 
         if self.frame in (Frame.LVLH, Frame.RTN):
             if r_ref is not None or v_ref is not None:
