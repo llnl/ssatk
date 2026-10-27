@@ -4,6 +4,7 @@ from ._body_surfaces import BodySurface, body_rotation, body_disc
 
 from .rendering import _with_low_spec
 
+from contextlib import contextmanager
 from pathlib import Path
 
 import matplotlib.cm as _cm
@@ -256,7 +257,8 @@ def orbit_animation(
     )
     writer = _animation_writer(suffix, fps=fps, bitrate=bitrate)
     try:
-        animation.save(save_path, writer=writer, dpi=dpi)
+        with _no_idle_redraw(fig):
+            animation.save(save_path, writer=writer, dpi=dpi)
         if show:
             _plt.show()
     finally:
@@ -305,6 +307,29 @@ def _animation_writer(suffix, *, fps, bitrate):
         codec="libx264",
         extra_args=["-pix_fmt", "yuv420p"],
     )
+
+
+@contextmanager
+def _no_idle_redraw(fig):
+    """Skip the unused idle-draw pass between animation frames while saving.
+
+    ``Animation.save`` calls ``canvas.draw_idle()`` after every frame (via
+    ``_post_draw``) and then immediately calls ``Figure.savefig`` to grab the
+    frame, which performs its own independent full draw to rasterize the
+    output. Nothing ever reads the pixels from the idle draw before savefig
+    overwrites them, so on a non-interactive Agg canvas -- where draw_idle
+    runs synchronously rather than deferring to a GUI event loop -- that call
+    is pure waste. It roughly doubles the cost of every frame for the heavy
+    textured/occluded 3-D scenes this module draws. Skipping it changes no
+    saved pixel.
+    """
+    canvas = fig.canvas
+    original = canvas.draw_idle
+    canvas.draw_idle = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        canvas.draw_idle = original
 
 
 def _animation_indices(r_list, *, max_frames):
