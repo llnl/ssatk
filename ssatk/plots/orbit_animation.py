@@ -414,8 +414,12 @@ def _animation_earth_background(fig):
     if not isinstance(earth, _PILImage.Image):
         return earth
     width_in, height_in = fig.get_size_inches()
-    target = (max(1, round(2*width_in*fig.dpi)), max(1, round(2*height_in*fig.dpi)))
-    if earth.size[0] > target[0] or earth.size[1] > target[1]:
+    # Never upsample either axis: cap each target dimension at the source size.
+    target = (
+        min(earth.size[0], max(1, round(2*width_in*fig.dpi))),
+        min(earth.size[1], max(1, round(2*height_in*fig.dpi))),
+    )
+    if target != earth.size:
         earth = earth.resize(target, _PILImage.Resampling.BOX)
     return earth
 
@@ -601,11 +605,16 @@ def _fast_line3d_projection(self):
     per-segment loop. Anything outside that shape -- axes-limit clipping, or
     a segment that is not a plain pair -- defers to Matplotlib's own method.
     """
-    segments = self._segments3d
-    if self._axlim_clip or not len(segments) or any(len(segment) != 2 for segment in segments):
+    # These are private Matplotlib attributes; if a release renames them,
+    # fall back to Matplotlib's own projection instead of failing.
+    try:
+        segments, clipped, camera = self._segments3d, self._axlim_clip, self.axes.M
+    except AttributeError:
+        return Line3DCollection.do_3d_projection(self)
+    if clipped or not len(segments) or any(len(segment) != 2 for segment in segments):
         return Line3DCollection.do_3d_projection(self)
     points = _np.asarray(segments, dtype=float).reshape(-1, 3)
-    xs, ys, zs = proj3d.proj_transform(points[:, 0], points[:, 1], points[:, 2], self.axes.M)
+    xs, ys, zs = proj3d.proj_transform(points[:, 0], points[:, 1], points[:, 2], camera)
     LineCollection.set_segments(self, list(_np.column_stack((xs, ys)).reshape(-1, 2, 2)))
     return float(zs.min())
 
