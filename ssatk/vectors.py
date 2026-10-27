@@ -82,14 +82,7 @@ def normed(arr):
 
 
 def einsum_norm(a, indices='ij,ij->i'):
-    """Per-row Euclidean norm of an (N, 3) array of vectors.
-
-    The default index string contracts each row of ``a`` with itself
-    (``'ij,ij->i'``), i.e. a vectorized ``np.linalg.norm(a, axis=1)``. A
-    'ij,ji->i' default would instead contract row i with column i, which is
-    only a norm when ``a`` is square and symmetric about its diagonal, and
-    raises for any other N x 3 input.
-    """
+    """Return the Euclidean norm of each row in an array of vectors."""
     return np.sqrt(np.einsum(indices, a, a))
 
 
@@ -285,9 +278,7 @@ def points_on_circle(r, v, rad, num_points=4):
     y = rad * np.cos(angles) * u[1] + rad * np.sin(angles) * w[1]
     z = rad * np.cos(angles) * u[2] + rad * np.sin(angles) * w[2]
 
-    # u and w already span the plane perpendicular to v, so (x, y, z) lies in
-    # that plane; a further fixed rotation about world z would tilt the
-    # points out of it whenever v is not parallel to z.
+    # u and w span the plane perpendicular to v.
     points_on_plane = np.column_stack((x, y, z))
 
     # Translate the points to the center point r
