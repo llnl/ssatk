@@ -81,6 +81,40 @@ def precompute_third_body_positions(t, body_name):
     return interpolated_position
 
 
+def precompute_third_body_positions_exact(t, body_name):
+    """Return exact third-body positions evaluated at the supplied epochs.
+
+    Unlike :func:`precompute_third_body_positions`, this helper deliberately
+    does not interpolate.  It batches the Astropy ephemeris query while
+    retaining the same GCRS conversion used by the point-mass accelerations.
+    """
+    from astropy.coordinates import GCRS, get_body
+    from astropy.time import Time
+    from astropy import units as u
+
+    t_gps = np.asarray(to_gps(t), dtype=float)
+    if t_gps.ndim != 1 or not np.all(np.isfinite(t_gps)):
+        raise ValueError("ephemeris epochs must be a finite one-dimensional array")
+    epochs = Time(t_gps, format="gps", scale="utc")
+    position = get_body(body_name, epochs).transform_to(GCRS(obstime=epochs))
+    result = position.cartesian.xyz.to(u.m).value.T
+    if result.shape != (len(t_gps), 3) or not np.all(np.isfinite(result)):
+        raise ValueError("body positions must be finite with shape (n, 3)")
+    return result
+
+
+def third_body_acceleration(r, body_position, mu):
+    """Evaluate an Earth-centered point-mass third-body acceleration."""
+    r = np.asarray(r, dtype=float)
+    body_position = np.asarray(body_position, dtype=float)
+    delta = body_position - r
+    delta_norm = np.linalg.norm(delta)
+    body_norm = np.linalg.norm(body_position)
+    if delta_norm == 0.0 or body_norm == 0.0:
+        return np.zeros(3, dtype=float)
+    return float(mu) * (delta / delta_norm**3 - body_position / body_norm**3)
+
+
 def build_profile(profile, t_arr):
     """
     Build an (n,) acceleration-magnitude profile aligned to t_arr.

@@ -3,12 +3,19 @@
 import numpy as np
 from scipy.optimize import brentq
 
-from ..constants import EARTH_RADIUS
+from ..constants import EARTH_RADIUS, MOON_MU, SUN_MU
 from ..time_functions import to_gps
 
-from .int_utils import acceleration_adapter, build_profile  # thrust-profile helper
+from .int_utils import (
+    acceleration_adapter,
+    build_profile,
+    precompute_third_body_positions_exact,
+    third_body_acceleration,
+)
 
 from ..accelerations_orbit.accel_point_earth import accel_point_earth
+from ..accelerations_orbit.accel_moon import accel_point_moon
+from ..accelerations_orbit.accel_sun import accel_point_sun
 from ..accelerations_orbit.accel_radial import accel_radial
 from ..accelerations_orbit.accel_velocity import accel_velocity
 from ..accelerations_orbit.accel_inclination import accel_inclination
@@ -95,12 +102,25 @@ def leapfrog(
     i_th = build_profile(inclination, t_elapsed)
 
     # ---- normalize accels -> list ----
+    exact_third_body = {}
+    raw_accels = [] if accels is None else [accels] if callable(accels) else list(accels)
+    batch_third_body = bool(raw_accels) and all(
+        model in (accel_point_moon, accel_point_sun) for model in raw_accels
+    )
+    if batch_third_body:
+        if accel_point_moon in raw_accels:
+            exact_third_body["moon"] = precompute_third_body_positions_exact(t_abs, "moon")
+        if accel_point_sun in raw_accels:
+            exact_third_body["sun"] = precompute_third_body_positions_exact(t_abs, "sun")
+    non_third_raw = (
+        [] if batch_third_body else raw_accels
+    )
     if accels is None:
         accel_list = []
     elif callable(accels):
-        accel_list = [acceleration_adapter(accels)]
+        accel_list = [acceleration_adapter(accels)] if non_third_raw else []
     else:
-        accel_list = [acceleration_adapter(model) for model in accels]
+        accel_list = [acceleration_adapter(model) for model in non_third_raw]
 
     def _eval_extra_accels(r_i, v_i, t_i):
         """Sum extra accelerations, supporting several common call signatures."""
@@ -152,7 +172,14 @@ def leapfrog(
             + accel_radial(r[i],            r_th[i])
             + accel_velocity(v[i],          v_th[i])
             + accel_inclination(r[i], v[i], i_th[i])
-            + _eval_extra_accels(r[i], v[i], t_abs[i])
+            + (
+                third_body_acceleration(r[i], exact_third_body["moon"][i], MOON_MU)
+                if "moon" in exact_third_body else _eval_extra_accels(r[i], v[i], t_abs[i])
+            )
+            + (
+                third_body_acceleration(r[i], exact_third_body["sun"][i], SUN_MU)
+                if "sun" in exact_third_body else 0.0
+            )
         )
         v_half = v[i] + 0.5 * dt * a0
 
@@ -187,7 +214,14 @@ def leapfrog(
             + accel_radial(r[i + 1],            r_th[i + 1])
             + accel_velocity(v_half,            v_th[i + 1])
             + accel_inclination(r[i + 1], v_half, i_th[i + 1])
-            + _eval_extra_accels(r[i + 1], v_half, t_abs[i + 1])
+            + (
+                third_body_acceleration(r[i + 1], exact_third_body["moon"][i + 1], MOON_MU)
+                if "moon" in exact_third_body else _eval_extra_accels(r[i + 1], v_half, t_abs[i + 1])
+            )
+            + (
+                third_body_acceleration(r[i + 1], exact_third_body["sun"][i + 1], SUN_MU)
+                if "sun" in exact_third_body else 0.0
+            )
         )
         v[i + 1] = v_half + 0.5 * dt * a1
 
