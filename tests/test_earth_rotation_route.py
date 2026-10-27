@@ -50,13 +50,14 @@ def _astropy_reference():
     """Configure Astropy's active EOP table to SSATK's packaged snapshot."""
     with data_path("environment/eop/finals2000A.all") as path:
         table = iers.IERS_A.open(str(path))
-    iers.earth_orientation_table.set(table)
 
     representation = CartesianRepresentation(
         _POSITIONS_M.T * u.m,
         differentials=CartesianDifferential(_VELOCITIES_M_S.T * u.m / u.s),
     )
-    transformed = GCRS(representation, obstime=_EPOCHS).transform_to(ITRS(obstime=_EPOCHS))
+    # Scoped so the packaged table does not leak into later tests.
+    with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(table):
+        transformed = GCRS(representation, obstime=_EPOCHS).transform_to(ITRS(obstime=_EPOCHS))
     position = transformed.cartesian.xyz.to_value(u.m).T
     velocity = transformed.cartesian.differentials["s"].d_xyz.to_value(u.m / u.s).T
     return position, velocity
