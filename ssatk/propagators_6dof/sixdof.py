@@ -760,7 +760,13 @@ def sixdof_rhs(
 
     radius = np.linalg.norm(r)
     a = np.zeros(3) if mu == 0.0 or radius == 0.0 else -mu * r / radius**3
-    if acceleration is not None:
+    paired_force_torque = _paired_force_torque_evaluator(acceleration, torque)
+    if paired_force_torque is not None:
+        paired_acceleration, paired_torque = paired_force_torque(
+            t, r, v, q, omega, mass=mass, wheel_momentum=wheel_momentum
+        )
+        a = a + paired_acceleration
+    elif acceleration is not None:
         a = a + _evaluate_acceleration(acceleration, t, r, v, q, omega, mass, wheel_momentum)
     if ntw_acceleration is not None:
         a = a + frame_to_gcrf_matrix("ntw", r=r, v=v) @ _as_vector3(
@@ -777,8 +783,10 @@ def sixdof_rhs(
     torque_body = np.zeros(3)
     if gravity_gradient:
         torque_body = torque_body + _gravity_gradient_torque_prepared(r, q, inertia, mu=mu)
-    if torque is not None:
+    if paired_force_torque is None and torque is not None:
         torque_body = torque_body + _evaluate_torque(torque, t, r, v, q, omega, mass, wheel_momentum)
+    elif paired_force_torque is not None:
+        torque_body = torque_body + paired_torque
     wheel_torque_scalars = np.zeros(n_wheels)
     wheel_h_body = np.zeros(3)
     if n_wheels:
@@ -1352,6 +1360,21 @@ def _bind_spacecraft_acceleration(model, spacecraft, *, suppress_depleted=True):
         acceleration.accepts_mass = True
         acceleration.accepts_wheel_momentum = True
         acceleration._source_model = model
+        if hasattr(model, "_acceleration_torque"):
+            def combined_force_torque(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
+                state = _spacecraft_at_state(
+                    spacecraft, t, r, v, q, omega, mass, wheel_momentum,
+                    getattr(model, "tank_name", None),
+                )
+                if (
+                    suppress_depleted
+                    and _is_propulsive_model(model)
+                    and not getattr(model, "_depletion_handled", False)
+                    and _propellant_depleted(state, getattr(model, "tank_name", None))
+                ):
+                    return np.zeros(3), np.zeros(3)
+                return model._acceleration_torque(t, r, v, q, omega, state)
+            acceleration._combined_evaluator = combined_force_torque
         return acceleration
     return model
 
@@ -1382,6 +1405,21 @@ def _bind_spacecraft_torque(model, spacecraft, *, suppress_depleted=True):
         torque.accepts_mass = True
         torque.accepts_wheel_momentum = True
         torque._source_model = model
+        if hasattr(model, "_acceleration_torque"):
+            def combined_force_torque(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
+                state = _spacecraft_at_state(
+                    spacecraft, t, r, v, q, omega, mass, wheel_momentum,
+                    getattr(model, "tank_name", None),
+                )
+                if (
+                    suppress_depleted
+                    and _is_propulsive_model(model)
+                    and not getattr(model, "_depletion_handled", False)
+                    and _propellant_depleted(state, getattr(model, "tank_name", None))
+                ):
+                    return np.zeros(3), np.zeros(3)
+                return model._acceleration_torque(t, r, v, q, omega, state)
+            torque._combined_evaluator = combined_force_torque
         return torque
     return model
 
@@ -1444,6 +1482,18 @@ def _evaluate_acceleration(model, t, r, v, q, omega, mass=None, wheel_momentum=N
     if getattr(model, "accepts_mass", False):
         return _as_vector3(model(t, r, v, q, omega, mass=mass), "acceleration")
     return _as_vector3(model(t, r, v, q, omega), "acceleration")
+
+
+def _paired_force_torque_evaluator(acceleration, torque):
+    """Return a combined evaluator for one model used in both RHS channels."""
+    if acceleration is None or torque is None:
+        return None
+    if getattr(acceleration, "_source_model", None) is not getattr(torque, "_source_model", None):
+        return None
+    evaluator = getattr(acceleration, "_combined_evaluator", None)
+    if evaluator is None or getattr(torque, "_combined_evaluator", None) is None:
+        return None
+    return evaluator
 
 
 def _evaluate_torque(model, t, r, v, q, omega, mass=None, wheel_momentum=None):

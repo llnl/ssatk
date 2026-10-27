@@ -654,6 +654,16 @@ class SpacecraftThrusterAccel(SpacecraftAccel):
         )
         return torque
 
+    def _acceleration_torque(self, t, r, v, q, omega, spacecraft):
+        body = _body_or_spacecraft(self.body, spacecraft)
+        force_body, torque_body = thruster_force_torque(
+            _thrusters(body, self.thruster_names),
+            throttle=_call_optional(self.throttle, t, r, v, q, omega, spacecraft),
+            center_of_mass=_center_of_mass(body),
+        )
+        acceleration = _rotate_vector(q, force_body) / _mass_from(self.mass, spacecraft, body)
+        return acceleration, torque_body
+
     def mass_flow_rate(self, *args, **kwargs) -> float:
         """Return positive propellant mass flow in kg/s for selected thrusters."""
 
