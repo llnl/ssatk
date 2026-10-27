@@ -149,7 +149,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_body_ephemerides.py,2,R2,Astropy geocentric planetary and solar ephemerides,Model comparison within stated distance tolerance; no tracking data
    tests/test_burn_conversions.py,2,R1,Vis-viva semimajor axis and acceleration-duration impulse,Specified two-body burn case
    tests/test_catalog_conjunction_screen.py,1,R2 R1,Dense independently sampled SSAPy trajectories; known node offset,Dense sampling limits TCA resolution
-   tests/test_ccsds_cdm.py,4,R1 R2 C,Literal SI fixture; RTN dyadic covariance; ERFA Earth/frame-bias matrices,Synthetic CDM; not a real conjunction data product
+   tests/test_ccsds_cdm.py,4,R1 R2 C,Literal SI fixture; RTN dyadic covariance; ERFA frame-bias matrix and an ITRF reference assembled from low-level ERFA routines with the packaged EOP (measured 0.06 mm against a 2 mm budget),Synthetic CDM; not a real conjunction data product
    tests/test_ccsds_omm.py,3,R2 C,Literal angular/rate SI conversions and native SGP4 Satrec,Synthetic CelesTrak-shaped record; shared TEME rotation checked separately
    tests/test_compute_helpers.py,9,R1 R2 R4,Fourier tone; analytic MEGNO/cat map; REBOUND; known probability distributions,Seeded statistical tests allow specified significance level
    tests/test_conic_sampling.py,4,R1 R2,SSAPy Kepler propagation and Barker parabolic equation,Specified Kepler model
@@ -211,7 +211,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_orbital_maneuver_reference_cases.py,5,R1 R3,Curtis/Bate transfer equations; plane-change impulse; rocket equation; Gauss node rate,Textbook numeric anchors recomputed with configured Earth constants
    tests/test_orekit_j2_external.py,1,R2 R3,Orekit 10.3.1 Holmes-Featherstone EIGEN-6S J2 trajectory,Optional Java/data; unavailable reference is explicitly skipped
    tests/test_packaged_eop_reference.py,2,R2 R3,Packaged finals2000A versus bundled IERS-B/C04 UT1,0.5 ms separate-series budget; historical leap seconds
-   tests/test_plot_earth_rotation.py,4,R2,Astropy GCRS/ITRS/WGS84; one test configures Astropy with the packaged finals2000A.all,0.5 arcsec generic-model budget for three tests; 2 cm packaged-EOP budget for the renamed groundtrack_enhanced test; no rendering correctness claim
+   tests/test_plot_earth_rotation.py,4,R2,Astropy GCRS/ITRS/WGS84; two tests configure Astropy with the packaged finals2000A.all,1 mas packaged-EOP budget for the eci_to_ecf_matrix test (measured 0.30-0.64 mas: the dX/dY offsets Astropy omits); 0.5 arcsec budget for the texture-angle and WGS84 tests; 2 cm packaged-EOP budget for the groundtrack_enhanced test; no rendering correctness claim
    tests/test_plot_sun_and_stars.py,3,R2,Astropy apparent Sun and proper-motion/TEME transformations,Geometric/apparent Sun difference budget 60 arcsec
    tests/test_propagators.py,5,R1 R5,Circular orbit throughout arc; gravity Jacobian; rocket equation; wheel momentum,Specified ideal forces and simple body
    tests/test_propagators_6dof.py,37,R1 R2 R4,Rigid-body/point-mass dynamics; photon pressure; impulse/rocket equations; SSAPy,"Ideal model/preset validation, not measured spacecraft qualification"
