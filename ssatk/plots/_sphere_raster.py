@@ -65,22 +65,18 @@ class MappedSphere(Artist):
         bounds = np.array([[ax.bbox.x0, ax.bbox.y0], [ax.bbox.x1, ax.bbox.y1]])
         scale = renderer.get_image_magnification()
         data_transform = ax.transData
-        if data_transform.is_affine:
-            data_transform_key = (
-                "affine", data_transform.get_affine().get_matrix().tobytes()
-            )
-        else:
-            probes = np.array([[0., 0.], [1., 0.], [0., 1.], [1., 1.]])
-            data_transform_key = (
-                "non-affine",
-                data_transform.transform(probes).tobytes(),
-                data_transform.inverted().transform(probes).tobytes(),
-            )
+        cacheable_transform = data_transform.is_affine
+        data_transform_key = (
+            data_transform.get_affine().get_matrix().tobytes()
+            if cacheable_transform else None
+        )
         key = (
             matrix.shape, matrix.tobytes(), tuple(bounds.ravel()), float(scale),
             data_transform_key, tuple(self.center), float(self.radius),
         )
-        if key != self._view_geometry_key:
+        # A nonlinear transform has no compact, exact fingerprint here. Never
+        # reuse geometry for it rather than approximating its state by probes.
+        if not cacheable_transform or key != self._view_geometry_key:
             corners = np.array(np.meshgrid(*[[-1., 1.]]*3)).reshape(3, -1).T
             corners = self.center+self.radius*corners
             projected = np.column_stack((corners, np.ones(8))) @ matrix.T
@@ -108,7 +104,7 @@ class MappedSphere(Artist):
                     points, self.center, self.radius, **camera
                 )
                 self._view_geometry = (lower, points, hits, clearance, camera)
-            self._view_geometry_key = key
+            self._view_geometry_key = key if cacheable_transform else None
         if self._view_geometry is None:
             return
         lower, points, hits, clearance, camera = self._view_geometry
