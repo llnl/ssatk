@@ -20,13 +20,6 @@ from ssatk.compute.eclipse_reference_events import (
     SOLAR_GREATEST_SITE_LON_EAST_DEG,
     SOLAR_UMBRA_OPTICAL_RADIUS_KM,
     SOLAR_PENUMBRA_OPTICAL_RADIUS_KM,
-    _SOLAR_BESSEL,
-    _SOLAR_DELTA_T_S,
-    _SOLAR_K1,
-    _SOLAR_K2,
-    _SOLAR_T0_TDT_JD,
-    _SOLAR_TAN_F1,
-    _SOLAR_TAN_F2,
     ReferenceDefinition,
     ReferenceEvent,
     angular_circle_visible_fraction,
@@ -34,6 +27,7 @@ from ssatk.compute.eclipse_reference_events import (
     itrf_surface_point,
     lunar_reference_state,
     solar_besselian_state,
+    solar_besselian_geometry,
     solar_central_line_wgs84,
     solar_observer_geometry,
     solar_local_contacts,
@@ -914,31 +908,9 @@ def _solar_internal_contact_margin_vectorized(
     jd = np.asarray(jd_utc, dtype=float)
     lat = np.radians(np.asarray(lat_deg, dtype=float))
     lon = np.radians(np.asarray(lon_east_deg, dtype=float))
-    t = (jd+_SOLAR_DELTA_T_S/86400.0-_SOLAR_T0_TDT_JD)*24.0
-    values = {name: np.polynomial.polynomial.polyval(t, coeff)
-              for name, coeff in _SOLAR_BESSEL.items()}
-    d = np.radians(values["d"])
-    mu = np.radians(values["mu"]-0.00417807*_SOLAR_DELTA_T_S)
-    z_hat = np.stack((
-        np.cos(d)*np.cos(mu), -np.cos(d)*np.sin(mu), np.sin(d),
-    ), axis=-1)
-    x_hat = np.stack((np.sin(mu), np.cos(mu), np.zeros_like(mu)), axis=-1)
-    y_hat = np.cross(z_hat, x_hat)
-    z_hat /= np.linalg.norm(z_hat, axis=-1, keepdims=True)
-    x_hat /= np.linalg.norm(x_hat, axis=-1, keepdims=True)
-    y_hat /= np.linalg.norm(y_hat, axis=-1, keepdims=True)
-
-    sin_f1 = _SOLAR_TAN_F1/math.sqrt(1.0+_SOLAR_TAN_F1**2)
-    sin_f2 = _SOLAR_TAN_F2/math.sqrt(1.0+_SOLAR_TAN_F2**2)
-    z1 = values["l1"]/_SOLAR_TAN_F1-_SOLAR_K1/sin_f1
-    z2 = values["l2"]/_SOLAR_TAN_F2+_SOLAR_K2/sin_f2
-    z_moon = 0.5*(z1+z2)
-    sun_radius_er = R_SUN_KM/RE_KM
-    G1 = (sun_radius_er+_SOLAR_K1)/sin_f1
-    G2 = (sun_radius_er-_SOLAR_K2)/sin_f2
-    moon = RE_KM*(values["x"][..., None]*x_hat
-                  +values["y"][..., None]*y_hat+z_moon[..., None]*z_hat)
-    sun = moon+RE_KM*((0.5*(G1+G2))*z_hat)
+    geometry = solar_besselian_geometry(jd)
+    moon = np.asarray(geometry["moon_itrf_km"], dtype=float)
+    sun = np.asarray(geometry["sun_itrf_km"], dtype=float)
 
     e2 = 1.0-(RP_KM/RE_KM)**2
     n = RE_KM/np.sqrt(1.0-e2*np.sin(lat)**2)
@@ -995,14 +967,20 @@ def _solar_totality_duration_seconds_vectorized(
     def bisect(left, right, found):
         a, b = left.copy(), right.copy()
         f_a = _solar_internal_contact_margin_vectorized(a, lat, lon)
+        f_b = _solar_internal_contact_margin_vectorized(b, lat, lon)
+        exact_left = found & (f_a == 0.0)
+        exact_right = found & (f_b == 0.0)
         for _ in range(48):
             mid = 0.5*(a+b)
             f_mid = _solar_internal_contact_margin_vectorized(mid, lat, lon)
-            use_left = f_a*f_mid <= 0.0
+            active = found & ~(exact_left | exact_right)
+            use_left = active & (f_a*f_mid <= 0.0)
             b = np.where(use_left, mid, b)
-            a = np.where(use_left, a, mid)
-            f_a = np.where(use_left, f_a, f_mid)
-        return np.where(found, 0.5*(a+b), jd0)
+            a = np.where(active & ~use_left, mid, a)
+            f_a = np.where(active & ~use_left, f_mid, f_a)
+        result = np.where(found, 0.5*(a+b), jd0)
+        result = np.where(exact_left, a, result)
+        return np.where(exact_right, b, result)
 
     c2 = bisect(left_in, right_in, found_in)
     c3 = bisect(left_out, right_out, found_out)
