@@ -117,7 +117,7 @@ Inspect an approved contract and retain a new evidence file::
 Omit ``--contract`` to inspect the blocked LEO template. The command never
 overwrites an existing output and exits with code 2 unless preflight passes.
 Supply ``--repository llnl-ssapy=path/to/SSAPy``,
-``--repository ssatk=path/to/SSAPy-Toolkit`` and
+``--repository ssatk=path/to/ssatk`` and
 ``--repository ssa-data-core=path/to/SSAPy-Data`` to verify repository revisions.
 Missing repositories stay blocked; a dirty development checkout cannot silently
 substitute for the approved clean baseline. This demo alone does not establish
