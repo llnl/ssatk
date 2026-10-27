@@ -1361,7 +1361,7 @@ def _bind_spacecraft_acceleration(model, spacecraft, *, suppress_depleted=True):
         acceleration.accepts_wheel_momentum = True
         acceleration._source_model = model
         acceleration._binding_key = (id(spacecraft), bool(suppress_depleted))
-        if _combined_force_torque_safe(model) or hasattr(model, "_models"):
+        if _combined_force_torque_safe(model) or _is_model_sum_bundle(model):
             acceleration._combined_evaluator = _make_combined_evaluator(
                 model, spacecraft, suppress_depleted
             )
@@ -1396,7 +1396,7 @@ def _bind_spacecraft_torque(model, spacecraft, *, suppress_depleted=True):
         torque.accepts_wheel_momentum = True
         torque._source_model = model
         torque._binding_key = (id(spacecraft), bool(suppress_depleted))
-        if _combined_force_torque_safe(model) or hasattr(model, "_models"):
+        if _combined_force_torque_safe(model) or _is_model_sum_bundle(model):
             torque._combined_evaluator = _make_combined_evaluator(
                 model, spacecraft, suppress_depleted
             )
@@ -1560,6 +1560,11 @@ def _combined_force_torque_safe(model):
         if getattr(cls, name, None) is not getattr(owner, name, None):
             return False
     return True
+
+
+def _is_model_sum_bundle(model):
+    """Identify only the aggregate closures created by this module."""
+    return bool(getattr(model, "_ssatk_model_sum_bundle", False))
 
 
 def _evaluate_torque(model, t, r, v, q, omega, mass=None, wheel_momentum=None):
@@ -1805,6 +1810,7 @@ def _sum_model_accelerations(models, *, suppress_depleted=True):
     acceleration.spacecraft_acceleration_model = True
     acceleration.spacecraft_propulsive_model = propulsive
     acceleration._models = models
+    acceleration._ssatk_model_sum_bundle = True
     acceleration.tank_name = _tank_name_for_models(*models)
     acceleration._depletion_handled = True
     return acceleration
@@ -1833,6 +1839,7 @@ def _sum_model_torques(models, *, suppress_depleted=True):
     torque.spacecraft_propulsive_model = propulsive
     torque.torque = torque
     torque._models = models
+    torque._ssatk_model_sum_bundle = True
     torque._depletion_handled = True
     torque.tank_name = _tank_name_for_models(*models)
     return torque
