@@ -8,22 +8,33 @@ UTC_EPOCHS = ["2008-09-20T12:25:40", "2019-03-01T06:00:00", "2026-10-08T00:00:00
 def _astropy_gcrs_to_itrs(r_m, t):
     import astropy.units as u
     from astropy.coordinates import GCRS, ITRS, CartesianRepresentation
+    from astropy.utils import iers
 
-    itrs = GCRS(CartesianRepresentation(*(r_m.T * u.m)), obstime=t).transform_to(ITRS(obstime=t))
+    from ssatk.data import data_path
+
+    # Feed Astropy the same packaged EOP snapshot SSATK uses, so the comparison
+    # measures the transform rather than two different EOP tables.
+    with data_path("environment/eop/finals2000A.all") as path:
+        table = iers.IERS_A.open(str(path))
+    with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(table):
+        itrs = GCRS(CartesianRepresentation(*(r_m.T * u.m)), obstime=t).transform_to(ITRS(obstime=t))
     return np.stack([itrs.x.to_value(u.m), itrs.y.to_value(u.m), itrs.z.to_value(u.m)], axis=1)
 
 
 def _angle_arcsec(a, b):
-    cos = np.sum(a * b, axis=1) / (np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1))
-    return np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))) * 3600.0
+    # atan2(|a x b|, a.b) keeps precision for tiny angles; arccos of the dot
+    # product bottoms out near 5 mas in float64.
+    cross = np.linalg.norm(np.cross(a, b), axis=1)
+    return np.degrees(np.arctan2(cross, np.sum(a * b, axis=1))) * 3600.0
 
 
 @pytest.mark.parametrize("utc", UTC_EPOCHS)
 def test_gcrf_to_itrf_matrix_matches_astropy_gcrs_to_itrs(utc):
-    # R2: eci_to_ecf_matrix (IAU 1976/1980 + GAST94, as SSAPy's groundTrack)
-    # against astropy GCRS->ITRS (IAU 2006/2000A), 500 random directions.
-    # Measured model difference: 0.021" (2000) to 0.050" (2026).
-    # Tolerance 0.5 arcsec. The former GMST-only matrix was 1354" off in 2026.
+    # R2: eci_to_ecf_matrix against astropy GCRS->ITRS with the same packaged
+    # EOP table, 500 random directions. Both are IAU 2006/2000A; the measured
+    # 0.30-0.64 mas difference is the IERS celestial-pole offsets (dX, dY)
+    # that SSATK applies and astropy's built-in transform omits.
+    # Tolerance 1 mas.
     from ssatk.coordinates.frames import eci_to_ecf_matrix
 
     t = Time(utc, scale="utc")
@@ -31,7 +42,7 @@ def test_gcrf_to_itrf_matrix_matches_astropy_gcrs_to_itrs(utc):
     r = rng.normal(size=(500, 3))
     r *= 7.0e6 / np.linalg.norm(r, axis=1)[:, None]
     ours = r @ eci_to_ecf_matrix(float(t.gps)).T
-    assert _angle_arcsec(ours, _astropy_gcrs_to_itrs(r, t)).max() < 0.5
+    assert _angle_arcsec(ours, _astropy_gcrs_to_itrs(r, t)).max() < 1.0e-3
 
 
 @pytest.mark.parametrize("utc", UTC_EPOCHS)
