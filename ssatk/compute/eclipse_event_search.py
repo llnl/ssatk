@@ -293,14 +293,17 @@ def discover_with_position_provider(
         sun_max, moon_max = state(maximum)
         if mode == "solar":
             miss, _, pen, umb = _solar_shadow_geometry(sun_max, moon_max)
-            p_eq = lambda value: (
-                _solar_shadow_geometry(*state(float(value)))[0]
-                - (RE_KM + _solar_shadow_geometry(*state(float(value)))[2])
-            )
-            u_eq = lambda value: (
-                _solar_shadow_geometry(*state(float(value)))[0]
-                - (RE_KM + abs(_solar_shadow_geometry(*state(float(value)))[3]))
-            )
+            def solar_geometry_at(value: float) -> tuple[float, float, float, float]:
+                """Evaluate one ephemeris state once for a contact equation."""
+                return _solar_shadow_geometry(*state(float(value)))
+
+            def p_eq(value: float) -> float:
+                axis_miss, _, penumbra, _ = solar_geometry_at(value)
+                return axis_miss - (RE_KM + penumbra)
+
+            def u_eq(value: float) -> float:
+                axis_miss, _, _, umbra = solar_geometry_at(value)
+                return axis_miss - (RE_KM + abs(umbra))
             search_lo, search_hi = maximum - 0.45, maximum + 0.45
             p_roots = _roots(p_eq, search_lo, search_hi)
             if len(p_roots) < 2:
