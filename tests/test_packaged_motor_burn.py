@@ -51,7 +51,9 @@ def test_packaged_motor_burn_matches_mass_balance_and_rocket_equation():
 
     assert result["final_mass_kg"] == pytest.approx(dry_mass, rel=1e-6, abs=0)
     assert result["delta_v_m_s"] == pytest.approx(reference_delta_v, rel=1e-6, abs=0)
-    assert np.all(np.diff(result["mass_kg"]) <= 0.0)
+    mass_kg = np.asarray(result["mass_kg"])
+    assert np.all(np.diff(mass_kg) <= 0.0)
+    assert mass_kg[0] - mass_kg[-1] == pytest.approx(propellant_mass, rel=1e-6, abs=0)
     np.testing.assert_allclose(
         np.asarray(result["velocity_m_s"])[:, 1:], 0.0, atol=1e-12, rtol=0,
     )
