@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "Space Situational Awareness Toolkit (SSATK) was created by Travis R. Yeager. If you use SSATK in your work, please cite it using the metadata from this file."
+message: "Space Situational Awareness Toolkit (SSATK) was created by Travis R. Yeager, its corresponding author (yeagerastro@gmail.com, yeager7@llnl.gov). If you use SSATK in your work, please cite it using the metadata from this file."
 title: "Space Situational Awareness Toolkit (SSATK)"
 type: software
 authors:
@@ -7,8 +7,8 @@ authors:
     given-names: "Travis R."
     email: "yeagerastro@gmail.com"
     affiliation: "Lawrence Livermore National Laboratory"
-  - family-name: "Diamond"
-    given-name: "Joel"
+  - family-names: "Diamond"
+    given-names: "Joel"
     email: "diamond10@llnl.gov"
     affiliation: "Lawrence Livermore National Laboratory"
   - family-names: "Higgins"
@@ -19,6 +19,10 @@ contact:
   - family-names: "Yeager"
     given-names: "Travis R."
     email: "yeagerastro@gmail.com"
+    affiliation: "Lawrence Livermore National Laboratory"
+  - family-names: "Yeager"
+    given-names: "Travis R."
+    email: "yeager7@llnl.gov"
     affiliation: "Lawrence Livermore National Laboratory"
 abstract: "SSATK is a Python toolkit for space situational awareness and astrodynamics: orbit and 6-DoF spacecraft propagation, impulsive and continuous-thrust transfer design, coordinate and time frames, space-environment models, conjunction screening and orbit determination, standard orbit-data formats, and visualization."
 keywords:
