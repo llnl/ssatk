@@ -51,6 +51,10 @@ class PositionProvider(Protocol):
         """Return ``(sun, moon)`` arrays with shape ``(N, 3)``."""
 
 
+class ScientificSolverError(RuntimeError):
+    """Raised when a required eclipse geometry optimization does not converge."""
+
+
 @dataclass(frozen=True)
 class DiscoveredEclipse:
     key: str
@@ -272,8 +276,20 @@ def _solar_surface_apparent_geometry(
         method="Nelder-Mead",
         options={"xatol": 1.0e-9, "fatol": 1.0e-15, "maxiter": 1000},
     )
-    latitude = float(np.clip(result.x[0], -90.0, 90.0))
-    longitude = float(result.x[1])
+    candidate = np.asarray(getattr(result, "x", None), dtype=float)
+    if (
+        not bool(getattr(result, "success", False))
+        or candidate.shape != (2,)
+        or not np.all(np.isfinite(candidate))
+    ):
+        status = getattr(result, "status", "unknown")
+        message = getattr(result, "message", "no solver message")
+        raise ScientificSolverError(
+            "WGS-84 solar surface geometry optimization failed "
+            f"(status={status!r}, message={message!r})"
+        )
+    latitude = float(np.clip(candidate[0], -90.0, 90.0))
+    longitude = float(candidate[1])
     separation, sun_radius, moon_radius = geometry(latitude, longitude)
     return moon_radius, sun_radius, separation, latitude, longitude
 
