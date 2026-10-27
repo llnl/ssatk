@@ -1361,7 +1361,7 @@ def _bind_spacecraft_acceleration(model, spacecraft, *, suppress_depleted=True):
         acceleration.accepts_wheel_momentum = True
         acceleration._source_model = model
         acceleration._binding_key = (id(spacecraft), bool(suppress_depleted))
-        if hasattr(model, "_acceleration_torque") or hasattr(model, "_models"):
+        if _combined_force_torque_safe(model) or hasattr(model, "_models"):
             acceleration._combined_evaluator = _make_combined_evaluator(
                 model, spacecraft, suppress_depleted
             )
@@ -1396,7 +1396,7 @@ def _bind_spacecraft_torque(model, spacecraft, *, suppress_depleted=True):
         torque.accepts_wheel_momentum = True
         torque._source_model = model
         torque._binding_key = (id(spacecraft), bool(suppress_depleted))
-        if hasattr(model, "_acceleration_torque") or hasattr(model, "_models"):
+        if _combined_force_torque_safe(model) or hasattr(model, "_models"):
             torque._combined_evaluator = _make_combined_evaluator(
                 model, spacecraft, suppress_depleted
             )
@@ -1460,7 +1460,7 @@ def _make_combined_evaluator(model, spacecraft, suppress_depleted):
                 and _propellant_depleted(state, getattr(child, "tank_name", None))
             )
 
-        if hasattr(model, "_acceleration_torque"):
+        if _combined_force_torque_safe(model):
             if not active(model):
                 return np.zeros(3), np.zeros(3)
             return model._acceleration_torque(t, r, v, q, omega, state)
@@ -1471,7 +1471,7 @@ def _make_combined_evaluator(model, spacecraft, suppress_depleted):
             if not active(child):
                 continue
             if getattr(child, "spacecraft_acceleration_model", False):
-                if hasattr(child, "_acceleration_torque"):
+                if _combined_force_torque_safe(child):
                     acceleration, torque = child._acceleration_torque(
                         t, r, v, q, omega, state
                     )
@@ -1489,7 +1489,7 @@ def _make_combined_evaluator(model, spacecraft, suppress_depleted):
             if (
                 getattr(child, "spacecraft_torque_model", False)
                 and not getattr(child, "spacecraft_wheel_torque_model", False)
-                and not hasattr(child, "_acceleration_torque")
+                and not _combined_force_torque_safe(child)
             ):
                 evaluator = child.torque if hasattr(child, "torque") else child
                 total_torque += _as_vector3(
@@ -1540,6 +1540,28 @@ def _paired_force_torque_evaluator(acceleration, torque):
     if evaluator is None or getattr(torque, "_combined_evaluator", None) is None:
         return None
     return evaluator
+
+
+def _combined_force_torque_safe(model):
+    """Accept only built-in force models with unchanged public delegators."""
+    if any(
+        name in getattr(model, "__dict__", {})
+        for name in ("acceleration", "torque", "_acceleration_torque")
+    ):
+        return False
+    cls = type(model)
+    owner = next(
+        (base for base in cls.__mro__ if base.__dict__.get("_combined_force_torque_safe")),
+        None,
+    )
+    if owner is None:
+        return False
+    if cls is owner:
+        return True
+    return not any(
+        name in cls.__dict__
+        for name in ("acceleration", "torque", "_acceleration_torque")
+    )
 
 
 def _evaluate_torque(model, t, r, v, q, omega, mass=None, wheel_momentum=None):

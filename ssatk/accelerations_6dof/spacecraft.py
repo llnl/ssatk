@@ -385,6 +385,7 @@ class SpacecraftFlatPlateDrag(SpacecraftAccel):
     """
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -452,6 +453,7 @@ class SpacecraftFlatPlateSolRad(SpacecraftAccel):
     """Attitude-dependent flat-plate solar-radiation pressure with optional torque."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -512,6 +514,7 @@ class SpacecraftFacetDrag(SpacecraftAccel):
     """Attitude-dependent drag over all facets on a spacecraft body."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -580,6 +583,7 @@ class SpacecraftFacetSolRad(SpacecraftAccel):
     """Attitude-dependent solar-radiation pressure over all body facets."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -628,6 +632,7 @@ class SpacecraftThrusterAccel(SpacecraftAccel):
     """Acceleration and torque from body-mounted thrusters."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(self, *, body=None, throttle=1.0, thruster_names=None, mass: float | None = None):
         self.body = body
