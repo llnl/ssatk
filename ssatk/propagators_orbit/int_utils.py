@@ -104,15 +104,12 @@ def precompute_third_body_positions_exact(t, body_name):
 
 
 def third_body_acceleration(r, body_position, mu):
-    """Evaluate an Earth-centered point-mass third-body acceleration."""
-    r = np.asarray(r, dtype=float)
-    body_position = np.asarray(body_position, dtype=float)
-    delta = body_position - r
-    delta_norm = np.linalg.norm(delta)
-    body_norm = np.linalg.norm(body_position)
-    if delta_norm == 0.0 or body_norm == 0.0:
-        return np.zeros(3, dtype=float)
-    return float(mu) * (delta / delta_norm**3 - body_position / body_norm**3)
+    """Evaluate the shared Earth-centered point-mass force lazily."""
+    from ..accelerations_6dof.spacecraft import (
+        third_body_acceleration as shared_third_body_acceleration,
+    )
+
+    return shared_third_body_acceleration(r, body_position, mu)
 
 
 def build_profile(profile, t_arr):
