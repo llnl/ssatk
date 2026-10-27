@@ -38,11 +38,11 @@ explicitly.
 import numpy as np
 
 from ..time_functions import to_gps
-from ._earth_rotation import gcrs_to_itrs_matrix, gcrs_to_itrs_matrix_and_rate
+from ._earth_rotation import _RATE_STEP_S, gcrs_to_itrs_matrix, gcrs_to_itrs_matrix_and_rate
 from .velocity import v_from_r
 
 
-def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=1.0, allow_predicted=True):
+def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=None, allow_predicted=True):
     """
     Convert GCRF coordinates to ITRF coordinates.
 
@@ -58,7 +58,9 @@ def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=1.0, allow_predicted=True):
         numerically, which needs a densely sampled trajectory.
     step_s : float, optional
         Half-width in seconds of the central difference used to differentiate
-        the GCRS->ITRS rotation when ``v`` is an array. Default 1 s.
+        the GCRS->ITRS rotation when ``v`` is an array. ``None`` (default)
+        uses the step :mod:`ssatk.coordinates._earth_rotation` measured as
+        most accurate; shorter steps lose float64 precision.
     allow_predicted : bool, optional
         Forwarded to the packaged EOP table; default ``True`` (see the
         module docstring).
@@ -91,7 +93,8 @@ def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=1.0, allow_predicted=True):
     if v_gcrf.shape != r_gcrf.shape:
         raise ValueError("v must have the same shape as r_gcrf.")
     rotation, rate = gcrs_to_itrs_matrix_and_rate(
-        gps_arr, step_s=step_s, allow_predicted=allow_predicted, extrapolate=True
+        gps_arr, step_s=_RATE_STEP_S if step_s is None else step_s,
+        allow_predicted=allow_predicted, extrapolate=True
     )
     pos = np.einsum("nij,nj->ni", rotation, r_gcrf)
     vel = np.einsum("nij,nj->ni", rotation, v_gcrf) + np.einsum("nij,nj->ni", rate, r_gcrf)
