@@ -79,6 +79,21 @@ def test_gcrf_to_itrf_matches_astropy_configured_with_the_packaged_eop_table():
     np.testing.assert_allclose(velocity, expected_velocity, rtol=0, atol=_VELOCITY_TOLERANCE_M_S)
 
 
+def test_position_only_conversions_match_astropy_in_both_directions():
+    """R2: the position-only branches (no velocity argument) use a separate
+    code path from the state conversion above, so they are checked against
+    the same Astropy reference: GCRF->ITRF directly, and ITRF->GCRF by
+    mapping Astropy's ITRS positions back to the original GCRF inputs.
+    """
+    expected_position, _ = _astropy_reference()
+
+    position = gcrf_to_itrf(_POSITIONS_M, _EPOCHS.gps, allow_predicted=False)
+    np.testing.assert_allclose(position, expected_position, rtol=0, atol=_POSITION_TOLERANCE_M)
+
+    recovered = itrf_to_gcrf(expected_position, _EPOCHS.gps, allow_predicted=False)
+    np.testing.assert_allclose(recovered, _POSITIONS_M, rtol=0, atol=_POSITION_TOLERANCE_M)
+
+
 def test_gcrf_to_itrf_round_trips_through_itrf_to_gcrf():
     """Paired with the Astropy comparison above: applying the inverse rotation
     to its own output must recover the original GCRF position. This alone
