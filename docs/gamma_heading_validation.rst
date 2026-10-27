@@ -67,9 +67,15 @@ References and tolerances
 
 The independent path transforms GCRS states with an Astropy
 ``CartesianDifferential`` into ITRS and derives local velocities from
-spherical-coordinate rates. SSAPy's IAU 1976/80 rotation and Astropy's IAU
-2006/2000A rotation are distinct conventions; a **0.0005°** angle tolerance
-allows for their differences. Across all 721 gallery epochs, the measured
+spherical-coordinate rates. The production code under test now shares
+Astropy's IAU 2006/2000A convention (``ssatk.coordinates._earth_rotation``,
+fed by SSATK's packaged EOP data rather than Astropy's own IERS table); the
+**0.0005°** angle tolerance was sized to also cover the dashboard's earlier
+IAU 1976/80 rotation and is now larger than the measured difference needs
+(see ``tests/test_gamma_and_heading.py``'s matching R2 check, now agreeing to
+about 2e-7 deg). The following measured maxima predate that change and have
+not been rerun against it:
+Across all 721 gallery epochs, the measured
 maximum differences are **0.000000941°** in gamma and **0.000020662°** in
 heading. These are implementation comparisons, not tracking uncertainties.
 

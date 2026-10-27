@@ -73,48 +73,30 @@ def _unit(v: np.ndarray) -> np.ndarray:
 
 
 # ── rotation matrices ─────────────────────────────────────────────────────────
-def eci_to_ecf_matrix(t_gps) -> np.ndarray:
+def eci_to_ecf_matrix(t_gps, *, allow_predicted: bool = True) -> np.ndarray:
     """
     GCRF -> ITRF rotation matrix at GPS time(s) ``t_gps``.
 
-    Same chain as :func:`ssapy.compute.groundTrack` and
-    ``ssapy.EarthObserver``: IAU 1976/1980 precession-nutation (``erfa.pnm80``
-    at TT), Greenwich apparent sidereal time (``erfa.gst94`` at UT1 from the
-    IERS table), then polar motion. Returns ``(3, 3)`` for a scalar time and
-    ``(N, 3, 3)`` for an array, with ``r_itrf = M @ r_gcrf``.
+    IAU 2006/2000A (:mod:`ssatk.coordinates._earth_rotation`): CIO-based
+    precession-nutation with the IERS celestial-pole offsets, Earth Rotation
+    Angle at UT1, and polar motion, all from SSATK's packaged EOP table.
+    Returns ``(3, 3)`` for a scalar time and ``(N, 3, 3)`` for an array, with
+    ``r_itrf = M @ r_gcrf``. ``allow_predicted`` defaults ``True``: see the
+    note in ``ssatk.coordinates.earth_fixed``'s module docstring on why this
+    (and ``gcrf_to_itrf``/``itrf_to_gcrf``/``gcrf_to_itrf_astropy``) default
+    differently than the explicit ``_eop``-suffixed functions.
 
-    This previously rotated by Greenwich *mean* sidereal time alone. Applied to
-    GCRF vectors that omits precession and nutation since J2000: on
-    2026-10-09 it put an equatorial point 1235 arcsec (38.2 km) west and
-    540 arcsec south of astropy's GCRS->ITRS result.
+    This used to chain ``erfa.pnm80`` (IAU 1976/1980 precession-nutation) and
+    ``erfa.gst94`` (Greenwich apparent sidereal time) -- the same convention
+    as ``ssapy.compute.groundTrack`` and ``ssapy.EarthObserver`` -- read
+    through SSAPy's ``iers_interp``. Before that it rotated by Greenwich
+    *mean* sidereal time alone, which omits precession and nutation since
+    J2000: on 2026-10-09 that put an equatorial point 1235 arcsec (38.2 km)
+    west and 540 arcsec south of astropy's GCRS->ITRS result.
     """
-    import erfa
-    from ssapy.utils import iers_interp
+    from ._earth_rotation import gcrs_to_itrs_matrix
 
-    t = np.asarray(t_gps, dtype=float)
-    scalar = t.ndim == 0
-    t = np.atleast_1d(t)
-    mjd_tt = 44244.0 + (t + 51.184) / 86400.0          # GPS -> TT, as MJD
-    d_ut1_tt_mjd, pmx, pmy = iers_interp(t)
-    pn = erfa.pnm80(2400000.5, mjd_tt)
-    gst = erfa.gst94(2400000.5, mjd_tt + d_ut1_tt_mjd)
-
-    cg, sg = np.cos(gst), np.sin(gst)
-    r3 = np.zeros((t.size, 3, 3))
-    r3[:, 0, 0] = cg
-    r3[:, 0, 1] = sg
-    r3[:, 1, 0] = -sg
-    r3[:, 1, 1] = cg
-    r3[:, 2, 2] = 1.0
-
-    polar = np.broadcast_to(np.eye(3), (t.size, 3, 3)).copy()
-    polar[:, 0, 2] = pmx
-    polar[:, 1, 2] = -pmy
-    polar[:, 2, 0] = -pmx
-    polar[:, 2, 1] = pmy
-
-    m = polar @ r3 @ pn
-    return m[0] if scalar else m
+    return gcrs_to_itrs_matrix(t_gps, allow_predicted=allow_predicted)
 
 
 def greenwich_azimuth_rad(t_gps):

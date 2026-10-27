@@ -106,9 +106,11 @@ The day map is static imagery, not weather or day/night illumination at the date
 Inputs are GCRF positions in metres and absolute Astropy ``Time`` values or
 GPS seconds. ``frame="gcrf"`` displays Earth rotating in inertial space;
 ``frame="itrf"`` displays a fixed Earth with the trajectories transformed to
-Earth-fixed axes. The surface orientation uses the full SSAPy-compatible
-GCRF/ITRF chain: IAU 1976/1980 precession and nutation, apparent sidereal time
-at UT1, and IERS polar motion. A UTC label identifies the rendered instant.
+Earth-fixed axes. The surface orientation uses SSATK's single GCRF/ITRF route
+(``ssatk.coordinates._earth_rotation``): CIO-based IAU 2006 precession / IAU
+2000A nutation with the IERS celestial-pole offsets, Earth Rotation Angle at
+UT1, and polar motion, all from SSATK's packaged EOP data. A UTC label
+identifies the rendered instant.
 The camera is orthographic, and the Earth hides far-side spacecraft and trails.
 Trails omit segments with an occulted endpoint rather than bridging hidden arcs.
 

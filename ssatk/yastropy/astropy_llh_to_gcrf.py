@@ -1,40 +1,49 @@
-from astropy.coordinates import GCRS, ITRS
-from astropy import units as u
+import erfa
 import numpy as np
 
+from ..time_functions import to_gps
 
-def astropy_llh_to_gcrf(lon, lat, t, alt=0):
+_WGS84 = 1  # erfa ellipsoid identifier for gd2gc
+
+
+def astropy_llh_to_gcrf(lon, lat, t, alt=0, *, allow_predicted=True):
     """
-    Convert latitude, longitude, altitude to GCRF Cartesian coordinates.
-    
+    Convert geodetic latitude, longitude, altitude to GCRF Cartesian coordinates.
+
     Parameters:
     -----------
-    lon, lat : float
-        Latitude and longitude in degrees
-    alt : float
-        Altitude in meters above ellipsoid
+    lon, lat : float or array-like
+        Longitude and latitude in degrees (same length).
+    alt : float or array-like
+        Altitude in meters above the WGS84 ellipsoid.
     t : Time
-        UTC astropy time for the conversion
-    
+        UTC astropy time for the conversion; scalar, or one per ``lon``/``lat``.
+    allow_predicted : bool, optional
+        Forwarded to the packaged EOP table; default ``True`` (see
+        ``ssatk.coordinates.earth_fixed``'s module docstring).
+
     Returns:
     --------
-    tuple : (x, y, z)
-        GCRF Cartesian coordinates in meters
+    ndarray, shape (N, 3)
+        GCRF Cartesian coordinates in meters.
+
+    Despite the "astropy" name, this shares SSATK's IAU 2006/2000A route
+    (:mod:`ssatk.coordinates._earth_rotation`) rather than calling Astropy's
+    GCRS/ITRS transform directly, so it uses SSATK's packaged EOP data
+    instead of Astropy's own (network-backed) IERS table.
     """
-    from astropy.coordinates import EarthLocation
-    
-    # Create EarthLocation
-    earth_loc = EarthLocation(lat=lat*u.deg, lon=lon*u.deg, height=alt*u.m)
-    
-    # Convert to ITRS
-    itrs_coord = ITRS(earth_loc.geocentric, obstime=t)
-    
-    # Transform to GCRS
-    gcrs_coord = itrs_coord.transform_to(GCRS(obstime=t))
-    
-    # Extract Cartesian coordinates
-    x = gcrs_coord.cartesian.x.to(u.m).value
-    y = gcrs_coord.cartesian.y.to(u.m).value
-    z = gcrs_coord.cartesian.z.to(u.m).value
-    
-    return np.column_stack((x, y, z))
+    # Deferred: ssatk.coordinates imports this package (for astropy_surface_rv),
+    # so importing it at module load time would be circular.
+    from ..coordinates._earth_rotation import gcrs_to_itrs_matrix
+    from ..coordinates.earth_fixed import _time_array
+
+    lon = np.atleast_1d(np.asarray(lon, dtype=float))
+    lat = np.atleast_1d(np.asarray(lat, dtype=float))
+    alt = np.broadcast_to(np.asarray(alt, dtype=float), lon.shape)
+    r_itrf = np.asarray(
+        erfa.gd2gc(_WGS84, np.radians(lon), np.radians(lat), alt), dtype=float
+    )
+
+    gps = _time_array(to_gps(t), len(r_itrf))
+    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted)
+    return np.einsum("nji,nj->ni", rotation, r_itrf)

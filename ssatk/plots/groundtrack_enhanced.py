@@ -54,7 +54,7 @@ from matplotlib.patches import Circle
 import warnings
 
 from astropy.time import Time
-from astropy.coordinates import EarthLocation, GCRS, ITRS, get_sun
+from astropy.coordinates import EarthLocation, get_sun
 import astropy.units as u
 
 from ssatk.constants import EARTH_MU_KM3_S2, EARTH_RADIUS_KM, SUN_RADIUS_KM
@@ -151,14 +151,22 @@ def ecef_to_geodetic(r_ecef_km: np.ndarray):
 
 
 def subsolar_point(t: Time):
-    """Real subsolar (lat, lon) in degrees at time(s) t, via astropy get_sun + ITRS."""
+    """Real subsolar (lat, lon) in degrees at time(s) t.
+
+    Sun position from Astropy's ``get_sun`` (apparent geocentric), rotated to
+    Earth-fixed through this module's :func:`gcrf_to_itrf` (SSATK's IAU
+    2006/2000A route) rather than Astropy's GCRS->ITRS transform directly, so
+    it does not need Astropy's own (network-backed) IERS table.
+    """
     sun_gcrs = get_sun(t)
-    sun_cart = sun_gcrs.cartesian
-    sun_itrs = GCRS(sun_cart, obstime=t).transform_to(ITRS(obstime=t))
-    x, y, z = sun_itrs.x.value, sun_itrs.y.value, sun_itrs.z.value
+    r_eci_km = np.atleast_2d(sun_gcrs.cartesian.xyz.to_value(u.km).T)
+    r_ecef_km = gcrf_to_itrf(r_eci_km, t)
+    x, y, z = r_ecef_km[:, 0], r_ecef_km[:, 1], r_ecef_km[:, 2]
     r = np.sqrt(x**2 + y**2 + z**2)
     lat = np.degrees(np.arcsin(np.clip(z / r, -1, 1)))
     lon = np.degrees(np.arctan2(y, x))
+    if lat.size == 1:
+        return float(lat[0]), float(lon[0])
     return lat, lon
 
 

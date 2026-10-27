@@ -16,7 +16,7 @@ from .rendering import _with_low_spec
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ssapy import groundTrack
+from ..coordinates import gcrf_to_llh
 from ._groundtrack_helpers import as_list as _as_list
 from ._groundtrack_helpers import broadcast_time_list as _broadcast_time_list
 from ._groundtrack_helpers import clean_lonlat_wrap as _clean_lonlat_wrap
@@ -254,10 +254,7 @@ def groundtrack_plot(
 
     # Plot each orbit
     for i, (ri, ti) in enumerate(zip(r_list, t_list)):
-        lon, lat, _ = groundTrack(np.asarray(ri), ti, format="geodetic")
-
-        lon_deg = np.degrees(lon)
-        lat_deg = np.degrees(lat)
+        lon_deg, lat_deg, _ = gcrf_to_llh(np.asarray(ri), ti)
 
         # Wrap into displayed longitude interval
         lon_disp = _wrap_longitudes(lon_deg, central_longitude=central_longitude)
