@@ -9,7 +9,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from astropy.time import Time
 
+from ssatk.coordinates.earth_fixed import itrf_to_gcrf_eop
+from ssatk.environment_eop import load_packaged_eop
 from ssatk.launch.preflight import (
     EOPCoverageError,
     LAUNCH_CONVENTIONS,
@@ -21,7 +24,6 @@ from ssatk.launch.preflight import (
     validate_mission_contract,
     verify_data_resources,
 )
-
 
 
 def _requirement(value=1.0, tolerance=0.0, unit="test-unit"):
@@ -134,31 +136,97 @@ _PREDICTED_EPOCH = "2026-10-02T16:00:00"  # flag 'P'; inside the table but past 
 _UNCOVERED_EPOCH = "2027-09-01T00:00:00"  # just past the end of the packaged EOP table
 
 
-def test_launch_site_state_matches_closed_form_earth_rotation_velocity():
-    """R1: the inertial speed from Earth's rotation must match the closed-form
-    rigid-body formula v = omega x r for the IERS Conventions (2010) nominal
-    mean angular velocity of Earth, omega = 7.292115e-5 rad/s (Table 1.1).
+def _wgs84_ecef(latitude_deg, longitude_deg, height_m):
+    """Closed-form geodetic->ECEF conversion, independent of SSATK/Astropy."""
+    a = 6378137.0
+    f = 1.0 / 298.257223563
+    e2 = f * (2.0 - f)
+    phi = np.radians(latitude_deg)
+    lam = np.radians(longitude_deg)
+    n = a / np.sqrt(1.0 - e2 * np.sin(phi) ** 2)
+    x = (n + height_m) * np.cos(phi) * np.cos(lam)
+    y = (n + height_m) * np.cos(phi) * np.sin(lam)
+    z = (n * (1.0 - e2) + height_m) * np.sin(phi)
+    return np.array([x, y, z])
 
-    The GCRF<->ITRF round trip performed inside ``launch_site_state`` does not
-    by itself establish numerical accuracy (see docs/testing_policy.md), so
-    its closure is asserted here only alongside this independent reference.
+
+def test_launch_site_state_itrf_position_matches_wgs84_closed_form():
+    """R1: ITRF position must match the closed-form WGS84 geodetic->ECEF
+    formula (a = 6378137 m, f = 1/298.257223563), independent of the
+    Astropy/SSATK code path, to 1e-6 m (floating-point precision at this
+    magnitude, not pad survey accuracy). Checked at two pads of different
+    latitude so a spherical-Earth or flattening mistake cannot cancel out.
     """
-    state = launch_site_state("Kennedy Space Center LC-39A", _OBSERVED_EPOCH)
+    for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
+        state = launch_site_state(site, _OBSERVED_EPOCH)
+        expected_m = _wgs84_ecef(state["latitude_deg"], state["longitude_deg"], state["height_m"])
+        residual_m = np.linalg.norm(np.array(state["itrf_position_m"]) - expected_m)
+        assert residual_m == pytest.approx(0.0, abs=1.0e-6)
 
+
+def test_launch_site_state_velocity_matches_earth_rotation():
+    """R1: the pad's inertial velocity must be the rigid-body Earth-rotation
+    velocity v = omega x rho for the IERS Conventions (2010) nominal mean
+    angular velocity omega = 7.292115e-5 rad/s (Table 1.1), where rho is the
+    ITRF distance from the spin axis. rho must come from the ITRF position:
+    using the GCRF x/y components instead confounds the spin-axis distance
+    with the pad's declination, which is wrong by kilometres once a pad is
+    off the equator.
+
+    Also checks that v is perpendicular to r (no radial component for a
+    stationary point) and that rotation is eastward (right-handed about
+    +z): the position component perpendicular to GCRF z, crossed with v,
+    must point within 1 degree of GCRF +z. GCRF z stays within a fraction of
+    a degree of the true pole from 2000-2030 (precession/nutation), which is
+    why 1 degree is a safe tolerance for this direction check while still
+    catching a sign-flipped velocity (which fails by ~180 degrees).
+    """
     earth_angular_velocity_rad_s = 7.292115e-5
-    position_itrf_m = np.array(state["itrf_position_m"])
-    closed_form_velocity_m_s = np.cross([0.0, 0.0, earth_angular_velocity_rad_s], position_itrf_m)
-    speed_m_s = np.linalg.norm(state["gcrf_velocity_m_s"])
-    closed_form_speed_m_s = np.linalg.norm(closed_form_velocity_m_s)
+    for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
+        state = launch_site_state(site, _OBSERVED_EPOCH)
+        r_itrf = np.array(state["itrf_position_m"])
+        r_gcrf = np.array(state["gcrf_position_m"])
+        v_gcrf = np.array(state["gcrf_velocity_m_s"])
 
-    # Residual is the nominal mean rotation rate versus the instantaneous
-    # sidereal rate astropy derives from the packaged Earth-orientation data;
-    # the observed residual is about 2e-4 to 4e-4 m/s across several launch
-    # pads and epochs, well inside this budget.
-    assert closed_form_speed_m_s == pytest.approx(speed_m_s, abs=1.0e-3)
+        rho_m = np.linalg.norm(r_itrf[:2])
+        speed_m_s = np.linalg.norm(v_gcrf)
+        # Residual is the nominal mean rotation rate versus the instantaneous
+        # sidereal rate Astropy derives from the packaged Earth-orientation
+        # data; observed residual is about 2e-4 to 4e-4 m/s across several
+        # launch pads and epochs, well inside this budget.
+        assert speed_m_s == pytest.approx(earth_angular_velocity_rad_s * rho_m, abs=1.0e-3)
 
-    assert state["closure"]["position_m"] < 1.0e-6
-    assert state["closure"]["velocity_m_s"] < 1.0e-3
+        cosine_r_v = abs(np.dot(v_gcrf, r_gcrf)) / (speed_m_s * np.linalg.norm(r_gcrf))
+        assert cosine_r_v < 1.0e-6
+
+        z_hat = np.array([0.0, 0.0, 1.0])
+        rho_vector_gcrf = r_gcrf - np.dot(r_gcrf, z_hat) * z_hat
+        spin_axis_estimate = np.cross(rho_vector_gcrf, v_gcrf)
+        spin_axis_estimate /= np.linalg.norm(spin_axis_estimate)
+        assert np.dot(spin_axis_estimate, z_hat) > np.cos(np.radians(1.0))
+
+        assert state["closure"]["position_m"] < 1.0e-6
+        assert state["closure"]["velocity_m_s"] < 1.0e-3
+
+
+def test_launch_site_state_matches_independent_eop_rotation():
+    """R2: compare against SSATK's independent erfa-based ITRF->GCRF path
+    (``itrf_to_gcrf_eop``: IAU 1976/1980 precession-nutation plus GST94),
+    fed the same packaged EOP snapshot, instead of the Astropy ITRS<->GCRS
+    implementation ``launch_site_state`` uses. The two models differ by
+    about 0.6-1.4 m at the surface for 2020-2024 (measured here); a 5 ms
+    UT1 error moves a Cape Canaveral-latitude pad by about 2 m, so a 2.0 m
+    tolerance still catches a UT1/EOP mistake such as Astropy's silent
+    UT1-UTC=0 fallback for an uncovered epoch.
+    """
+    epoch = Time(_OBSERVED_EPOCH, scale="utc")
+    eop = load_packaged_eop()
+    for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
+        state = launch_site_state(site, epoch)
+        itrf_position = np.array([state["itrf_position_m"]])
+        independent_gcrf = itrf_to_gcrf_eop(itrf_position, epoch.gps, eop=eop, allow_predicted=False)[0]
+        residual_m = np.linalg.norm(independent_gcrf - np.array(state["gcrf_position_m"]))
+        assert residual_m == pytest.approx(0.0, abs=2.0)
 
 
 def test_launch_site_state_predicted_eop_requires_opt_in():
