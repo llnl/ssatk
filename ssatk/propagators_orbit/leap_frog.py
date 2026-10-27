@@ -107,6 +107,10 @@ def leapfrog(
     batch_third_body = bool(raw_accels) and all(
         model in (accel_point_moon, accel_point_sun) for model in raw_accels
     )
+    third_body_counts = {
+        "moon": sum(model is accel_point_moon for model in raw_accels),
+        "sun": sum(model is accel_point_sun for model in raw_accels),
+    }
     if batch_third_body:
         if accel_point_moon in raw_accels:
             exact_third_body["moon"] = precompute_third_body_positions_exact(t_abs, "moon")
@@ -135,6 +139,21 @@ def leapfrog(
             a += value
 
         return a
+
+    def _third_body_accel(r_i, index=None, epoch=None):
+        total = np.zeros(3, dtype=float)
+        for body_name, mu in (("moon", MOON_MU), ("sun", SUN_MU)):
+            count = third_body_counts[body_name]
+            if count == 0:
+                continue
+            if index is None:
+                position = precompute_third_body_positions_exact(
+                    np.asarray([epoch], dtype=float), body_name
+                )[0]
+            else:
+                position = exact_third_body[body_name][index]
+            total += count * third_body_acceleration(r_i, position, mu)
+        return total
 
     # ---- state arrays ----
     r = np.empty((n_steps, 3), dtype=float)
@@ -172,14 +191,8 @@ def leapfrog(
             + accel_radial(r[i],            r_th[i])
             + accel_velocity(v[i],          v_th[i])
             + accel_inclination(r[i], v[i], i_th[i])
-            + (
-                third_body_acceleration(r[i], exact_third_body["moon"][i], MOON_MU)
-                if "moon" in exact_third_body else _eval_extra_accels(r[i], v[i], t_abs[i])
-            )
-            + (
-                third_body_acceleration(r[i], exact_third_body["sun"][i], SUN_MU)
-                if "sun" in exact_third_body else 0.0
-            )
+            + (_third_body_accel(r[i], i) if batch_third_body
+               else _eval_extra_accels(r[i], v[i], t_abs[i]))
         )
         v_half = v[i] + 0.5 * dt * a0
 
@@ -198,7 +211,9 @@ def leapfrog(
                      + accel_radial(impact_r, r_th[i])
                      + accel_velocity(half, v_th[i])
                      + accel_inclination(impact_r, half, i_th[i])
-                     + _eval_extra_accels(impact_r, half, impact_t))
+                     + (_third_body_accel(impact_r, epoch=impact_t)
+                        if batch_third_body else
+                        _eval_extra_accels(impact_r, half, impact_t)))
             impact_v = half + 0.5 * h * a_end
             if impact_t == t_abs[i]:
                 return result(i + 1)
@@ -214,14 +229,8 @@ def leapfrog(
             + accel_radial(r[i + 1],            r_th[i + 1])
             + accel_velocity(v_half,            v_th[i + 1])
             + accel_inclination(r[i + 1], v_half, i_th[i + 1])
-            + (
-                third_body_acceleration(r[i + 1], exact_third_body["moon"][i + 1], MOON_MU)
-                if "moon" in exact_third_body else _eval_extra_accels(r[i + 1], v_half, t_abs[i + 1])
-            )
-            + (
-                third_body_acceleration(r[i + 1], exact_third_body["sun"][i + 1], SUN_MU)
-                if "sun" in exact_third_body else 0.0
-            )
+            + (_third_body_accel(r[i + 1], i + 1) if batch_third_body
+               else _eval_extra_accels(r[i + 1], v_half, t_abs[i + 1]))
         )
         v[i + 1] = v_half + 0.5 * dt * a1
 

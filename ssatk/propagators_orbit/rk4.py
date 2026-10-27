@@ -71,7 +71,7 @@ def rk4(
     r[0] = np.asarray(r0, float)
     v[0] = np.asarray(v0, float)
 
-    use_batched_ephemerides = (
+    use_batched_ephemerides = n_steps > 1 and (
         accel_point_moon is _DEFAULT_ACCEL_POINT_MOON
         and accel_point_sun is _DEFAULT_ACCEL_POINT_SUN
     )
