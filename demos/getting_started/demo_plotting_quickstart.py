@@ -255,6 +255,8 @@ def main(make_figures=None, fast=None, include_heavy=False):
     # ------------------------------------------------------------------
     # These are important SSATK plotting routines, but they are slower than a
     # quickstart.  Enable them explicitly with main(include_heavy=True).
+    # Their default flux belts need the separately installed IRENE runtime, so a
+    # missing runtime (FileNotFoundError) is skipped like a missing package.
     if include_heavy:
         try:
             mag_path = figpath(f"plotting_quickstart_magfield")
@@ -267,7 +269,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
                 show=False,
             )
             outputs["files"].append(mag_path)
-        except ImportError as exc:
+        except (ImportError, FileNotFoundError) as exc:
             outputs["magfield_skipped"] = str(exc)
 
         try:
@@ -280,7 +282,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
                 show=False,
             )
             outputs["files"].append(belts_path)
-        except ImportError as exc:
+        except (ImportError, FileNotFoundError) as exc:
             outputs["van_allen_skipped"] = str(exc)
 
     return outputs

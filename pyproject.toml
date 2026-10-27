@@ -57,14 +57,14 @@ monitoring = [
   "psutil",
 ]
 
-propulsion = ["ssa-data-propulsion==0.0.1"]
+propulsion = ["ssa-data-propulsion==0.0.2"]
 benchmarks = ["ssa-data-benchmarks==0.0.1"]
 all-data = [
   "ssa-data-core==0.0.1",
   "ssa-data-gravity==0.0.1",
   "ssa-data-lunar==0.0.1",
   "ssa-data-lunar-gravity==0.0.1",
-  "ssa-data-propulsion==0.0.1",
+  "ssa-data-propulsion==0.0.2",
   "ssa-data-benchmarks==0.0.1",
 ]
 

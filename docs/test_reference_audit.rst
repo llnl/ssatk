@@ -186,6 +186,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_integration_terminal_epoch_regressions.py,2,R1 R6,Known event roots and GPS floating-point ULP,Stopping-time contract
    tests/test_integration_terminal_regressions.py,2,R1 R6,Free-flight terminal state; occurrence-count event roots,Synthetic event functions
    tests/test_integration_wheel_regressions.py,4,R1 R4 R5,Integrated torque; capacity; angular momentum; attitude and event-time STM,Specified ideal actuator; multiple integrators
+   tests/test_irene.py,2,R1 C,Closed-form rad-to-mGy and km-to-m conversions; exact dose sum and unchanged integral flux,Synthetic fixtures; output-format and unit contracts only; no IRENE prediction check
    tests/test_j2_reference.py,1,R1 R4,First-order secular J2 RAAN rate; step convergence,Averaged first-order formula permits short-period and higher-order differences
    tests/test_keplerian_helpers.py,5,R1 R2,Kepler equation; vis-viva; orbital invariants; SSAPy states,Specified two-body model
    tests/test_lagrange_points.py,2,R1 R3,CR3BP equilibrium residual and collinear approximate fractions,Equilibrium residual is authoritative; rounded fractions are secondary
