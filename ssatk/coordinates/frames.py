@@ -310,9 +310,11 @@ class FrameTransform:
         if self.frame == Frame.ECF:
             if t_gps is None:
                 raise ValueError("t_gps required for ECF transform")
-            for i in range(N):
-                out[i] = eci_to_ecf_matrix(t_gps[i]) @ r[i]
-            return out
+            times = np.asarray(t_gps, dtype=float)
+            if times.shape != (N,):
+                raise ValueError("t_gps must contain one epoch per trajectory row")
+            matrices = eci_to_ecf_matrix(times)
+            return (matrices @ r[..., None])[..., 0]
 
         if self.frame in (Frame.LVLH, Frame.RTN):
             if r_ref is not None or v_ref is not None:

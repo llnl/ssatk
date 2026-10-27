@@ -78,6 +78,16 @@ class EarthOrientationTable:
         gps = np.asarray([record.gps_seconds for record in self.records], dtype=float)
         if not np.all(np.diff(gps) > 0.0):
             raise ValueError("Earth orientation records must be strictly chronological.")
+        # Keep the search grid outside the dataclass fields so value equality
+        # and hashing continue to depend only on the immutable records.
+        gps.setflags(write=False)
+        object.__setattr__(self, "_source_gps_seconds", gps)
+
+    def __setstate__(self, state):
+        # Unpickling bypasses initialization and NumPy restores writable
+        # arrays. Rebuild the grid, including for older cache-free pickles.
+        self.__dict__.update(state)
+        self.__post_init__()
 
     @property
     def start_gps(self) -> float:
@@ -101,7 +111,7 @@ class EarthOrientationTable:
                 f"EOP time {gps} s is outside [{self.start_gps}, {self.end_gps}] s."
             )
 
-        source_times = np.asarray([record.gps_seconds for record in self.records])
+        source_times = self._source_gps_seconds
         right = int(np.searchsorted(source_times, gps, side="left"))
         if right == 0:
             left_record = right_record = self.records[0]
