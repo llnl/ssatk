@@ -64,9 +64,21 @@ class MappedSphere(Artist):
         matrix = ax.get_proj()
         bounds = np.array([[ax.bbox.x0, ax.bbox.y0], [ax.bbox.x1, ax.bbox.y1]])
         scale = renderer.get_image_magnification()
+        data_transform = ax.transData
+        if data_transform.is_affine:
+            data_transform_key = (
+                "affine", data_transform.get_affine().get_matrix().tobytes()
+            )
+        else:
+            probes = np.array([[0., 0.], [1., 0.], [0., 1.], [1., 1.]])
+            data_transform_key = (
+                "non-affine",
+                data_transform.transform(probes).tobytes(),
+                data_transform.inverted().transform(probes).tobytes(),
+            )
         key = (
             matrix.shape, matrix.tobytes(), tuple(bounds.ravel()), float(scale),
-            tuple(self.center), float(self.radius),
+            data_transform_key, tuple(self.center), float(self.radius),
         )
         if key != self._view_geometry_key:
             corners = np.array(np.meshgrid(*[[-1., 1.]]*3)).reshape(3, -1).T
@@ -74,7 +86,7 @@ class MappedSphere(Artist):
             projected = np.column_stack((corners, np.ones(8))) @ matrix.T
             # A box entirely in front of the camera bounds the projected sphere.
             if np.all(projected[:, 3] > 0):
-                pixels = ax.transData.transform(projected[:, :2]/projected[:, 3, None])
+                pixels = data_transform.transform(projected[:, :2]/projected[:, 3, None])
                 bounds[0] = np.maximum(bounds[0], pixels.min(axis=0)-1)
                 bounds[1] = np.minimum(bounds[1], pixels.max(axis=0)+1)
             lower = np.floor(bounds[0]).astype(int)
@@ -85,7 +97,7 @@ class MappedSphere(Artist):
             else:
                 x, y = np.meshgrid(lower[0]+(np.arange(width)+.5)/scale,
                                    lower[1]+(np.arange(height)+.5)/scale)
-                xy = ax.transData.inverted().transform(
+                xy = data_transform.inverted().transform(
                     np.column_stack((x.ravel(), y.ravel()))
                 )
                 clip = np.column_stack((xy, -np.ones(len(xy)), np.ones(len(xy))))

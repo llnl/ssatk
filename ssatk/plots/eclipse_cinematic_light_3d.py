@@ -172,7 +172,7 @@ def _texture_uri_cached(path: str, modified_ns: int, size: int, max_width: int,
 
 def _texture_uri(path: Path, *, max_width: int, quality: int = 90) -> tuple[str, dict[str, object]]:
     """Embed a texture, reusing only an unchanged source/option combination."""
-    path = Path(path)
+    path = Path(path).expanduser().resolve()
     stat = path.stat()
     uri, metadata = _texture_uri_cached(
         str(path), int(stat.st_mtime_ns), int(stat.st_size),
