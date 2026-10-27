@@ -56,9 +56,19 @@ def pd_flatten(data: list, factor: float = 1.0) -> list:
     """
     # Filter out empty strings or any non-convertible strings
     cleaned_data = [x for x in data if x.strip() != '']
-    
-    # Attempt to convert to float
-    return [float(x) / factor for x in cleaned_data if x.strip().replace('.', '', 1).isdigit()]
+
+    # Attempt to convert to float. `str.isdigit()` rejects valid floats such
+    # as "-2.3" or "5.0e3" (it has no notion of sign or exponent), silently
+    # dropping them; a direct conversion keeps everything Python's `float()`
+    # accepts, including "nan"/"inf" strings, consistent with "converts each
+    # element to a float" above.
+    converted = []
+    for x in cleaned_data:
+        try:
+            converted.append(float(x) / factor)
+        except ValueError:
+            continue
+    return converted
 
 
 def str_to_array(s: str) -> np.ndarray:
