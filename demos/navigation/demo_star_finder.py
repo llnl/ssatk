@@ -207,11 +207,12 @@ def build_star_finder_figure(result, camera="overview"):
     """Interactive camera, residual, orbit and error-history panels."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    from ssatk.plots._body_surfaces import body_mesh_plotly, body_rotation
 
     fig = make_subplots(rows=2, cols=2,
         specs=[[{}, {}], [{"type": "scene"}, {"secondary_y": True}]],
         subplot_titles=("Camera: catalogue prediction and measured centroids", "Star residuals (withheld stars were not fitted)",
-                        "True orbit and angles-only position fixes", "Error against simulation truth"),
+                        "True orbit and angles-only position fixes<br><sup>Earth map at initial epoch</sup>", "Error against simulation truth"),
         vertical_spacing=.16, horizontal_spacing=.12)
     frames = result['frames']; f = frames[0]
     def star_traces(frame):
@@ -233,10 +234,13 @@ def build_star_finder_figure(result, camera="overview"):
     for trace in traces[2:]: fig.add_trace(trace, row=1, col=2)
     truth = result['truth_r']/1000
     estimates = np.array([frame['position'] for frame in frames])/1000
-    theta, phi = np.meshgrid(np.linspace(0, 2*np.pi, 48), np.linspace(0, np.pi, 24))
     rad = EARTH_RADIUS/1000
-    fig.add_trace(go.Surface(x=rad*np.sin(phi)*np.cos(theta), y=rad*np.sin(phi)*np.sin(theta), z=rad*np.cos(phi),
-        colorscale=[[0, '#132d49'], [1, '#2c6890']], showscale=False, opacity=.85, hoverinfo='skip', name='Earth'), row=2, col=1)
+    # Keep the reference map at the initial epoch, like the full-orbit track.
+    # Sharing one mesh avoids copying the entire surface into every star frame.
+    fig.add_trace(body_mesh_plotly(
+        "earth", (0., 0., 0.), rad,
+        rotation=body_rotation("earth", Time(f['utc'], scale="utc")), n=180,
+    ), row=2, col=1)
     fig.add_trace(go.Scatter3d(x=truth[:, 0], y=truth[:, 1], z=truth[:, 2], mode='lines', line=dict(color='#69e5cc', width=3), name='True orbit'), row=2, col=1)
     fig.add_trace(go.Scatter3d(x=estimates[:, 0], y=estimates[:, 1], z=estimates[:, 2], mode='markers', marker=dict(size=2, color='#ffb85c'), name='Landmark fixes'), row=2, col=1)
     fig.add_trace(go.Scatter3d(x=[truth[0, 0]], y=[truth[0, 1]], z=[truth[0, 2]], mode='markers', marker=dict(size=6, color='white'), name='Spacecraft'), row=2, col=1)
@@ -323,6 +327,7 @@ SSATK's core orbit filter combines successive fixes and dynamics into a position
 <a href="demo_star_finder_summary.json">Run settings and results</a></p></header>""".replace('one 98.8-minute orbit', f"{result['duration_s']/60:.1f} minutes") + plot_html + """
 <footer><p>Hover over measured stars for predicted and measured right ascension/declination. Scrub the time slider or play the sequence.
 Diamonds in the residual panel are stars withheld from the attitude fit. At orbit scale, the position fixes nearly overlap the true trajectory; the error plot resolves their differences. The purple curve is the filtered orbit; the CSV also contains its velocity estimate.</p>
+<p class="note">The Earth texture is a visual reference at the initial epoch, held fixed while the measurement sequence plays. It is not simulated camera imagery and does not enter the navigation solution.</p>
 <p class="note">The filter uses a prescribed position covariance, recorded in the run settings. It does not derive that covariance from simulated truth or assume star residuals capture calibration and landmark errors. Velocity comes from the coarse prior, repeated fixes and a two-body dynamics model, not a single star image.</p>
 <p class="note">The reference is the packaged bright-star catalogue at epoch J2000, propagated to the observation time. Star rays include aberration and solar light deflection, using a coarse orbit prior.
 The catalogue extract lacks distance, radial velocity and uncertainty: parallax and perspective acceleration are omitted. Row labels refer to this CSV, not Hipparcos identifiers.</p>

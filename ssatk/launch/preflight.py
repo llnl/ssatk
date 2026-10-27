@@ -27,10 +27,10 @@ from uuid import uuid4
 
 import numpy as np
 from astropy import units as u
-from astropy.coordinates import ITRS, EarthLocation
+from astropy.coordinates import EarthLocation
 from astropy.time import Time
-from astropy.utils import iers
 
+from ..coordinates.earth_fixed import gcrf_to_itrf
 from ..coordinates.geodetic import llh_to_gcrf
 from ..data import data_path, resource_package
 from ..environment_eop import load_packaged_eop
@@ -336,15 +336,11 @@ def launch_site_state(
     """Build a stationary pad state in ITRF and its rotating GCRF state.
 
     The returned velocity is the inertial velocity caused by Earth rotation.
-    Both the coverage check and the Astropy ITRS<->GCRS transform use
-    SSATK's packaged Earth-orientation snapshot
-    (:func:`ssatk.environment_eop.load_packaged_eop` and the same
-    ``finals2000A.all`` file read as an Astropy ``IERS_A`` table), with
-    network access disabled throughout. This makes the result depend on one
-    pinned, versioned dataset rather than whichever IERS table happens to
-    ship with the installed Astropy, and avoids Astropy's silent
-    UT1-UTC=0/mean-polar-motion fallback for an epoch its bundled table does
-    not cover.
+    The coverage check and the transform both use SSATK's packaged
+    Earth-orientation table (:func:`ssatk.environment_eop.load_packaged_eop`)
+    through SSATK's IAU 2006/2000A Earth-rotation route
+    (:func:`ssatk.coordinates.geodetic.llh_to_gcrf`), so the result depends
+    on one pinned, versioned dataset and needs no network access.
 
     Raises :class:`EOPCoverageError` if ``epoch_utc`` falls in the table's
     predicted region and ``allow_predicted_eop`` is ``False``, or if
@@ -397,18 +393,15 @@ def launch_site_state(
         height_m * u.m,
     )
 
-    with data_path("environment/eop/finals2000A.all") as eop_path:
-        astropy_iers_table = iers.IERS_A.open(str(eop_path))
-
-    with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(astropy_iers_table):
-        itrf = location.get_itrs(obstime=epoch)
-        gcrf_position, gcrf_velocity = llh_to_gcrf(longitude_deg, latitude_deg, epoch, height_m)
-        gcrf = location.get_gcrs(obstime=epoch)
-        closed = gcrf.transform_to(ITRS(obstime=epoch))
-
-    itrf_position = itrf.cartesian.xyz.to_value(u.m)
-    closed_position = closed.cartesian.xyz.to_value(u.m)
-    closed_velocity = closed.velocity.d_xyz.to_value(u.m / u.s)
+    itrf_position = np.array([component.to_value(u.m) for component in location.geocentric])
+    gcrf_position, gcrf_velocity = llh_to_gcrf(
+        longitude_deg, latitude_deg, epoch, height_m, allow_predicted=allow_predicted_eop
+    )
+    closed_position, closed_velocity = gcrf_to_itrf(
+        np.asarray(gcrf_position)[None, :], epoch, v=np.asarray(gcrf_velocity)[None, :],
+        allow_predicted=allow_predicted_eop,
+    )
+    closed_position, closed_velocity = closed_position[0], closed_velocity[0]
 
     return {
         "site": site,
@@ -637,7 +630,7 @@ def _validate_resources(resources: Any, errors: list[str]) -> None:
                 or ".." in pure_path.parts
                 or "\\" in path
             ):
-                errors.append(f"{where}.path must be a safe POSIX path below the selected data package data root")
+                errors.append(f"{where}.path must be a safe relative POSIX path inside the selected ssa-data-* package data directory")
             paths.append(path)
     if len(paths) != len(set(paths)):
         errors.append("resource paths must be unique")

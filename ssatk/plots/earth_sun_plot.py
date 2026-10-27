@@ -24,7 +24,7 @@ Output
 
 from __future__ import annotations
 
-from .rendering import _with_low_spec
+from .rendering import _with_low_spec, per_frame_meshes
 
 import datetime as _dt
 import json
@@ -231,21 +231,21 @@ def build_figure(cfg: dict) -> go.Figure:
     static_traces = _static_backdrop(cfg, t_jd0)
     n_static = len(static_traces)
 
-    frame0_traces, earth_pos0, moon_off0 = _dynamic_traces(cfg, t_jd0, sphere_res)
-    n_dynamic = len(frame0_traces)
-    dyn_idx = list(range(n_static, n_static + n_dynamic))
-
     day_steps = np.linspace(0, _YEAR_DAYS, n_frames, endpoint=False)
     frames = []
     camera_positions = []
-    for i, dstep in enumerate(day_steps):
-        t_jd = t_jd0 + dstep
-        dyn_traces, epos, moff = _dynamic_traces(cfg, t_jd, sphere_res)
-        camera_positions.append(epos)
-        frames.append(go.Frame(
-            data=dyn_traces, traces=dyn_idx, name=str(i),
-            layout=go.Layout(title=dict(text=_title_text(t_jd, epos, moff, cfg))),
-        ))
+    with per_frame_meshes():
+        frame0_traces, earth_pos0, moon_off0 = _dynamic_traces(cfg, t_jd0, sphere_res)
+        n_dynamic = len(frame0_traces)
+        dyn_idx = list(range(n_static, n_static + n_dynamic))
+        for i, dstep in enumerate(day_steps):
+            t_jd = t_jd0 + dstep
+            dyn_traces, epos, moff = _dynamic_traces(cfg, t_jd, sphere_res)
+            camera_positions.append(epos)
+            frames.append(go.Frame(
+                data=dyn_traces, traces=dyn_idx, name=str(i),
+                layout=go.Layout(title=dict(text=_title_text(t_jd, epos, moff, cfg))),
+            ))
     fig = SolarFigure(data=static_traces + frame0_traces, frames=frames)
 
     slider_steps = [

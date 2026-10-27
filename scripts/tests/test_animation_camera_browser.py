@@ -3,6 +3,7 @@
 from io import BytesIO
 import os
 import shutil
+import time
 
 import numpy as np
 from PIL import Image
@@ -84,23 +85,38 @@ def test_plotly_follow_keeps_moving_target_at_image_center(tmp_path):
                     .then(()=>setTimeout(done,200));""",
                 i,
             )
-            pixels = np.array(
-                Image.open(
-                    BytesIO(
-                        driver.find_element(
-                            "css selector", ".js-plotly-plot"
-                        ).screenshot_as_png
-                    )
-                ).convert("RGB")
-            )
-            mask = (
-                (pixels[:, :, 0] > 180)
-                & (pixels[:, :, 1] < 70)
-                & (pixels[:, :, 2] < 70)
-            )
-            y, x = np.nonzero(mask)
-            assert len(x) > 20
-            centre = [float(x.mean()), float(y.mean())]
+
+            def marker_centre():
+                pixels = np.array(
+                    Image.open(
+                        BytesIO(
+                            driver.find_element(
+                                "css selector", ".js-plotly-plot"
+                            ).screenshot_as_png
+                        )
+                    ).convert("RGB")
+                )
+                mask = (
+                    (pixels[:, :, 0] > 180)
+                    & (pixels[:, :, 1] < 70)
+                    & (pixels[:, :, 2] < 70)
+                )
+                y, x = np.nonzero(mask)
+                assert len(x) > 20
+                return np.array([x.mean(), y.mean()])
+
+            # The WebGL scene can repaint the new frame's data and camera on
+            # separate animation ticks, so a single screenshot may catch an
+            # intermediate view. Compare the settled render: repeat until two
+            # consecutive screenshots agree.
+            previous = marker_centre()
+            for _ in range(40):
+                time.sleep(0.1)
+                current = marker_centre()
+                if np.all(np.abs(current - previous) < 0.25):
+                    break
+                previous = current
+            centre = current.tolist()
             np.testing.assert_allclose(centre, [399.5, 299.5], rtol=0, atol=1)
             centroids.append(centre)
         np.testing.assert_allclose(centroids[0], centroids[1], rtol=0, atol=1)

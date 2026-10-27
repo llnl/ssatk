@@ -18,7 +18,7 @@ whichever suits the repo -- no particular directory structure is required.
 """
 
 from ._threejs import classic_scripts_html
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 
 from .rendering import _with_low_spec
 
@@ -83,8 +83,7 @@ def load_textures():
     2048 x 1024 map. Night lights, specular mask and clouds remain at 2K.
     All image bytes are embedded, so the exported viewer works offline.
     """
-    from ssatk.plots._textures import viewer_earth_day_path
-
+    from ssatk.plots._textures import viewer_earth_day_path, require_gallery_texture
     files = {
         "day": "earth_day_2048.jpg",
         "night": "earth_night_2048.jpg",
@@ -92,6 +91,11 @@ def load_textures():
         "clouds": "earth_clouds_2048.png",
     }
     cached_day = viewer_earth_day_path()
+    if gallery_max_textures():
+        # A gallery build must never silently fall back to the packaged 2K map:
+        # that would make the published page depend on whichever cache happened
+        # to be present on the build host.
+        cached_day = require_gallery_texture(cached_day, "earth")
     textures = {}
     for key, filename in files.items():
         data = (cached_day.read_bytes() if key == "day" and cached_day.is_file()
@@ -899,11 +903,15 @@ def build(out_path=None, verbose=True, database_path=None, state_vectors=None,
     }
     from ssatk.plots._textures import viewer_earth_day_path
 
+    earth_day = viewer_earth_day_path()
+    if gallery_max_textures():
+        from ssatk.plots._textures import require_gallery_texture
+        earth_day = require_gallery_texture(earth_day, "earth")
     earth_credit = (
         '<a href="https://science.nasa.gov/earth/earth-observatory/'
         'blue-marble-next-generation/base-topography/">NASA Earth Observatory</a>'
         ' &middot; Blue Marble, Jan 2004 &middot; 8192 &times; 4096'
-        if viewer_earth_day_path().is_file() else 'Earth textures: ssa-data-core (2K fallback)'
+        if earth_day.is_file() else 'Earth textures: ssa-data-core (2K fallback)'
     )
     if is_low_spec():
         earth_credit = "Low-spec blue Earth · surface textures disabled"

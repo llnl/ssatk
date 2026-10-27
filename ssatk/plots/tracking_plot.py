@@ -1,14 +1,14 @@
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from PIL import Image as PILImage
 
-from ssapy import groundTrack
 from ssapy.utils import norm
 from ._textures import earth_texture_path
 from ..constants import RGEO, EARTH_RADIUS
+from ..coordinates import gcrf_to_llh
 from .plotutils import figsave, make_black, valid_orbits, _pop_save_path_aliases, _raise_unrecognized_kwargs
 
 
@@ -58,9 +58,11 @@ def tracking_plot(
     r, t = valid_orbits(r, t)
 
     def _make_plot(r_one, t_one, ground_stations, limits_val, title, figsize, save_path, scale):
-        lon, lat, height = groundTrack(r_one, t_one)
-        lon[np.where(np.abs(np.diff(lon)) >= np.pi)] = np.nan
-        lat[np.where(np.abs(np.diff(lat)) >= np.pi)] = np.nan
+        lon_deg, lat_deg, height = gcrf_to_llh(r_one, t_one)
+        lon_deg = np.asarray(lon_deg, dtype=float)
+        lat_deg = np.asarray(lat_deg, dtype=float)
+        lon_deg[np.where(np.abs(np.diff(lon_deg)) >= 180.0)] = np.nan
+        lat_deg[np.where(np.abs(np.diff(lat_deg)) >= 180.0)] = np.nan
 
         x = r_one[:, 0] / RGEO
         y = r_one[:, 1] / RGEO
@@ -80,12 +82,13 @@ def tracking_plot(
         fig = plt.figure(dpi=100, figsize=figsize)
         fig.patch.set_facecolor('black')
         earth_png = PILImage.new("RGB", (2, 1), "#1a4f8a") if is_low_spec() else PILImage.open(earth_texture_path())
-        earth_png = earth_png.resize((5400 // max(1, int(scale)), 2700 // max(1, int(scale))))
+        if not gallery_max_textures():
+            earth_png = earth_png.resize((5400 // max(1, int(scale)), 2700 // max(1, int(scale))))
 
         # 1) Long/Lat world map
         ax = fig.add_subplot(2, 3, (1, 2))
         ax.imshow(earth_png, extent=[-180, 180, -90, 90])
-        ax.plot(np.rad2deg(lon), np.rad2deg(lat))
+        ax.plot(lon_deg, lat_deg)
         if ground_stations is not None:
             for ground_station in ground_stations:
                 ax.scatter(ground_station[1], ground_station[0], s=15, color='DarkRed')
@@ -100,7 +103,7 @@ def tracking_plot(
         # 2) Long/Lat zoomed
         ax = fig.add_subplot(2, 3, 3)
         ax.imshow(earth_png, extent=[-180, 180, -90, 90])
-        ax.plot(np.rad2deg(lon), np.rad2deg(lat))
+        ax.plot(lon_deg, lat_deg)
         if ground_stations is not None:
             for ground_station in ground_stations:
                 ax.scatter(ground_station[1], ground_station[0], s=15, color='DarkRed')

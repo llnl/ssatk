@@ -67,11 +67,16 @@ or station-kept halo orbit. Propagation failures fail the demo instead of
 silently shortening its time span. Earth is drawn at its physical radius;
 Moon and spacecraft markers identify their positions.
 
-The magnetic-field gallery demo writes both interactive HTML and a PNG card
-preview. It deliberately uses the internal IGRF field with illustrative
+The magnetic-field gallery demo writes interactive HTML, a PNG card preview,
+and two 1280 × 960 MP4 camera tours: field lines alone and field lines with
+belts. Fast mode exports 12 seconds at 12 frames per second; full mode exports
+15 seconds at 24 frames per second. Only the camera moves: the field stays
+at the 2025 epoch, and neither field evolution nor particle motion is simulated.
+It deliberately uses the internal International Geomagnetic Reference Field
+(IGRF) with illustrative
 IGRF-traced L-shell belts, without requiring a network solar-wind lookup or
 SpacePy/IRBEM. These belts do not claim measured particle flux. The gallery
-workflow installs the geomagnetics and static-image extras; it must not
+workflow installs the geomagnetics, static-image, browser and video extras; it must not
 publish a missing magnetic-field dependency as a successful figure.
 
 Validation
@@ -101,9 +106,11 @@ The day map is static imagery, not weather or day/night illumination at the date
 Inputs are GCRF positions in metres and absolute Astropy ``Time`` values or
 GPS seconds. ``frame="gcrf"`` displays Earth rotating in inertial space;
 ``frame="itrf"`` displays a fixed Earth with the trajectories transformed to
-Earth-fixed axes. The surface orientation uses the full SSAPy-compatible
-GCRF/ITRF chain: IAU 1976/1980 precession and nutation, apparent sidereal time
-at UT1, and IERS polar motion. A UTC label identifies the rendered instant.
+Earth-fixed axes. The surface orientation uses SSATK's single GCRF/ITRF route
+(``ssatk.coordinates._earth_rotation``): CIO-based IAU 2006 precession / IAU
+2000A nutation with the IERS celestial-pole offsets, Earth Rotation Angle at
+UT1, and polar motion, all from SSATK's packaged EOP data. A UTC label
+identifies the rendered instant.
 The camera is orthographic, and the Earth hides far-side spacecraft and trails.
 Trails omit segments with an occulted endpoint rather than bridging hidden arcs.
 

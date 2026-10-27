@@ -89,8 +89,9 @@ def test_bundled_source_examples_are_parseable_and_quickstart_calls_are_distinct
             assert examples, path
     examples = source_examples((demos / "getting_started/demo_plotting_quickstart.py").read_text())
     by_output = {pattern: example for example in examples for pattern in example["patterns"]}
-    assert by_output["plotting_quickstart_divergence.gif"]["function"] == "divergence_gif"
-    assert by_output["plotting_quickstart_divergence.jpg"]["function"] == "divergence_plot"
+    assert by_output["plotting_quickstart_orbit_animation.gif"]["function"] == "orbit_plot"
+    assert by_output["plotting_quickstart_orbit_views.jpg"]["function"] == "orbit_plot"
+    assert by_output["plotting_quickstart_orbit_animation.gif"]["code"] != by_output["plotting_quickstart_orbit_views.jpg"]["code"]
     examples = source_examples((demos / "space_environment/demo_van_allen.py").read_text())
     assert {example["function"] for example in examples} == {"plot_van_allen_3d"}
     examples = source_examples((demos / "orbital_mechanics/demo_ellipse_fit_against_ssapy.py").read_text())

@@ -167,6 +167,12 @@ _TOOLKIT_DUPLICATE_ALIASES = {
     "ReferenceCase": ".io",
     "compare_reference_case": ".io",
     "read_reference_case": ".io",
+    "find_irene_runtime": ".io.irene",
+    "prepare_irene_run": ".io.irene",
+    "prepare_irene_flux_grid": ".io.irene",
+    "read_irene_flux_grid": ".io.irene",
+    "read_irene_dose": ".io.irene",
+    "run_irene": ".io.irene",
     "altitude_crossing_event": ".propagators_6dof",
     "attitude_quaternion_from_frame": ".coordinates.attitude",
     "constant_body_thrust": ".accelerations_6dof",
@@ -354,10 +360,12 @@ def __dir__():
         | _SSAPY_ALIAS_NAMES
     )
 
-try:
-    from astropy.utils import iers
-
-    iers.conf.auto_download = True
-    iers.conf.auto_max_age = 365
-except ImportError:
-    pass
+# This package used to set astropy.utils.iers.conf.auto_download = True and
+# auto_max_age = 365 here, mutating astropy's process-wide IERS configuration
+# as a side effect of `import ssatk`, for every downstream user whether or not
+# they touch Earth-fixed/inertial frames. SSATK's own GCRF<->ITRF route
+# (ssatk.coordinates._earth_rotation) reads only its packaged EOP snapshot
+# (ssatk.environment_eop) and never needs astropy's IERS tables or network
+# access, so this is no longer needed for that. plots/base_plot.py still
+# pre-loads the bundled IERS_B table for its own plotting paths, but reads it
+# directly (iers.IERS_B.open()) without touching this global configuration.

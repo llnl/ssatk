@@ -4,10 +4,8 @@ from matplotlib import gridspec
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FixedFormatter
 
-from ssapy import groundTrack
-# from ..yastropy import astropy_gcrf_to_llh
 from ..compute import find_smallest_bounding_cube
-from ..coordinates import v_from_r
+from ..coordinates import gcrf_to_itrf, gcrf_to_llh, v_from_r
 from ..constants import EARTH_RADIUS
 from ..time_functions import to_gps
 from .plotutils import figsave, valid_orbits, _pop_save_path_aliases, _raise_unrecognized_kwargs
@@ -88,9 +86,8 @@ def groundtrack_dashboard(
     lons, lats, altitudes, velocities, x_gts, y_gts, z_gts = [], [], [], [], [], [], []
     for r_i, t_i in zip(r, t):
         xyz = np.array(r_i)
-        x_gt, y_gt, z_gt = groundTrack(xyz, t_i, format='cartesian')
-        lon, lat, height = groundTrack(xyz, t_i, format='geodetic')
-        # lon, lat, height = astropy_gcrf_to_llh(xyz, t_i)
+        x_gt, y_gt, z_gt = gcrf_to_itrf(xyz, t_i).T
+        lon, lat, height = gcrf_to_llh(xyz, t_i)
         # A backward propagation may supply decreasing epochs. Differentiate
         # in chronological order, then restore the supplied display order.
         if len(t_i) < 2:
@@ -102,8 +99,8 @@ def groundtrack_dashboard(
         else:
             velocity = np.linalg.norm(v_from_r(xyz, t_i), axis=1)
 
-        lons.append(np.degrees(lon))
-        lats.append(np.degrees(lat))
+        lons.append(lon)
+        lats.append(lat)
         altitudes.append(height)
         velocities.append(velocity)
         x_gts.append(x_gt)
@@ -137,7 +134,9 @@ def groundtrack_dashboard(
         from .plotutils import load_earth_file
         ax_ground.imshow(load_earth_file(), extent=[-180, 180, -90, 90], aspect='auto', zorder=-1)
     except Exception:
-        pass
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
 
     colors = plt.cm.tab10(np.linspace(0, 1, n_orbits))
     ground_handles = []
@@ -198,9 +197,16 @@ def groundtrack_dashboard(
 
     # ITRF 3D plot
     ax_itrf = fig.add_subplot(gs[0, 2], projection='3d')
-    body = ax_itrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=1.0, linewidth=0)
-    from .occultation import _register_body
-    _register_body(ax_itrf, body, np.zeros(3), EARTH_RADIUS/1e3)
+    from .rendering import gallery_max_textures
+    if gallery_max_textures():
+        from ._body_surfaces import BodySurface, body_rotation
+        epoch = float(np.asarray(t_gps[0]).reshape(-1)[0])
+        BodySurface(ax_itrf, "earth", EARTH_RADIUS / 1e3,
+                    rotation=body_rotation("earth", epoch, frame="itrf"))
+    else:
+        body = ax_itrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=1.0, linewidth=0)
+        from .occultation import _register_body
+        _register_body(ax_itrf, body, np.zeros(3), EARTH_RADIUS/1e3)
     for i, (x_gt, y_gt, z_gt) in enumerate(zip(x_gts, y_gts, z_gts)):
         ax_itrf.plot(x_gt / 1e3, y_gt / 1e3, z_gt / 1e3, color=colors[i], linewidth=2.5)
         ax_itrf.scatter(x_gt[0] / 1e3, y_gt[0] / 1e3, z_gt[0] / 1e3, color=colors[i], marker='*', s=120)
@@ -224,9 +230,15 @@ def groundtrack_dashboard(
 
     # GCRF 3D plot
     ax_gcrf = fig.add_subplot(gs[1, 2], projection='3d')
-    body = ax_gcrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=1.0, linewidth=0)
-    from .occultation import _register_body
-    _register_body(ax_gcrf, body, np.zeros(3), EARTH_RADIUS/1e3)
+    if gallery_max_textures():
+        from ._body_surfaces import BodySurface, body_rotation
+        epoch = float(np.asarray(t_gps[0]).reshape(-1)[0])
+        BodySurface(ax_gcrf, "earth", EARTH_RADIUS / 1e3,
+                    rotation=body_rotation("earth", epoch, frame="gcrf"))
+    else:
+        body = ax_gcrf.plot_surface(earth_x / 1e3, earth_y / 1e3, earth_z / 1e3, color='blue', alpha=1.0, linewidth=0)
+        from .occultation import _register_body
+        _register_body(ax_gcrf, body, np.zeros(3), EARTH_RADIUS/1e3)
     for i, r_i in enumerate(r):
         x, y, z = r_i[:, 0], r_i[:, 1], r_i[:, 2]
         ax_gcrf.plot(x / 1e3, y / 1e3, z / 1e3, color=colors[i], linewidth=2.5)

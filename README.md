@@ -118,7 +118,7 @@ figures are written as self-contained HTML.
 | **6-DoF spacecraft dynamics** | Coupled translation and quaternion attitude; cannonball and facet drag and solar-radiation pressure; Sun, Moon and planetary third bodies; gravity-gradient and magnetic torques; thrusters, reaction wheels, magnetorquers, tanks with evolving mass properties; dry-mass stop events; attitude PD control; preset spacecraft buses | `ssatk.Spacecraft`, `ssatk.satellite_design`, `ssatk.accelerations_6dof` |
 | **Orbital mechanics and transfers** | Keplerian conversions, ellipse fitting, Lagrange points, synthetic populations; Hohmann, bi-elliptic, Lambert, plane-change, rendezvous and continuous-thrust transfers; staged optimal-transfer search with a structured problem schema | `ssatk.orbital_mechanics` |
 | **Frames and time** | GCRF, ITRF, geodetic, lunar, ecliptic and topocentric frames; NTW, RTN/LVLH, VNB and body frames; time-scale conversions | `ssatk.coordinates`, `ssatk.time_functions` |
-| **Space environment** | Sun/Moon ephemerides, Earth/Moon eclipse fractions, atmosphere density and co-rotation, dipole and IGRF magnetic field, T89/T96 magnetosphere, AE-8/AP-8 radiation-belt fluxes, packaged IERS EOP and space-weather tables | `ssatk.SpaceEnvironment`, `ssatk.geomagnetics` |
+| **Space environment** | Sun/Moon ephemerides, Earth/Moon eclipse fractions, atmosphere density and co-rotation, dipole and IGRF magnetic field, T89/T96 magnetosphere, IRENE AE9/AP9 (separately installed) and legacy AE-8/AP-8 radiation-belt fluxes, packaged IERS EOP and space-weather tables | `ssatk.SpaceEnvironment`, `ssatk.geomagnetics` |
 | **SSA and navigation** | Coarse and refined conjunction screening, encounter frames, collision probability; ground-station and Cartesian measurements, extended Kalman filter, batch orbit fitting | `ssatk.ssa`, `ssatk.navigation` |
 | **Observables** | Lambertian and faceted brightness and visual magnitudes, Earth-shadow illumination | `ssatk.compute` |
 | **Data I/O** | CCSDS CDM (KVN 1.0) and OMM (XML 2.0), TLE/3LE parsing, HDF5/NPZ/CSV/JSON with extension-based `ssatk_save`/`ssatk_read` | `ssatk.io` |
@@ -191,6 +191,11 @@ built with Sphinx:
   python -m pip install -r docs/requirements.txt
   python -m sphinx -b html -W --keep-going docs /tmp/ssatk-docs
   ```
+
+Coding agents: `ssatk/skills.md` is a concise guide to the API for AI coding
+assistants and ships with the package. `ssatk-skill` installs it as an agent
+skill (`~/.claude/skills/ssatk/SKILL.md`, or `--dir` for another skills folder)
+so assistants use it in any project; rerun it after upgrading SSATK.
 
 ---
 

@@ -85,6 +85,10 @@ def _cislunar_plot_core(
         else:
             _plot_cislunar_lunar_3d(axes["lunar"], xyz_lunar, r_earth_lunar, mask_lunar, blue_colors, bounds_lunar, lunar_unit, lunar_label, scatter_dot_colors, textcolor, fontsize)
 
+    # Lagrange points belong to the scene, not to each trajectory. Drawing
+    # them per track overprints labels in multi-orbit family comparisons.
+    _plot_lagrange_points(axes["lunar"], bounds_lunar, lunar_unit, textcolor,
+                          fontsize, three_d=(mode != "xy"))
     epoch = t[0][0]
     for panel, ax in axes.items():
         unit = lunar_unit if panel == "lunar" else gcrf_unit
@@ -199,11 +203,6 @@ def _plot_cislunar_lunar_3d(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_color
     ax.scatter3D(*xyz_lunar.T, color=scatter_dot_colors, s=1, label="Orbit Path", zorder=15)
     ax.scatter3D(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], r_earth_lunar[mask_lunar, 2], color=blue_colors, s=55)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=True)
-    for point, pos in _lagrange_points_lunar_fixed_frame().items():
-        pos = pos / unit_conversion
-        if all(bounds_lunar["lower"][idx] <= pos[idx] <= bounds_lunar["upper"][idx] for idx in range(3)):
-            ax.scatter(pos[0], pos[1], pos[2], color=textcolor, label=point, s=10)
-            ax.text(pos[0], pos[1], pos[2], point, color=textcolor)
 
 
 def _plot_cislunar_gcrf_xy(ax, xyz, r_moon, mask_gcrf, grey_colors, unit_conversion, unit_label, scatter_dot_colors, textcolor, fontsize):
@@ -216,11 +215,16 @@ def _plot_cislunar_lunar_xy(ax, xyz_lunar, r_earth_lunar, mask_lunar, blue_color
     _projected_orbit(ax.scatter(xyz_lunar[:, 0], xyz_lunar[:, 1], color=scatter_dot_colors, s=1, label="Orbit Path"), xyz_lunar)
     ax.scatter(r_earth_lunar[mask_lunar, 0], r_earth_lunar[mask_lunar, 1], color=blue_colors, s=(_EARTH_RADIUS / unit_conversion) ** 2 * 100)
     _set_axis_labels(ax, unit_label, textcolor, fontsize, three_d=False)
-    for point, pos in _lagrange_points_lunar_fixed_frame().items():
-        pos = pos / unit_conversion
-        if bounds_lunar["lower"][0] <= pos[0] <= bounds_lunar["upper"][0] and bounds_lunar["lower"][1] <= pos[1] <= bounds_lunar["upper"][1]:
-            ax.scatter(pos[0], pos[1], color=textcolor, label=point, s=20)
-            ax.text(pos[0], pos[1], point, color=textcolor, fontsize=fontsize)
+
+
+def _plot_lagrange_points(ax, bounds, unit, textcolor, fontsize, *, three_d):
+    dimensions = 3 if three_d else 2
+    for point, position in _lagrange_points_lunar_fixed_frame().items():
+        position = position / unit
+        if _bounds_mask(position.reshape(1, 3), bounds, dimensions)[0]:
+            coords = position[:dimensions]
+            ax.scatter(*coords, color=textcolor, label=point, s=10 if three_d else 20)
+            ax.text(*coords, point, color=textcolor, fontsize=fontsize)
 
 
 def _set_axis_labels(ax, unit_label, textcolor, fontsize, *, three_d):

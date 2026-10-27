@@ -5,6 +5,8 @@ Interactive Plotly 3D scene of the inner and outer radiation belts.
 
 Belt geometry (belt_style)
 --------------------------
+* ``'flux'`` (default): official IRENE AE9/AP9 mean integral flux contours;
+  requires a separately installed IRENE runtime and model databases.
 * ``'igrf'``: belt shells bounded by real IGRF-traced L-shells. Because the
   geomagnetic field is not axisymmetric, the inner belt dips toward the South
   Atlantic Anomaly. It falls back automatically if ppigrf is unavailable.
@@ -30,17 +32,14 @@ from __future__ import annotations
 from .rendering import _with_low_spec
 
 import os
-from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+from astropy.time import Time
 
 from ssatk._paths import output_root
+from ssatk.plots.plotutils import normalize_orbit_trajectory, plotly_orbit_trace, save_plotly_figure
 
-try:
-    from .plotutils import normalize_orbit_trajectory, plotly_orbit_trace
-except ImportError:
-    from plotutils import normalize_orbit_trajectory, plotly_orbit_trace
 
 
 # Shared geometry, Earth, sky and texture helpers live in one module so the
@@ -162,6 +161,7 @@ def plot_van_allen_3d(
     save_png=False,
     fidelity="high",
     belt_style="flux",         # 'igrf' | 'lshell' | 'torus'
+    radiation_model="irene",
     inner_min_RE=1.0,
     inner_max_RE=2.0,
     outer_min_RE=3.0,
@@ -193,7 +193,9 @@ def plot_van_allen_3d(
 
     Parameters
     ----------
-    belt_style : {'igrf', 'lshell', 'torus'}
+    radiation_model : {'irene', 'ae8ap8'}
+        Flux backend; IRENE AE9/AP9 requires the separately installed runtime.
+    belt_style : {'flux', 'igrf', 'lshell', 'torus'}
         ``'igrf'`` traces real IGRF L-shells; it falls back to ``'lshell'`` if
         ppigrf is unavailable.
     zoom : float
@@ -236,12 +238,10 @@ def plot_van_allen_3d(
     traces = []
 
     # Epoch for sky orientation (stars are placed in the Earth-fixed frame)
-    import calendar as _cl
-    if isinstance(epoch, (int, float)):
-        _yr = int(epoch); _fr = epoch - _yr
-        _sky_date = datetime(_yr, 1, 1) + timedelta(days=int(_fr * (366 if _cl.isleap(_yr) else 365)))
-    else:
-        _sky_date = epoch.replace(tzinfo=None) if hasattr(epoch, 'tzinfo') else epoch
+    _sky_date = Time(epoch, format="decimalyear" if isinstance(epoch, (int, float)) else None,
+                     scale="utc").utc.to_datetime()
+    timestamp = _sky_date.isoformat(sep=" ") + " UTC"
+    print(f"Field data timestamp: {timestamp}", flush=True)
 
     # 1. Stars
     if show_stars:
@@ -250,9 +250,7 @@ def plot_van_allen_3d(
     # 2. Belts (outer first so the inner belt reads in front)
     style = belt_style
     if style == "flux":
-        # AE-8 / AP-8 trapped flux iso-surfaces, evaluated on real IGRF(+T89)
-        # field geometry.  Belt extent and the slot between the belts come from
-        # the model, not from asserted radii.
+        # Reuse the magnetic-field plot's IRENE/explicit-legacy flux renderer.
         try:
             import magfield_plot_3d as _mfx
         except Exception:
@@ -261,28 +259,36 @@ def plot_van_allen_3d(
             except Exception:
                 _mfx = None
         _fx = []
-        if _mfx is not None and not getattr(_mfx, "_HAS_PPIGRF", False):
+        if _mfx is None and radiation_model == "irene":
+            raise ImportError("IRENE belt renderer could not be imported")
+        if _mfx is not None and radiation_model == "ae8ap8" and not getattr(_mfx, "_HAS_PPIGRF", False):
             print("  ppigrf unavailable — AE-8/AP-8 belts need it to trace shells",
                   flush=True)
             _mfx = None
         if _mfx is not None:
-            if external_field and str(external_field).lower() == "t89" \
+            previous_model = _mfx.get_external_model()
+            if radiation_model == "ae8ap8" and external_field and str(external_field).lower() == "t89" \
                     and getattr(_mfx, "_HAS_GEOPACK", False):
                 # set/get_external_model() rather than attribute assignment: the
                 # state lives in ssatk.geomagnetics, and assigning it on a
                 # module that merely re-exports the physics is a silent no-op.
                 _mfx.set_external_model(_mfx._get_external(_sky_date, kp=kp, model="t89"))
-            _fx = _mfx._flux_isosurfaces(_sky_date, axis,
+            try:
+                _fx = _mfx._flux_isosurfaces(_sky_date, axis,
                                          pitch_angle_deg=pitch_angle_deg,
                                          n_L=22 if hi else 16, n_azim=24 if hi else 18,
                                          n_pts=80 if hi else 60,
-                                         grid_n=48 if hi else 36, eq_iters=2 if hi else 1)
-            _mfx.set_external_model(None)
+                                         grid_n=48 if hi else 36, eq_iters=2 if hi else 1,
+                                         radiation_model=radiation_model)
+            finally:
+                _mfx.set_external_model(previous_model)
         if _fx:
             traces.extend(_fx)
             style = "_done"
         else:
-            print("  AE8/AP8 unavailable — falling back to dipole L-shell belts", flush=True)
+            if radiation_model == "irene":
+                raise ValueError("IRENE returned no positive belt flux; no substitute geometry rendered")
+            print(f"  {radiation_model} flux unavailable — falling back to dipole L-shell belts", flush=True)
             style = "lshell"
     igrf_mesh = _igrf_belt_backend() if style == "igrf" else None
     if style == "igrf" and igrf_mesh is None:
@@ -292,13 +298,7 @@ def plot_van_allen_3d(
     if style == "_done":
         pass
     elif style == "igrf":
-        import calendar as _cal
-        if isinstance(epoch, (int, float)):
-            yr = int(epoch); fr = epoch - yr
-            days = 366 if _cal.isleap(yr) else 365
-            date = datetime(yr, 1, 1) + timedelta(days=int(fr*days))
-        else:
-            date = epoch.replace(tzinfo=None) if hasattr(epoch, 'tzinfo') else epoch
+        date = _sky_date
         n_az = 48 if hi else 24
         # Belts reach L=6, where T89 external currents are ~36% of the internal
         # field on the nightside, so trace them in the total field.
@@ -407,8 +407,10 @@ def plot_van_allen_3d(
     # ------------------------------------------------------------------
     # Annotations
     # ------------------------------------------------------------------
-    src = {'_done': 'BELTS: NASA AE-8/AP-8 CLIMATOLOGICAL MEAN FLUX ON IGRF FIELD GEOMETRY '
-                    '&#183; MEASURED ~18x ABOVE GOES &gt;2.1 MeV ELECTRONS, WHICH VARY 82x IN 8 DAYS',
+    src = {'_done': ('BELTS: IRENE AE9/AP9 MEAN INTEGRAL FLUX; SEP/GCR EXCLUDED'
+                     if radiation_model == "irene" else
+                     'BELTS: NASA AE-8/AP-8 CLIMATOLOGICAL MEAN FLUX ON IGRF FIELD GEOMETRY '
+                     '&#183; MEASURED ~18x ABOVE GOES &gt;2.1 MeV ELECTRONS, WHICH VARY 82x IN 8 DAYS'),
            'igrf': f'IGRF L-SHELLS BOUNDED BY MIRROR POINTS, PITCH {pitch_angle_deg:.0f}\u00b0 (SHOWS SOUTH ATLANTIC ANOMALY)',
            'lshell': 'BELT SHELLS FROM DIPOLE L-SHELL MODEL',
            'torus': 'BELT SHELLS FROM TORUS APPROXIMATION'}[style]
@@ -417,6 +419,9 @@ def plot_van_allen_3d(
         text=f'{src} &#183; INNER: PROTONS &#183; OUTER: ELECTRONS &#183; WGS84 EARTH',
         font=dict(color=_INK_FAINT, size=9, family='Helvetica, Arial'),
         showarrow=False)]
+    _annotations.append(dict(x=0.01, y=0.055, xref='paper', yref='paper', xanchor='left',
+        text=f'FIELD DATA TIMESTAMP&#160;&#160;{timestamp}',
+        font=dict(color=_INK_SOFT, size=12, family='Helvetica, Arial'), showarrow=False))
     if show_belt_residence and belt_residence:
         try:
             t_in  = belt_residence.get("t_inner_s", 0.0)/60.0
@@ -431,7 +436,8 @@ def plot_van_allen_3d(
         except Exception:
             pass
 
-    sub = ('AE-8/AP-8 mean-flux contour' if style == '_done'
+    sub = (('IRENE AE9/AP9 mean-flux contour' if radiation_model == 'irene'
+            else 'AE-8/AP-8 mean-flux contour') if style == '_done'
            else 'IGRF-traced L-shells' if style == 'igrf'
            else 'dipole L-shell model' if style == 'lshell' else 'torus model')
     fig = go.Figure(
@@ -460,18 +466,13 @@ def plot_van_allen_3d(
             uirevision='van_allen_camera'),
     )
 
-    if save_path is not None:
-        out = Path(str(save_path)).with_suffix('')
-        out.parent.mkdir(parents=True, exist_ok=True)
-        html_out = out.with_suffix('.html')
-        fig.write_html(str(html_out), include_plotlyjs=True,
-                       full_html=True, config=PLOTLY_CONFIG)
-        print(f"  HTML (interactive): {html_out}", flush=True)
+    if save_path is not None and save_path is not False:
+        target = True if save_path is True else Path(str(save_path)).with_suffix('.html')
+        html_out = Path(save_plotly_figure(fig, target, default_name="van_allen_plot_3d",
+                                          config=PLOTLY_CONFIG))
         if save_png:
             try:
-                png_out = out.with_suffix('.png')
-                fig.write_image(str(png_out), width=width, height=height, scale=2)
-                print(f"  PNG:  {png_out}", flush=True)
+                save_plotly_figure(fig, html_out.with_suffix('.png'), width=width, height=height, scale=2)
             except Exception as e:
                 print(f"  PNG skipped: {e}", flush=True)
 
@@ -502,15 +503,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[van_allen_plot_3d] Warning: could not parse GUI_CONFIG ({e})")
 
-    epoch = cfg.get("epoch")
-    if isinstance(epoch, str):
-        try:
-            _d = datetime.strptime(epoch[:19], "%Y-%m-%d %H:%M:%S")
-            epoch = _d.year + (_d.timetuple().tm_yday - 1) / 365.25
-        except Exception:
-            epoch = 2025.0
-    elif not isinstance(epoch, (int, float)):
-        epoch = 2025.0
+    epoch = cfg.get("epoch", 2025.0)
 
     _params = _inspect.signature(plot_van_allen_3d).parameters
     kwargs = {k: val for k, val in cfg.items()

@@ -35,11 +35,18 @@ setting when constructed. Resampling a spacecraft view preserves it.
 ``set_low_spec_mode(None)`` restores the environment default. Nested contexts
 restore their previous setting even when plotting raises an exception.
 
-For a whole gallery or a program launched in another process, set
+For a standalone demo or a program launched in another process, set
 ``SSATK_LOW_SPEC=1`` in its environment. The environment setting defaults to
 false; an explicit Python override takes precedence. Low-spec browser exports
 are generated with the setting; existing HTML files must be regenerated.
 When using the standalone Moon server, pass ``show(path, low_spec=True)`` too.
+
+Published galleries always require the prepared 8192 × 4096 Earth and Moon
+color maps. The gallery runner's ``SSATK_GALLERY_MAX_TEXTURES=1`` policy takes
+precedence over low-spec settings, including explicit per-call overrides.
+It restores the previous environment after each demo. Missing or
+lower-resolution prepared maps cause a demo failure rather than a plain
+sphere or packaged-map fallback; see :doc:`gallery_hosting` for preparation.
 
 Low-spec surfaces are blue for Earth and white for the Moon, with the
 existing solar/eclipse shading where relevant. Otherwise a neutral display

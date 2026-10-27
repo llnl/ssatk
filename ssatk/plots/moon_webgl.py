@@ -124,6 +124,13 @@ def find_moon_cache(path=None):
     Returns (directory, metadata dict).
     """
     d = os.path.expanduser(path) if path else cache_dir()
+    from ssatk.plots.rendering import gallery_max_textures
+    if gallery_max_textures():
+        # Gallery output is reproducible only when the cache contains the
+        # checked, native NASA albedo map.  Do not publish an older 4K bake
+        # merely because its filenames and metadata are present.
+        from ssatk.plots._textures import require_gallery_texture
+        require_gallery_texture(os.path.join(d, "moon_albedo.jpg"), "moon")
     missing = [f for f in _ASSETS if not os.path.exists(os.path.join(d, f))]
     if missing:
         raise FileNotFoundError(

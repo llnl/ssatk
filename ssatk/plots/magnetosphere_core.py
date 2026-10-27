@@ -16,7 +16,7 @@ minimal environment.
 
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec
 
 
 from pathlib import Path
@@ -153,6 +153,9 @@ def _resolve_texture_path(texture_path, allow_download=False):
     ``allow_download=True`` to fetch NASA Blue Marble into the cache when no
     packaged texture is installed.
     """
+    if gallery_max_textures():
+        from ._textures import earth_texture_path
+        return earth_texture_path()
     if texture_path is False or str(texture_path).lower() in ("none", "off", "flat"):
         return None
     if texture_path is not None and str(texture_path).lower() != "auto":
@@ -168,6 +171,8 @@ def _resolve_texture_path(texture_path, allow_download=False):
 
         return earth_texture_path()
     except FileNotFoundError:
+        if gallery_max_textures():
+            raise
         pass
     cached = _texture_cache_dir() / "earth_texture.jpg"
     if cached.exists() and cached.stat().st_size > 50_000:
@@ -226,6 +231,8 @@ def _load_texture_rgb(texture_path):
             return None
         return np.array(_PIL_Image.open(p).convert('RGB'), dtype=np.uint8)
     except Exception as e:
+        if gallery_max_textures():
+            raise
         print(f"  texture load failed: {e}", flush=True)
         return None
 
@@ -271,6 +278,9 @@ def _build_earth_mesh(texture_path, n_lon=480, n_lat=240, sun_shading=False,
     """
     if is_low_spec():
         n_lon, n_lat = min(n_lon, 37), min(n_lat, 19)
+    elif gallery_max_textures():
+        n_lat = body_mesh_resolution(n_lat-1, plotly=True)+1
+        n_lon = max(n_lon, 2*body_mesh_resolution(0, plotly=True)+1)
     a, b = WGS84_A_KM, WGS84_B_KM
     e2   = 1.0 - (b * b) / (a * a)
 

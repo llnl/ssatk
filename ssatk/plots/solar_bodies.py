@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from .rendering import _with_low_spec
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 from ._body_surfaces import body_mesh_plotly, body_rotation
 from io import BytesIO
 
@@ -460,6 +460,30 @@ def make_planet_traces(
         n = min(n, 24)
     r = _R_AU[name] * scale_au
     cx, cy, cz = pos_au
+
+    if name == "Earth" and gallery_max_textures():
+        from astropy.time import Time
+        earth_time = (
+            Time(float(time), format="jd", scale="utc")
+            if isinstance(time, (int, float, np.integer, np.floating)) else time
+        )
+        rotation = body_rotation("earth", earth_time, "ecliptic")
+        if rotation_deg is not None or earth_time is None:
+            angle = np.radians(float(rotation_deg or 0.0))
+            spin = np.array([[np.cos(angle), -np.sin(angle), 0.],
+                             [np.sin(angle), np.cos(angle), 0.], [0., 0., 1.]])
+            rotation = np.array(_apply_tilt(*np.eye(3), _TILT["Earth"])) @ spin
+        mesh = body_mesh_plotly(
+            "earth", pos_au, r, rotation, n=n,
+        )
+        mesh.update(lighting=_planet_lighting(pos_au), lightposition=_sun_lightposition(pos_au))
+        traces = [mesh]
+        if show_label:
+            traces.append(go.Scatter3d(
+                x=[cx], y=[cy], z=[cz], mode="text", text=["Earth"],
+                hoverinfo="skip", showlegend=False,
+            ))
+        return traces
 
     xs, ys, zs = _unit_sphere(n)
     xs, ys, zs = _apply_tilt(xs, ys, zs, _TILT[name])
