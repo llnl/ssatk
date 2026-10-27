@@ -60,16 +60,16 @@ def groundtrack_video(
     max_frames=2000,
     progress=True,
     camera="overview",
-    mode="map",              # <<< NEW: "map" (2D lon/lat; matches your plot), "surface3d", "eci3d"
+    mode="map",
     **save_kwargs,
 ):
     """
     Create an MP4 animation of satellite ground tracks.
 
-    Default `mode="map"` renders a 2D lon/lat plot that matches your groundtrack_plot
-    (full static track + moving marker). If you prefer a 3D path on the Earth's surface,
-    use mode="surface3d" (uses groundTrack(..., format='cartesian')). The old ECI-in-space
-    style can be done with mode="eci3d" (plots r directly around a sphere).
+    ``mode="map"`` renders a 2D lon/lat plot that matches ``groundtrack_plot``
+    (full static track + moving marker), with longitude and latitude from
+    :func:`ssatk.coordinates.gcrf_to_llh`. It is the only supported mode; any
+    other value raises ``ValueError``.
 
     Parameters
     ----------
@@ -78,12 +78,12 @@ def groundtrack_video(
     t : (n,) array_like or list of (n,)
         Absolute times matching r (same as groundtrack_plot).
     ground_stations : (k,2) array_like, optional
-        (lat_deg, lon_deg) rows. Used in "map" and "surface3d" modes.
+        (lat_deg, lon_deg) rows.
     save_path : str, required, must end with '.mp4'
     start_end_markers : bool
     fps, bitrate, max_frames : int
     progress : bool
-    mode : "map" | "surface3d" | "eci3d"
+    mode : "map"
     """
     save_path, save_kwargs = _pop_save_path_aliases(save_kwargs, save_path=save_path)
     _raise_unrecognized_kwargs(save_kwargs, "groundtrack_video")
