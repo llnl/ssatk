@@ -5,7 +5,7 @@ All rotations act on column vectors.
 """
 from __future__ import annotations
 
-from .rendering import is_low_spec
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec
 from ._body_surfaces import BODY_COLORS
 
 import numpy as np
@@ -27,11 +27,13 @@ def earth_surface(resolution=180):
         raise ValueError("earth_resolution must be an integer between 12 and 1440")
     if is_low_spec():
         resolution = min(resolution, 36)
+    else:
+        resolution = max(resolution, 2*body_mesh_resolution(resolution // 2))
     width, height = int(resolution), int(resolution) // 2
     if is_low_spec():
         colors = np.broadcast_to(BODY_COLORS["earth"], (height, width, 3))
     else:
-        path = viewer_earth_day_path()
+        path = earth_texture_path() if gallery_max_textures() else viewer_earth_day_path()
         if not path.is_file():
             path = earth_texture_path()
         with Image.open(path) as image:
@@ -58,6 +60,16 @@ class TexturedEarth:
     def __init__(self, ax, radius, resolution=180, *, cull_backfaces=False):
         self.ax = ax
         self.cull_backfaces = cull_backfaces
+        self.raster = None
+        if gallery_max_textures():
+            # Validate the public resolution argument even though the raster
+            # surface has no geometric tessellation to decimate.
+            if int(resolution) != resolution or not 12 <= resolution <= 1440:
+                raise ValueError("earth_resolution must be an integer between 12 and 1440")
+            from ._body_surfaces import BodySurface
+            self.raster = BodySurface(ax, "earth", radius, zorder=1)
+            self.artist = self.raster.artist
+            return
         self.fixed_quads, colors = earth_surface(resolution)
         self.fixed_quads *= radius
         self.colors = colors
@@ -68,6 +80,8 @@ class TexturedEarth:
         _register_body(ax, self.artist, np.zeros(3), radius)
 
     def orient(self, rotation):
+        if self.raster is not None:
+            return self.raster.update(rotation=rotation)
         vertices = self.fixed_quads @ np.asarray(rotation).T
         if self.cull_backfaces:
             # A fixed-camera animation need not sort/draw the hidden hemisphere.

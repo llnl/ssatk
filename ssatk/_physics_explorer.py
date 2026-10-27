@@ -7,12 +7,40 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 
+from ssatk._gallery_layout import gallery_title
 from ssatk._physics_catalog import TOPICS as RADIATION_TOPICS
 from ssatk._physics_dynamics_catalog import TOPICS as DYNAMICS_TOPICS
 
 
 def demo_anchor(name: str) -> str:
     return "demo-" + name
+
+
+_PREFERRED_TOPIC_ORDER = (
+    "integrators", "gravity", "shadows", "lighting", "thermal", "attitude", "maneuvers", "burns",
+)
+
+
+def _explorer_topic(topic, by_name):
+    topic = dict(topic)
+    demos = []
+    for name in topic["demos"]:
+        result = by_name.get(name)
+        images = [] if result is None else [
+            file for file in result.files
+            if Path(file).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+        ]
+        demos.append({
+            "name": name,
+            "title": gallery_title(name, result.title if result else name.rsplit("/", 1)[-1].replace("_", " ").title()),
+            "status": result.status if result else "not in this build",
+            "href": "index.html#" + quote(demo_anchor(name), safe="") if result else None,
+            "preview": images[0] if images else None,
+            "command": "python -m demos." + name.replace("/", "."),
+            "source": "https://github.com/llnl/ssatk/blob/main/demos/" + quote(name, safe="/") + ".py",
+        })
+    topic["demos"] = sorted(demos, key=lambda demo: (demo["href"] is None, demo["status"] != "success"))
+    return topic
 
 
 def write_physics_explorer(results, out_root: Path) -> None:
@@ -23,27 +51,12 @@ def write_physics_explorer(results, out_root: Path) -> None:
     """
     by_name = {result.name: result for result in results}
     topics = {topic["id"]: topic for topic in DYNAMICS_TOPICS + RADIATION_TOPICS}
-    ordered = []
-    for key in ("integrators", "gravity", "shadows", "lighting", "thermal", "attitude", "maneuvers", "burns"):
-        topic = dict(topics[key])
-        demos = []
-        for name in topic["demos"]:
-            result = by_name.get(name)
-            images = [] if result is None else [
-                file for file in result.files
-                if Path(file).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
-            ]
-            demos.append({
-                "name": name,
-                "title": result.title if result else name.rsplit("/", 1)[-1].removeprefix("demo_").replace("_", " ").capitalize(),
-                "status": result.status if result else "not in this build",
-                "href": "index.html#" + quote(demo_anchor(name), safe="") if result else None,
-                "preview": images[0] if images else None,
-                "command": "python -m demos." + name.replace("/", "."),
-                "source": "https://github.com/llnl/ssatk/blob/main/demos/" + quote(name, safe="/") + ".py",
-            })
-        topic["demos"] = sorted(demos, key=lambda demo: (demo["href"] is None, demo["status"] != "success"))
-        ordered.append(topic)
+    # A topic id can be renamed or removed from the catalog between releases;
+    # skip it here instead of failing the whole gallery report, and still show
+    # any catalog topic that isn't in the preferred order.
+    ordered = [_explorer_topic(topics[key], by_name) for key in _PREFERRED_TOPIC_ORDER if key in topics]
+    ordered += [_explorer_topic(topic, by_name) for key, topic in topics.items()
+                if key not in _PREFERRED_TOPIC_ORDER]
     # JSON is placed in a script element; escape HTML delimiters even for
     # externally supplied manifests, not just the package's own demo names.
     payload = json.dumps(ordered, ensure_ascii=True).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
@@ -177,7 +190,7 @@ code { font:12px/1.6 ui-monospace,monospace; color:#a7e5f0; overflow-wrap:anywhe
 <section class="detail" aria-labelledby="topic-title"><div id="kicker" class="eyebrow"></div><h2 id="topic-title"></h2><p id="summary"></p><ol id="chain" class="chain" aria-label="Model connections"></ol><p class="boundary"><strong>Model boundary</strong><span id="limits"></span></p><details><summary>Python entry points</summary><ul id="apis" class="apis"></ul></details></section>
 </div>
 <section class="examples" aria-labelledby="example-heading"><div class="examples-heading"><h2 id="example-heading">Explore the computed examples</h2><p id="demo-context"></p></div><div id="demos" class="demo-grid"></div></section>
-<p class="footer">Space Situational Awareness Toolkit · This map describes SSATK workflows and its SSAPy adapters. Demo status comes from this gallery build. The concept map works offline; external source links require a connection.</p>
+<p class="footer">Space Situational Awareness Toolkit · This map describes SSATK workflows. Demo status comes from this gallery build. The concept map works offline; external source links require a connection.</p>
 <noscript><p>Enable JavaScript to interact with the map. Browse the <a href="index.html">gallery</a> for computed examples.</p>__NO_SCRIPT__</noscript>
 </main>
 <script type="application/json" id="topic-data">__TOPIC_DATA__</script>

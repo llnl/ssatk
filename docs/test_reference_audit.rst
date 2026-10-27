@@ -320,6 +320,28 @@ Sheet. Both decode to the requested playback length; the physical endpoint
 allows 1 microsecond for GPS rounding and path sampling is at most one hour.
 This adds one parametrized case, not another test function or propagation oracle.
 
+``scripts/tests/test_gallery_max_textures.py`` adds two functions/three cases.
+Four literal, asymmetric colours painted onto the quadrants of an 8192x4096
+JPEG check that ``load_earth_file`` and ``load_moon_file`` keep that native
+grid and reproduce each landmark's RGB within 2/255, parametrized over both
+loaders (C). A separate case checks the satellite-viewer browser payload
+decodes to the same byte-identical JPEG, at the same native grid and landmark
+colours within 2/255 (C). These confirm gallery-mode texture loading and
+browser export are not silently downsampling the prepared map; they make no
+claim about geographic accuracy.
+
+``scripts/tests/test_gallery_sphere_raster.py`` adds three functions/five
+cases. Two R1 analytic references check ``_sphere_raster.sphere_intersections``
+against a closed-form orthographic unit-circle intersection (1e-14 budget) and
+a perspective tangent ray from a specified eye point (3e-8 budget, set by
+square-root conditioning at the double root). A third, three-way parametrized
+case (orthographic; rolled and inverted-axis perspective) paints four literal
+colours onto the quadrants of an 8192x4096 map at closed-form latitude +/-30
+degrees, longitude +/-30 degrees on a radius-two sphere, then projects those
+coordinates through the real Matplotlib camera and checks the rendered pixel
+colours match within 1/255 (R1/C). These validate the raster projection and
+camera-axis handling added for raster body surfaces, not measured imagery.
+
 
 Star-finder extension
 ----------------------

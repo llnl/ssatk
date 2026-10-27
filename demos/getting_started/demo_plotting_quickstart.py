@@ -10,6 +10,9 @@ Run from a cloned repo with:
 
     python -m demos.getting_started.demo_plotting_quickstart
 
+For propagated uncertainty ensembles, see
+``demos/analysis_dashboards/demo_divergence_plot.py``.
+
 Outputs are saved under ``~/ssatk_output/figures`` by default.
 """
 
@@ -23,8 +26,6 @@ import numpy as np
 from astropy.time import Time
 
 import ssatk
-from ssatk.plots.divergence_gif import divergence_gif
-from ssatk.plots.divergence_plot import divergence_plot
 from ssatk.plots.earth_sun_plot import DEFAULT_CFG as EARTH_SUN_CFG
 from ssatk.plots.earth_sun_plot import build_static_figure as build_earth_sun_static
 from ssatk.plots.figpath import figpath, ssatk_path
@@ -68,25 +69,6 @@ def _make_demo_orbit(fast=False):
     return orbit, times, r_m, v_mps
 
 
-def _make_divergence_cloud(r_m, v_mps, times, fast=False):
-    """Return a tiny deterministic ensemble for divergence_plot/divergence_gif."""
-    rng = np.random.default_rng(7)
-    n_samples = 8 if fast else 20
-    n_snapshots = min(8 if fast else 12, len(times))
-    sample_idx = np.linspace(0, len(times) - 1, n_snapshots).astype(int)
-
-    offsets_m = rng.normal(loc=0.0, scale=350.0, size=(n_samples, 3))
-    growth = np.linspace(0.15, 1.0, n_snapshots)
-    r_histories = r_m[sample_idx][None, :, :] + offsets_m[:, None, :] * growth[None, :, None]
-
-    return {
-        "r_histories": r_histories,
-        "r_nominal_hist": r_m[sample_idx],
-        "v_nominal_hist": v_mps[sample_idx],
-        "times_gps": times.gps[sample_idx],
-    }
-
-
 def main(make_figures=None, fast=None, include_heavy=False):
     """
     Build a small orbit and show direct calls to the main SSATK plot routines.
@@ -109,7 +91,6 @@ def main(make_figures=None, fast=None, include_heavy=False):
         fast = UNDER_PYTEST
 
     orbit, times, r_m, v_mps = _make_demo_orbit(fast=fast)
-    divergence = _make_divergence_cloud(r_m, v_mps, times, fast=fast)
 
     outputs = {
         "orbit": orbit,
@@ -229,38 +210,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     outputs["files"].append(fov_path)
 
     # ------------------------------------------------------------------
-    # 4) Divergence plots: divergence_plot and divergence_gif
-    # ------------------------------------------------------------------
-    final_cloud = divergence["r_histories"][:, -1, :]
-    # gallery-call: plotting_quickstart_divergence.jpg
-    div_fig = divergence_plot(
-        final_cloud,
-        r_center=divergence["r_nominal_hist"][-1],
-        v_center=divergence["v_nominal_hist"][-1],
-        title="divergence_plot: final position-error cloud",
-        show=False,
-    )
-    # gallery-end
-    div_path = figpath(f"plotting_quickstart_divergence.jpg")
-    div_fig.savefig(div_path, dpi=180, bbox_inches="tight")
-    plt.close(div_fig)
-    outputs["files"].append(div_path)
-
-    gif_path = ssatk_path(f"plotting_quickstart_divergence.gif")
-    # gallery-call: plotting_quickstart_divergence.gif
-    divergence_gif(
-        r_histories=divergence["r_histories"],
-        times_gps=divergence["times_gps"],
-        output_path=gif_path,
-        r_nominal_hist=divergence["r_nominal_hist"],
-        v_nominal_hist=divergence["v_nominal_hist"],
-        duration=1.0,
-    )
-    # gallery-end
-    outputs["files"].append(gif_path)
-
-    # ------------------------------------------------------------------
-    # 5) Moon plot: moon_plot_3d
+    # 4) Moon plot: moon_plot_3d
     # ------------------------------------------------------------------
     # gallery-call: plotting_quickstart_moon.jpg
     moon_fig, _ = moon_plot_3d(
@@ -274,7 +224,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     outputs["files"].append(figpath(f"plotting_quickstart_moon.jpg"))
 
     # ------------------------------------------------------------------
-    # 6) Solar System Plotly figures: Sun/Earth/Moon and all eight planets
+    # 5) Solar System Plotly figures: Sun/Earth/Moon and all eight planets
     # ------------------------------------------------------------------
     earth_sun_cfg = EARTH_SUN_CFG.copy()
     earth_sun_cfg["n_frames"] = 3
@@ -301,7 +251,7 @@ def main(make_figures=None, fast=None, include_heavy=False):
     outputs["files"].append(solar_path)
 
     # ------------------------------------------------------------------
-    # 7) Slower optional science-context plots
+    # 6) Slower optional science-context plots
     # ------------------------------------------------------------------
     # These are important SSATK plotting routines, but they are slower than a
     # quickstart.  Enable them explicitly with main(include_heavy=True).

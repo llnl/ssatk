@@ -70,6 +70,9 @@ def _fallback_draw_continents(ax):
                   aspect="auto", zorder=0.5, alpha=0.9)
         return "ssapy earth.png"
     except Exception:  # noqa: BLE001, S110 - try the next optional map source.
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
         pass
     try:
         import cartopy.feature as cfeature

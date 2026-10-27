@@ -41,7 +41,7 @@ comment above _EARTH_DAYNIGHT_COLORSCALE for details.)
 
 from __future__ import annotations
 
-from .rendering import is_low_spec, low_spec_mode
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec, low_spec_mode
 from ._body_surfaces import body_mesh_plotly, body_rotation
 
 import os
@@ -383,9 +383,12 @@ def _find_texture(name):
     fall back to a plain color gradient instead of crashing.
     """
     try:
-        from ssapy.utils import find_file
-        return find_file(name, ext=".png")
-    except Exception:
+        from ._body_surfaces import texture_path
+        return texture_path(name)
+    except FileNotFoundError:
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
         return None
 
 
@@ -464,20 +467,24 @@ def _sample_texture_rgb(texture_path, phi, theta):
         # plot_surface) was appropriate here -- it wasn't, and produced
         # visibly low-fidelity results. Only cap unreasonably large source
         # images, to avoid excessive memory use.
+        from .rendering import gallery_max_textures
         max_dim = 1024
-        if img.width > max_dim or img.height > max_dim:
+        if not gallery_max_textures() and (img.width > max_dim or img.height > max_dim):
             scale = max_dim / max(img.width, img.height)
             img = img.resize(
                 (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
                 Image.LANCZOS,
             )
-        img_arr = np.asarray(img, dtype=float) / 255.0  # (H, W, 3)
+        img_arr = np.asarray(img)  # Normalize only sampled texels of the 8K map.
 
         H, W = img_arr.shape[0], img_arr.shape[1]
         row = np.clip((phi / np.pi * (H - 1)).astype(int), 0, H - 1)
         col = ((theta / (2 * np.pi) * W).astype(int) + W // 2) % W
-        return img_arr[row, col]
+        return img_arr[row, col] / 255.0
     except Exception:
+        from .rendering import gallery_max_textures
+        if gallery_max_textures():
+            raise
         return None
 
 
@@ -545,6 +552,9 @@ class EarthShadingLayer:
         self.radius = radius_km
         self.nu = nu
         self.nv = nv
+        if gallery_max_textures():
+            self.nv = body_mesh_resolution(nv-1, plotly=True)+1
+            self.nu = max(nu, 2*body_mesh_resolution(0, plotly=True))
         self.rotation_deg = (earth_rotation_deg_from_time(time)
                              if rotation_deg is None else float(rotation_deg))
 

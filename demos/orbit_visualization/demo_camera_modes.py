@@ -27,7 +27,7 @@ def main(make_figures=True, fast=False, output_dir=None):
         Path(output_dir) if output_dir else Path(figpath("camera_modes.mp4")).parent
     )
     destination.mkdir(parents=True, exist_ok=True)
-    fps, seconds = (8 if fast else 24), 15
+    fps, seconds = (12 if fast else 24), 15
     radius = EARTH_RADIUS + 1_200_000.0
     period = 2 * np.pi * np.sqrt(radius**3 / EARTH_MU)
     epoch = Time("2025-01-01T00:00:00")
@@ -47,7 +47,8 @@ def main(make_figures=True, fast=False, output_dir=None):
     limit = radius / 1000.0 * 1.06
     bounds = np.array([[-limit] * 3, [limit] * 3])
     # gallery-call: camera_modes.mp4 | camera_modes.png
-    fig = plt.figure(figsize=(12, 9), dpi=90 if fast else 120, facecolor="#07111e")
+    # Fast mode reduces temporal samples, not sphere or output resolution.
+    fig = plt.figure(figsize=(12, 9), dpi=160, facecolor="#07111e")
     fig.suptitle("One orbit · four camera shots", color="white", fontsize=19, y=0.98)
     fig.text(
         0.5,
@@ -71,11 +72,11 @@ def main(make_figures=True, fast=False, output_dir=None):
         ax.set_title(label, color="white", fontsize=12, pad=0)
         spec = AnimationCamera(
             mode=mode,
-            distance=18000.0 if mode in {"follow", "chase"} else None,
+            distance=36000.0 if mode in {"follow", "chase"} else None,
             azimuth=-55,
         )
         shot = _CameraPath(spec, positions, bounds, times=elapsed)
-        body = BodySurface(ax, "earth", earth_radius, n=30 if fast else 75)
+        body = BodySurface(ax, "earth", earth_radius, raster=True)
         body.artist.set_zorder(1)
         (line,) = ax.plot([], [], [], color="#dda667", lw=1.3, zorder=2)
         (dot,) = ax.plot(
@@ -106,7 +107,7 @@ def main(make_figures=True, fast=False, output_dir=None):
     animation = FuncAnimation(
         fig, update, frames=len(times), interval=1000 / fps, blit=False
     )
-    animation.save(video, writer=_animation_writer(".mp4", fps=fps, bitrate=3500))
+    animation.save(video, writer=_animation_writer(".mp4", fps=fps, bitrate=12000))
     # gallery-end
     plt.close(fig)
     return {"title": TITLE, "files": [str(video), str(still)]}

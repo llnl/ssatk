@@ -1,8 +1,9 @@
 """Shared presentation settings; never change trajectories or physical scales.
 
 Use ``with low_spec_mode(): ...`` for a batch of plots, or set
-``SSATK_LOW_SPEC=1`` before running a gallery. Supported plotting entry points
+``SSATK_LOW_SPEC=1`` before running a standalone demo. Supported plotting entry points
 also accept ``low_spec=True``. The default is textured rendering.
+Published galleries require the prepared maximum-resolution body maps.
 """
 from contextlib import contextmanager as _contextmanager
 from contextvars import ContextVar as _ContextVar
@@ -13,15 +14,49 @@ import os as _os
 __all__ = ["low_spec_mode", "set_low_spec_mode", "is_low_spec"]
 
 _override = _ContextVar("ssatk_low_spec", default=None)
+_per_frame = _ContextVar("ssatk_per_frame_meshes", default=False)
+
+
+def gallery_max_textures():
+    """Whether this process is rendering a gallery with required 8K body maps."""
+    return _os.environ.get("SSATK_GALLERY_MAX_TEXTURES", "") == "1"
+
+
+def body_mesh_resolution(latitude_cells, *, plotly=False):
+    """Keep fast gallery demos above the body-surface geometry floor.
+
+    Matplotlib sorts individual polygons on the CPU; Plotly can use a denser
+    GPU mesh. Larger caller-supplied meshes are retained in either backend.
+    """
+    if gallery_max_textures() and not _per_frame.get():
+        return max(latitude_cells, 180 if plotly else 90)
+    return latitude_cells
+
+
+@_contextmanager
+def per_frame_meshes():
+    """Keep caller-chosen body mesh sizes while building animation frames.
+
+    Each Plotly frame carries its own copy of a body mesh, so applying the
+    gallery floor to every frame multiplies its memory and file size by the
+    frame count.
+    """
+    token = _per_frame.set(True)
+    try:
+        yield
+    finally:
+        _per_frame.reset(token)
 
 
 def is_low_spec(low_spec=None):
-    """Resolve an explicit boolean, context setting, then SSATK_LOW_SPEC."""
+    """Resolve presentation settings, with full textures required in galleries."""
     value = _override.get() if low_spec is None else low_spec
+    if value is not None and not isinstance(value, bool):
+        raise TypeError("low_spec must be True, False, or None")
+    if gallery_max_textures():
+        return False
     if value is None:
         return _os.environ.get("SSATK_LOW_SPEC", "").strip().lower() in {"1", "true", "yes", "on"}
-    if not isinstance(value, bool):
-        raise TypeError("low_spec must be True, False, or None")
     return value
 
 

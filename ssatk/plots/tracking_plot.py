@@ -1,5 +1,5 @@
 
-from .rendering import is_low_spec
+from .rendering import gallery_max_textures, is_low_spec
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -80,7 +80,8 @@ def tracking_plot(
         fig = plt.figure(dpi=100, figsize=figsize)
         fig.patch.set_facecolor('black')
         earth_png = PILImage.new("RGB", (2, 1), "#1a4f8a") if is_low_spec() else PILImage.open(earth_texture_path())
-        earth_png = earth_png.resize((5400 // max(1, int(scale)), 2700 // max(1, int(scale))))
+        if not gallery_max_textures():
+            earth_png = earth_png.resize((5400 // max(1, int(scale)), 2700 // max(1, int(scale))))
 
         # 1) Long/Lat world map
         ax = fig.add_subplot(2, 3, (1, 2))

@@ -28,7 +28,7 @@ layer.add_to_mpl(ax, orbit_state, traj)
 
 from __future__ import annotations
 
-from .rendering import is_low_spec, low_spec_mode
+from .rendering import body_mesh_resolution, gallery_max_textures, is_low_spec, low_spec_mode
 from ._body_surfaces import BodySurface, body_mesh_plotly, body_rotation
 
 import abc
@@ -441,10 +441,17 @@ class EarthLayer(BaseLayer):
                  n_lat: int = 72, n_lon: int = 144, radius_scale: float = 1.0,
                  time=None, rotation_deg=None, low_spec=None, **kw):
         super().__init__("earth", "Earth", **kw)
-        self.texture_path = Path(texture_path) if texture_path else None
+        if gallery_max_textures():
+            from ._textures import earth_texture_path
+            self.texture_path = earth_texture_path()
+        else:
+            self.texture_path = Path(texture_path) if texture_path else None
         self.low_spec = is_low_spec(low_spec)
         self.n_lat = min(n_lat, 19) if self.low_spec else n_lat
         self.n_lon = min(n_lon, 37) if self.low_spec else n_lon
+        if gallery_max_textures():
+            self.n_lat = body_mesh_resolution(self.n_lat-1, plotly=True)+1
+            self.n_lon = max(self.n_lon, 2*body_mesh_resolution(0, plotly=True)+1)
         self.radius_scale = radius_scale   # visual size multiplier; doesn't move position
         self.rotation_deg = earth_rotation_deg_from_time(time) if rotation_deg is None else float(rotation_deg)
         self._tex: Optional[np.ndarray] = None  # (H, W, 3) uint8
@@ -458,6 +465,8 @@ class EarthLayer(BaseLayer):
                 img = img.resize((self.n_lon, self.n_lat), Image.LANCZOS)
                 self._tex = np.array(img)
             except Exception as ex:
+                if gallery_max_textures():
+                    raise
                 warnings.warn(f"Earth texture load error: {ex}")
 
     def _sphere_xyz(self, R=RE_KM):
@@ -475,6 +484,13 @@ class EarthLayer(BaseLayer):
     def add_to_mpl(self, ax, orbit_state, traj=None, satellite=None, **kw):
         if not _HAS_MPL:
             return []
+        if gallery_max_textures():
+            angle = np.radians(self.rotation_deg)
+            rotation = np.array([[np.cos(angle), -np.sin(angle), 0.],
+                                 [np.sin(angle), np.cos(angle), 0.], [0., 0., 1.]])
+            surface = BodySurface(ax, "earth", RE_KM*self.radius_scale, rotation=rotation, zorder=1)
+            self._artists_mpl = [surface.artist]
+            return self._artists_mpl
         self._load_texture()
         X, Y, Z = self._sphere_xyz(RE_KM*self.radius_scale)
         if self._tex is not None:
@@ -541,7 +557,11 @@ class MoonLayer(BaseLayer):
 
     def __init__(self, texture_path=None, n_pts=60, radius_scale=1.0, low_spec=None, **kw):
         super().__init__("moon", "Moon", **kw)
-        self.texture_path = texture_path
+        if gallery_max_textures():
+            from ._textures import moon_texture_path
+            self.texture_path = moon_texture_path()
+        else:
+            self.texture_path = texture_path
         self.n_pts, self.radius_scale = n_pts, radius_scale
         self.low_spec = is_low_spec(low_spec)
 

@@ -34,7 +34,7 @@ TOPICS = [
         "id": "gravity",
         "title": "Gravity",
         "kicker": "Build the force model",
-        "summary": "Start with point-mass gravity, add EGM96 zonal terms J2–J8 and Sun/Moon perturbations, or use SSAPy's EGM2008 spherical-harmonic adapter with selectable degree and order.",
+        "summary": "Start with point-mass gravity, add EGM96 zonal terms J2–J8 and Sun/Moon perturbations, or use the EGM2008 spherical-harmonic model with selectable degree and order.",
         "chain": [
             "Position and epoch",
             "Central or field gravity",
@@ -51,7 +51,7 @@ TOPICS = [
             "ssatk.accelerations_6dof.make_ssapy_third_body",
             "ssatk.accelerations_6dof.make_ssapy_perturbation_acceleration",
         ],
-        "limits": "The zonal helpers assume an Earth-rotation-axis z coordinate without precession, nutation or polar motion. accel_earth_harmonics includes central gravity; the SSAPy perturbation stack omits it. Avoid counting central gravity twice when composing callbacks with a propagator's built-in mu term.",
+        "limits": "The zonal helpers assume an Earth-rotation-axis z coordinate without precession, nutation or polar motion. accel_earth_harmonics includes central gravity; make_ssapy_perturbation_acceleration omits it. Avoid counting central gravity twice when composing callbacks with a propagator's built-in mu term.",
         "demos": [
             "orbital_mechanics/demo_compare_models",
             "orbital_mechanics/demo_groundtrack_accuracy",
