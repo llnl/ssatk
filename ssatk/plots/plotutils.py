@@ -891,6 +891,7 @@ def save_plotly_figure(
     width=1400,
     height=1000,
     scale=1,
+    config=None,
     **save_kwargs,
 ):
     """Save a Plotly figure using the SSATK figure-output policy."""
@@ -906,7 +907,7 @@ def save_plotly_figure(
         save_path = str(path)
 
     if path.suffix.lower() == ".html":
-        figure.write_html(save_path)
+        figure.write_html(save_path, config=config)
     else:
         figure.write_image(save_path, width=width, height=height, scale=scale)
     print(f"Saved -> {save_path}")

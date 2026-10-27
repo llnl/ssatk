@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 project = "Space Situational Awareness Toolkit"
-author = "Travis R. Yeager"
+author = "Travis Yeager"
 copyright = f"{datetime.now(timezone.utc).year}, {author}"
 version_match = re.search(
     r'^version\s*=\s*["\']([^"\']+)["\']\s*$',

@@ -4,8 +4,8 @@ title: "Space Situational Awareness Toolkit (SSATK)"
 type: software
 authors:
   - family-names: "Yeager"
-    given-names: "Travis R."
-    email: "yeagerastro@gmail.com"
+    given-names: "Travis"
+    email: "yeager7@llnl.gov"
     affiliation: "Lawrence Livermore National Laboratory"
   - family-names: "Diamond"
     given-names: "Joel"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Demo: Van Allen radiation belts as transparent torus surfaces.
+Demo: Official IRENE AE9/AP9 mean radiation-belt flux in three views.
+Set IRENE_HOME for official flux; otherwise show illustrative dipole L-shells.
 
 Outputs
 -------
@@ -17,6 +18,7 @@ GALLERY_CATEGORY = "space_environment"
 
 import os
 import sys
+from ssatk.io.irene import find_irene_runtime
 from ssatk.plots.figpath import figpath
 from ssatk.plots.van_allen_plot_3d import plot_van_allen_3d
 
@@ -29,13 +31,21 @@ def main(make_figures=True):
     if not make_figures:
         return {"figures": [], "skipped": True, "reason": "figures_disabled"}
 
+    irene_available = find_irene_runtime() is not None
+    if not irene_available:
+        print("IRENE unavailable: showing illustrative dipole L-shells without particle flux; set IRENE_HOME")
+    model_label = "IRENE AE9/AP9 mean flux" if irene_available else "illustrative L-shells, no particle flux"
+
     figures = []
 
     # 1. Classic oblique
     # gallery-call: demo_van_allen.html
     figures.append(plot_van_allen_3d(
-        title        = "Van Allen Radiation Belts — IGRF 2025",
+        title        = f"Van Allen belts - {model_label}",
         texture_path = "auto",
+        epoch        = "2025-07-02T12:34:56Z",
+        radiation_model = "irene",
+        belt_style   = "flux" if irene_available else "lshell",
         elev=25, azim=-55,
         save_path    = figpath("demo_van_allen"),
     ))
@@ -45,8 +55,11 @@ def main(make_figures=True):
     # 2. Equatorial — best view of torus cross-section
     # gallery-call: demo_van_allen_equatorial.html
     figures.append(plot_van_allen_3d(
-        title        = "Van Allen Belts — equatorial view",
+        title        = f"Van Allen belts - equatorial view; {model_label}",
         texture_path = "auto",
+        epoch        = "2025-07-02T12:34:56Z",
+        radiation_model = "irene",
+        belt_style   = "flux" if irene_available else "lshell",
         elev=5, azim=0,
         save_path    = figpath("demo_van_allen_equatorial"),
     ))
@@ -56,8 +69,11 @@ def main(make_figures=True):
     # 3. Polar
     # gallery-call: demo_van_allen_polar.html
     figures.append(plot_van_allen_3d(
-        title        = "Van Allen Belts — polar view",
+        title        = f"Van Allen belts - polar view; {model_label}",
         texture_path = "auto",
+        epoch        = "2025-07-02T12:34:56Z",
+        radiation_model = "irene",
+        belt_style   = "flux" if irene_available else "lshell",
         elev=80, azim=0,
         save_path    = figpath("demo_van_allen_polar"),
     ))

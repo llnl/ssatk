@@ -10,9 +10,9 @@
     "programmingLanguage": "Python",
     "creator": {
         "@type": "Person",
-        "givenName": "Travis R.",
+        "givenName": "Travis",
         "familyName": "Yeager",
-        "email": ["mailto:yeagerastro@gmail.com", "mailto:yeager7@llnl.gov"],
+        "email": "mailto:yeager7@llnl.gov",
         "affiliation": {
             "@type": "Organization",
             "name": "Lawrence Livermore National Laboratory"
@@ -21,9 +21,9 @@
     "author": [
         {
             "@type": "Person",
-            "givenName": "Travis R.",
+            "givenName": "Travis",
             "familyName": "Yeager",
-            "email": "mailto:yeagerastro@gmail.com",
+            "email": "mailto:yeager7@llnl.gov",
             "affiliation": {
                 "@type": "Organization",
                 "name": "Lawrence Livermore National Laboratory"
@@ -52,9 +52,9 @@
     ],
     "maintainer": {
         "@type": "Person",
-        "givenName": "Travis R.",
+        "givenName": "Travis",
         "familyName": "Yeager",
-        "email": ["mailto:yeagerastro@gmail.com", "mailto:yeager7@llnl.gov"],
+        "email": "mailto:yeager7@llnl.gov",
         "affiliation": {
             "@type": "Organization",
             "name": "Lawrence Livermore National Laboratory"
