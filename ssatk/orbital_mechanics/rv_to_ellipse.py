@@ -44,13 +44,32 @@ def rv_to_ellipse(
     b = a * eta if Energy < 0 else np.nan
 
     # ── fundamental angles ──────────────────────────────────────────
-    i   = np.arccos(h_vec[2] / h)
-    raan = np.arccos(n_vec[0] / n) if n else 0.0
-    if n and n_vec[1] < 0: raan = 2*np.pi - raan
-    pa = np.arccos(np.clip(np.dot(n_vec, e_vec)/(n*e), -1, 1)) if n and e else 0.0
-    if n and e and e_vec[2] < 0: pa = 2*np.pi - pa
-    ta = np.arccos(np.clip(np.dot(e_vec, r)/(e*r_mag), -1, 1)) if e else 0.0
-    if e and np.dot(r, v) < 0: ta = 2*np.pi - ta
+    i = np.arccos(h_vec[2] / h)
+
+    # `n` and `e` come from cross/dot products, so a circular or equatorial
+    # orbit lands near but not at exactly zero (~1e-16), never satisfying a
+    # bare `if n`/`if e`. That sent every orbit through the "defined node" /
+    # "defined periapsis" branches below with raan/pa/ta dominated by noise.
+    # Gate on the same tolerances and degenerate-case substitutions as
+    # keplerian.state_to_kepler: an equatorial orbit has no node (raan := 0,
+    # reference direction +x) and a circular orbit has no periapsis (pa := 0,
+    # reference direction the node, or +x if also equatorial).
+    equatorial = n < 1e-10 * h
+    circular = e < 1e-12
+    n_hat = np.array([1.0, 0.0, 0.0]) if equatorial else n_vec / n
+    e_hat = n_hat if circular else e_vec / e
+
+    def _plane_angle(from_hat, to_vec):
+        # Signed angle from the unit vector from_hat to to_vec, positive
+        # toward h_vec (same convention as state_to_kepler._plane_angle).
+        # atan2 is invariant to the common positive scale factor left in
+        # to_vec, so to_vec need not be normalized.
+        cross = np.cross(from_hat, to_vec)
+        return np.arctan2(np.dot(cross, h_vec) / h, np.dot(from_hat, to_vec)) % (2*np.pi)
+
+    raan = 0.0 if equatorial else np.arctan2(n_vec[1], n_vec[0]) % (2*np.pi)
+    pa = 0.0 if circular else _plane_angle(n_hat, e_hat)
+    ta = _plane_angle(e_hat, r)
 
     # mean longitude (elliptic only, needed for period timing)
     if Energy < 0:
