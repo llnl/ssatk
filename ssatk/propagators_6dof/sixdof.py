@@ -1480,6 +1480,10 @@ def _make_combined_evaluator(model, spacecraft, suppress_depleted):
                         child(spacecraft=state, t=t, r=r, v=v, q=q, omega=omega),
                         "acceleration",
                     )
+            elif callable(child) and not getattr(child, "spacecraft_torque_model", False):
+                total_acceleration += _as_vector3(
+                    child(t, r, v, q, omega), "acceleration"
+                )
             if (
                 getattr(child, "spacecraft_torque_model", False)
                 and not getattr(child, "spacecraft_wheel_torque_model", False)
