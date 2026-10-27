@@ -597,8 +597,11 @@ def _validate_software(software: Any, errors: list[str]) -> None:
         errors.append("software must be an object of exact version pins")
         return
     missing = _SOFTWARE_PINS - set(software)
+    unknown = set(software) - _SOFTWARE_PINS
     if missing:
         errors.append(f"missing software pins: {', '.join(sorted(missing))}")
+    if unknown:
+        errors.append(f"unknown software pins: {', '.join(sorted(unknown))}")
     for name, value in software.items():
         _require_text(value, f"software.{name}", errors)
         if isinstance(value, str) and any(token in value for token in (">", "<", "*", ",")):
