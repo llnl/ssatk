@@ -161,21 +161,6 @@ def sun_direction_gcrf(gps_seconds):
     return r / np.linalg.norm(r, axis=1, keepdims=True)
 
 
-def _gst94_rad(gps_seconds):
-    """Greenwich apparent sidereal angle (rad) at GPS seconds, evaluated at UT1.
-
-    Kept for callers that need GAST itself. Do not use it to orient a texture
-    in a GCRF scene; use :func:`_greenwich_azimuth_rad`.
-    """
-    from erfa import gst94
-    from ssapy.utils import iers_interp
-
-    gps_seconds = np.asarray(gps_seconds, dtype=float)
-    mjd_tt = 44244.0 + (gps_seconds + 51.184) / 86400.0
-    d_ut1_tt_mjd, _pmx, _pmy = iers_interp(gps_seconds)
-    return gst94(2400000.5, mjd_tt + d_ut1_tt_mjd)
-
-
 def _gps_seconds(value):
     if value is None:
         return 0.0

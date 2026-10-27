@@ -4,10 +4,8 @@ from matplotlib import gridspec
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FixedFormatter
 
-from ssapy import groundTrack
-# from ..yastropy import astropy_gcrf_to_llh
 from ..compute import find_smallest_bounding_cube
-from ..coordinates import v_from_r
+from ..coordinates import gcrf_to_itrf, gcrf_to_llh, v_from_r
 from ..constants import EARTH_RADIUS
 from ..time_functions import to_gps
 from .plotutils import figsave, valid_orbits, _pop_save_path_aliases, _raise_unrecognized_kwargs
@@ -88,9 +86,8 @@ def groundtrack_dashboard(
     lons, lats, altitudes, velocities, x_gts, y_gts, z_gts = [], [], [], [], [], [], []
     for r_i, t_i in zip(r, t):
         xyz = np.array(r_i)
-        x_gt, y_gt, z_gt = groundTrack(xyz, t_i, format='cartesian')
-        lon, lat, height = groundTrack(xyz, t_i, format='geodetic')
-        # lon, lat, height = astropy_gcrf_to_llh(xyz, t_i)
+        x_gt, y_gt, z_gt = gcrf_to_itrf(xyz, t_i).T
+        lon, lat, height = gcrf_to_llh(xyz, t_i)
         # A backward propagation may supply decreasing epochs. Differentiate
         # in chronological order, then restore the supplied display order.
         if len(t_i) < 2:
@@ -102,8 +99,8 @@ def groundtrack_dashboard(
         else:
             velocity = np.linalg.norm(v_from_r(xyz, t_i), axis=1)
 
-        lons.append(np.degrees(lon))
-        lats.append(np.degrees(lat))
+        lons.append(lon)
+        lats.append(lat)
         altitudes.append(height)
         velocities.append(velocity)
         x_gts.append(x_gt)

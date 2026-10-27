@@ -747,22 +747,18 @@ def _datetime_from_astropy(value):
 
 
 def _itrf_vector_to_gcrf(vector_itrf, time):
-    import astropy.units as unit
-    from astropy.coordinates import CartesianRepresentation, GCRS, ITRS, SkyCoord
+    """Rotate an ITRF vector into GCRF.
+
+    GCRF and ITRF share an origin, so this is a pure rotation -- shares
+    SSATK's IAU 2006/2000A route (``ssatk.coordinates.itrf_to_gcrf``) instead
+    of calling Astropy's ITRS->GCRS transform directly, so it uses the same
+    Earth-orientation data as the rest of the toolkit and does not need
+    Astropy's own (network-backed) IERS table.
+    """
+    from .coordinates import itrf_to_gcrf
 
     vector = _vector3(vector_itrf, "vector_itrf")
-    coord = SkyCoord(
-        CartesianRepresentation(*(vector * unit.m)),
-        frame=ITRS(obstime=time),
-    )
-    gcrs = coord.transform_to(GCRS(obstime=time))
-    return np.array(
-        [
-            gcrs.cartesian.x.to_value(unit.m),
-            gcrs.cartesian.y.to_value(unit.m),
-            gcrs.cartesian.z.to_value(unit.m),
-        ]
-    )
+    return itrf_to_gcrf(vector.reshape(1, 3), time)[0]
 
 
 def _third_body_names(third_bodies) -> tuple[str, ...]:

@@ -64,7 +64,10 @@ def frame_to_gcrf_matrix(
       +Z nadir. The radial component of velocity does not define an axis.
     - ``enu``/``ned``/``sez``: local tangent frames at geodetic ``lat``/``lon``;
       require a scalar GPS epoch or Astropy ``Time`` in ``t``. The Earth
-      orientation convention matches SSAPy's ``EarthObserver(fast=True)``.
+      orientation is SSATK's IAU 2006/2000A route
+      (``ssatk.coordinates.eci_to_ecf_matrix``), not SSAPy's
+      ``EarthObserver`` (IAU 1976/1980), which differs at the ~1e-8
+      (dimensionless) direction level.
     - ``los``/``target``/``sun``: +X points from ``origin`` to ``target`` and
       ``up_hint`` defines the projected +Z direction.
     """
