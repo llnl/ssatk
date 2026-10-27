@@ -852,9 +852,8 @@ field lines remain IGRF/T96. IRENE holds its IGRF field fixed for all epochs
 after 1 January 2020 (IRENE V1.58.001 User's Guide and Known Issues), so its
 flux for later dates uses the 2020 field. Mean flux is a statistical
 environment, not a forecast of current particle observations. SEP/GCR are
-excluded. The display
-grid covers 1.02–7 Earth radii and uses interpolation to draw flux contours; it
-does not depict a sharply bounded physical belt.
+excluded. The display grid covers 1.02–7 Earth radii and uses interpolation to
+draw flux contours; it does not depict a sharply bounded physical belt.
 
 With ``IRENE_HOME`` configured, run
 ``python -m demos.space_environment.demo_magfield_plot`` for the field and

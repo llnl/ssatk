@@ -57,7 +57,7 @@ builds media artifacts from source during CI.
 Before requesting review, run the focused checks that match the change:
 
 ```bash
-python -m pip install -e .[dev]
+python -m pip install -e ".[dev,geomagnetics,atmosphere,propulsion]"
 node --check ssatk/plots/satellite_viewer_scene.js  # requires Node.js 20+
 pytest tests
 python -m ssatk.run_all_demos
