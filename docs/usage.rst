@@ -297,12 +297,38 @@ returns a GCRF vector.
    enu_to_gcrf = frame_to_gcrf_matrix("enu", lat=0.0, lon=0.0, t=1.4e9)
 
 For ``enu``, ``ned``, and ``sez``, ``t`` must be a scalar GPS epoch or
-Astropy ``Time``. These selectors use the same Earth-orientation chain as
-SSAPy's ``EarthObserver(fast=True)``. The dedicated ``enu_to_ecef_matrix``,
+Astropy ``Time``. These selectors use SSATK's single IAU 2006/2000A
+GCRF<->ITRF route (``ssatk.coordinates.eci_to_ecf_matrix``), not SSAPy's
+``EarthObserver`` (IAU 1976/1980). The dedicated ``enu_to_ecef_matrix``,
 ``ned_to_ecef_matrix``, and ``sez_to_ecef_matrix`` functions still return
 Earth-fixed axes without an epoch. The ``nadir_velocity`` frame keeps +Z
 along nadir and +X along the transverse velocity; it remains orthonormal
 when the orbit has nonzero radial velocity.
+
+GCRF<->ITRF conversions and the packaged EOP table
+---------------------------------------------------
+
+``ssatk.coordinates.gcrf_to_itrf``, ``itrf_to_gcrf``, ``gcrf_to_itrf_astropy``,
+``eci_to_ecf_matrix``, the ``geodetic`` module's ``gcrf_to_llh``/``llh_to_gcrf``,
+and the ``yastropy`` wrappers of the same names all share one IAU 2006/2000A
+route (``ssatk.coordinates._earth_rotation``), fed by the packaged
+``finals2000A.all`` snapshot (``ssatk.environment_eop``) rather than
+Astropy's or SSAPy's own IERS tables, so none of them need network access.
+
+An epoch outside the packaged table's span (for example a far-future or
+historical ground track) holds the nearest end record's UT1-UTC, polar
+motion, and celestial-pole offsets constant -- Earth keeps rotating at its
+last known rate; only those slowly varying corrections freeze -- and warns
+once per call with ``ssatk.environment_eop.EarthOrientationExtrapolationWarning``.
+This matches the leniency of SSAPy's ``iers_interp``, which held the table's
+end values via ``numpy.interp`` instead of raising. The explicit
+``gcrf_to_itrf_eop``/``itrf_to_gcrf_eop`` functions, and the lower-level
+``ssatk.coordinates._earth_rotation`` functions they and the above build on,
+stay strict: they raise ``ValueError`` outside the table unless a caller
+passes ``extrapolate=True`` itself. All of the above also accept
+``allow_predicted`` to control whether an epoch that falls on a *predicted*
+(not yet observed) EOP record is accepted; see ``ssatk.coordinates.earth_fixed``'s
+module docstring for which functions default it ``True`` versus ``False``.
 
 The lunar rotating-frame functions ``gcrf_to_lunar`` and
 ``gcrf_to_lunar_fixed`` transform supplied velocities in metres per second,

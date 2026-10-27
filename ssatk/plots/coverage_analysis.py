@@ -44,7 +44,6 @@ import matplotlib.pyplot as plt
 # No sys.path manipulation: this is package code, reached through normal
 # imports, so it does not depend on where a checkout sits on disk.
 import ssapy
-from astropy.coordinates import GCRS, ITRS, CartesianRepresentation
 from astropy.time import Time
 from ssapy import compute
 from ssapy.body import SunPosition
@@ -1401,13 +1400,16 @@ def propagate(orbit, n_orbits=15, n_points=3000, propagator=None):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def gcrf_to_itrf(r_gcrf, t_gps):
-    times = Time(t_gps, format='gps', scale='utc')
-    r_m   = r_gcrf * u.m
-    gcrs  = GCRS(CartesianRepresentation(
-                     r_m[:, 0], r_m[:, 1], r_m[:, 2]),
-                 obstime=times)
-    itrs  = gcrs.transform_to(ITRS(obstime=times))
-    return itrs.cartesian.xyz.to(u.m).value.T
+    """ITRF position (m) of GCRF position(s) at GPS time(s).
+
+    Shares SSATK's IAU 2006/2000A route (``ssatk.coordinates.gcrf_to_itrf``)
+    instead of calling Astropy's GCRS->ITRS transform directly, so this
+    module uses the same Earth-orientation data as the rest of the toolkit
+    and does not need Astropy's own (network-backed) IERS table.
+    """
+    from ..coordinates import gcrf_to_itrf as _tk_gcrf_to_itrf
+
+    return _tk_gcrf_to_itrf(np.asarray(r_gcrf, dtype=float), t_gps)
 
 
 def site_ecef(lat_deg, lon_deg, alt_m=0.0):

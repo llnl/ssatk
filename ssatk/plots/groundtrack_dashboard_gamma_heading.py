@@ -19,9 +19,8 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
     from matplotlib.lines import Line2D
     from matplotlib.ticker import FixedLocator, FixedFormatter
 
-    from ssapy import groundTrack
     from ..compute import find_smallest_bounding_cube
-    from ..coordinates import v_from_r
+    from ..coordinates import gcrf_to_itrf, gcrf_to_llh, v_from_r
     from ..constants import EARTH_RADIUS
     from ..time_functions import to_gps
     from ..orbital_mechanics.gamma_and_heading import calc_gamma_and_heading
@@ -55,8 +54,8 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
         xyz = np.array(r_i)  # (n,3)
 
         # Ground track + geodetic
-        x_gt, y_gt, z_gt = groundTrack(xyz, t_i, format="cartesian")
-        lon, lat, height = groundTrack(xyz, t_i, format="geodetic")
+        x_gt, y_gt, z_gt = gcrf_to_itrf(xyz, t_i).T
+        lon, lat, height = gcrf_to_llh(xyz, t_i)
 
         supplied_v = None if velocity_tracks is None else velocity_tracks[track_index]
         v_gcrf = v_from_r(xyz, t_i) if supplied_v is None else supplied_v
@@ -64,8 +63,8 @@ def groundtrack_dashboard_gamma_heading(r, t, save_path=None, pad=500, show=Fals
         # Invalid trajectories must fail visibly, not silently plot empty curves.
         g_deg, h_deg = calc_gamma_and_heading(xyz, t_i, v=supplied_v)
 
-        lons.append(np.degrees(lon))
-        lats.append(np.degrees(lat))
+        lons.append(lon)
+        lats.append(lat)
         altitudes.append(height)
         velocities.append(vel)
         x_gts.append(x_gt)

@@ -8,14 +8,12 @@ from matplotlib.animation import FFMpegWriter
 from matplotlib import rcParams
 
 from ssatk._paths import ensure_file_parent
+from ..coordinates import gcrf_to_llh
 from ._groundtrack_helpers import as_list as _as_list
 from ._groundtrack_helpers import broadcast_time_list as _broadcast_time_list
 from ._groundtrack_helpers import clean_lonlat_wrap as _clean_lonlat_wrap
 from ._groundtrack_helpers import ensure_nx3 as _ensure_Nx3
 from .plotutils import _pop_save_path_aliases, _raise_unrecognized_kwargs
-
-# ssapy ground track (geodetic/cartesian converters)
-from ssapy import groundTrack
 
 # Optional background Earth image (best-effort; ok if missing)
 def _try_load_earth():
@@ -62,16 +60,16 @@ def groundtrack_video(
     max_frames=2000,
     progress=True,
     camera="overview",
-    mode="map",              # <<< NEW: "map" (2D lon/lat; matches your plot), "surface3d", "eci3d"
+    mode="map",
     **save_kwargs,
 ):
     """
     Create an MP4 animation of satellite ground tracks.
 
-    Default `mode="map"` renders a 2D lon/lat plot that matches your groundtrack_plot
-    (full static track + moving marker). If you prefer a 3D path on the Earth's surface,
-    use mode="surface3d" (uses groundTrack(..., format='cartesian')). The old ECI-in-space
-    style can be done with mode="eci3d" (plots r directly around a sphere).
+    ``mode="map"`` renders a 2D lon/lat plot that matches ``groundtrack_plot``
+    (full static track + moving marker), with longitude and latitude from
+    :func:`ssatk.coordinates.gcrf_to_llh`. It is the only supported mode; any
+    other value raises ``ValueError``.
 
     Parameters
     ----------
@@ -80,12 +78,12 @@ def groundtrack_video(
     t : (n,) array_like or list of (n,)
         Absolute times matching r (same as groundtrack_plot).
     ground_stations : (k,2) array_like, optional
-        (lat_deg, lon_deg) rows. Used in "map" and "surface3d" modes.
+        (lat_deg, lon_deg) rows.
     save_path : str, required, must end with '.mp4'
     start_end_markers : bool
     fps, bitrate, max_frames : int
     progress : bool
-    mode : "map" | "surface3d" | "eci3d"
+    mode : "map"
     """
     save_path, save_kwargs = _pop_save_path_aliases(save_kwargs, save_path=save_path)
     _raise_unrecognized_kwargs(save_kwargs, "groundtrack_video")
@@ -160,9 +158,7 @@ def groundtrack_video(
         heads = []
         lon_all, lat_all = [], []
         for i, (ri, ti) in enumerate(zip(r_list, t_list)):
-            lon, lat, _h = groundTrack(np.asarray(ri), ti, format='geodetic')
-            lon_deg = np.degrees(lon)
-            lat_deg = np.degrees(lat)
+            lon_deg, lat_deg, _h = gcrf_to_llh(np.asarray(ri), ti)
             lon_plot, lat_plot = _clean_lonlat_wrap(lon_deg, lat_deg, threshold=179.0)
 
             # Static full line

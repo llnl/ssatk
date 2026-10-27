@@ -1,48 +1,46 @@
-from astropy.coordinates import GCRS, ITRS
-from astropy.coordinates.representation import CartesianRepresentation
-from astropy import units as u
+import erfa
+import numpy as np
+
+_WGS84 = 1  # erfa ellipsoid identifier for gc2gd
 
 
-def astropy_gcrf_to_llh(r_gcrf, t):
+def astropy_gcrf_to_llh(r_gcrf, t, *, allow_predicted=True):
     """
-    Convert GCRF Cartesian coordinates to latitude, longitude, and altitude.
-    
+    Convert GCRF Cartesian coordinates to geodetic longitude, latitude, altitude.
+
     Parameters:
     -----------
-    gcrf_x, gcrf_y, gcrf_z : float
-        GCRF Cartesian coordinates in meters
+    r_gcrf : ndarray, shape (N, 3)
+        GCRF Cartesian coordinates in meters.
     t : Time
-        UTC astrpy time for the conversion
-    
+        UTC astropy time for the conversion; scalar, or one per row of ``r_gcrf``.
+    allow_predicted : bool, optional
+        Forwarded to the packaged EOP table; default ``True`` (see
+        ``ssatk.coordinates.earth_fixed``'s module docstring).
+
     Returns:
     --------
-    tuple : (latitude, longitude, altitude)
-        Longitude, Latitude in degrees, altitude in meters above ellipsoid
-    """
-    
-    x = r_gcrf[:, 0] * u.m
-    y = r_gcrf[:, 1] * u.m
-    z = r_gcrf[:, 2] * u.m
+    tuple : (longitude, latitude, altitude)
+        Longitude, latitude in degrees, altitude in meters above the WGS84
+        ellipsoid.
 
-    # Create CartesianRepresentation object
-    cart_repr = CartesianRepresentation(
-        x=x,
-        y=y,
-        z=z
-    )
-    
-    # Create GCRS coordinate object using the representation
-    gcrs_coord = GCRS(cart_repr, obstime=t)
-    
-    # Transform to ITRS (Earth-fixed)
-    itrs_coord = gcrs_coord.transform_to(ITRS(obstime=t))
-    
-    # Convert to geodetic coordinates
-    geodetic = itrs_coord.earth_location
-    
-    # Extract longitude, latitude, and altitude
-    latitude = geodetic.lat.degree
-    longitude = geodetic.lon.degree
-    altitude = geodetic.height.to(u.m).value
-    
-    return longitude, latitude, altitude
+    Despite the "astropy" name, this shares SSATK's IAU 2006/2000A route
+    (:mod:`ssatk.coordinates._earth_rotation`) rather than calling Astropy's
+    GCRS/ITRS transform directly, so it uses SSATK's packaged EOP data
+    instead of Astropy's own (network-backed) IERS table. An epoch outside
+    that table holds the nearest end record's values and warns once with
+    :class:`~ssatk.environment_eop.EarthOrientationExtrapolationWarning`.
+    """
+    # Deferred: ssatk.coordinates imports this package (for astropy_surface_rv),
+    # so importing it at module load time would be circular.
+    from ..coordinates._earth_rotation import gcrs_to_itrs_matrix
+    from ..coordinates.earth_fixed import _time_array
+    from ..time_functions import to_gps
+
+    r_gcrf = np.asarray(r_gcrf, dtype=float)
+    gps = _time_array(to_gps(t), len(r_gcrf))
+    rotation = gcrs_to_itrs_matrix(gps, allow_predicted=allow_predicted, extrapolate=True)
+    r_itrf = np.einsum("nij,nj->ni", rotation, r_gcrf)
+
+    longitude, latitude, altitude = erfa.gc2gd(_WGS84, r_itrf)
+    return np.degrees(longitude), np.degrees(latitude), altitude
