@@ -7,10 +7,7 @@ name = "ssatk"
 version = "1.1.4"
 description = "Space Situational Awareness Toolkit (SSATK): orbit and 6-DoF propagation, transfer design, frames, space environment, conjunction screening, data I/O and visualization"
 authors = [
-  { name = "Travis R. Yeager", email = "yeagerastro@gmail.com" }
-]
-maintainers = [
-  { name = "Travis R. Yeager", email = "yeager7@llnl.gov" }
+  { name = "Travis Yeager", email = "yeager7@llnl.gov" }
 ]
 readme = "README.md"
 requires-python = ">=3.10"
