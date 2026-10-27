@@ -579,7 +579,7 @@ def _validate_resources(resources: Any, errors: list[str]) -> None:
                 or ".." in pure_path.parts
                 or "\\" in path
             ):
-                errors.append(f"{where}.path must be a safe POSIX path below ssa_data_core/data")
+                errors.append(f"{where}.path must be a safe relative POSIX path inside an ssa-data-* package data directory")
             paths.append(path)
     if len(paths) != len(set(paths)):
         errors.append("resource paths must be unique")

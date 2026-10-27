@@ -156,6 +156,8 @@ def test_launch_site_state_itrf_position_matches_wgs84_closed_form():
     Astropy/SSATK code path, to 1e-6 m (floating-point precision at this
     magnitude, not pad survey accuracy). Checked at two pads of different
     latitude so a spherical-Earth or flattening mistake cannot cancel out.
+    This covers the reported ITRF position; the GCRF state is built
+    separately and is checked by the velocity and Astropy tests below.
     """
     for site in ("Kennedy Space Center LC-39A", "Vandenberg SLC-4E"):
         state = launch_site_state(site, _OBSERVED_EPOCH)
