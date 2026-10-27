@@ -1556,12 +1556,10 @@ def _combined_force_torque_safe(model):
     )
     if owner is None:
         return False
-    if cls is owner:
-        return True
-    return not any(
-        name in cls.__dict__
-        for name in ("acceleration", "torque", "_acceleration_torque")
-    )
+    for name in ("__call__", "acceleration", "torque", "_acceleration_torque"):
+        if getattr(cls, name, None) is not getattr(owner, name, None):
+            return False
+    return True
 
 
 def _evaluate_torque(model, t, r, v, q, omega, mass=None, wheel_momentum=None):
