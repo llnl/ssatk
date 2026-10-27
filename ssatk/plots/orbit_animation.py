@@ -406,14 +406,16 @@ def _animation_earth_background(fig):
     in this figure can display while cutting that repeated resample cost by
     more than an order of magnitude.
     """
+    from PIL import Image as _PILImage
+
     from .plotutils import load_earth_file
 
     earth = load_earth_file()
+    if not isinstance(earth, _PILImage.Image):
+        return earth
     width_in, height_in = fig.get_size_inches()
     target = (max(1, round(2*width_in*fig.dpi)), max(1, round(2*height_in*fig.dpi)))
     if earth.size[0] > target[0] or earth.size[1] > target[1]:
-        from PIL import Image as _PILImage
-
         earth = earth.resize(target, _PILImage.Resampling.BOX)
     return earth
 
