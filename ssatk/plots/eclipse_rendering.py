@@ -27,6 +27,7 @@ from ssatk.compute.eclipse_reference_events import (
     itrf_surface_point,
     lunar_reference_state,
     solar_besselian_state,
+    solar_besselian_geometry,
     solar_central_line_wgs84,
     solar_observer_geometry,
     solar_local_contacts,
@@ -900,6 +901,92 @@ def solar_totality_duration_seconds(lat_deg: float, lon_east_deg: float,
     return float((c3-c2)*86400.0)
 
 
+def _solar_internal_contact_margin_vectorized(
+    jd_utc: np.ndarray, lat_deg: np.ndarray, lon_east_deg: np.ndarray,
+) -> np.ndarray:
+    """Evaluate the scalar contact margin for many fixed observers at once."""
+    jd = np.asarray(jd_utc, dtype=float)
+    lat = np.radians(np.asarray(lat_deg, dtype=float))
+    lon = np.radians(np.asarray(lon_east_deg, dtype=float))
+    geometry = solar_besselian_geometry(jd)
+    moon = np.asarray(geometry["moon_itrf_km"], dtype=float)
+    sun = np.asarray(geometry["sun_itrf_km"], dtype=float)
+
+    e2 = 1.0-(RP_KM/RE_KM)**2
+    n = RE_KM/np.sqrt(1.0-e2*np.sin(lat)**2)
+    observer = np.stack((
+        n*np.cos(lat)*np.cos(lon), n*np.cos(lat)*np.sin(lon),
+        n*(1.0-e2)*np.sin(lat),
+    ), axis=-1)
+    to_sun = sun-observer
+    to_moon = moon-observer
+    sun_distance = np.linalg.norm(to_sun, axis=-1)
+    moon_distance = np.linalg.norm(to_moon, axis=-1)
+    sun_hat = to_sun/sun_distance[..., None]
+    moon_hat = to_moon/moon_distance[..., None]
+    a_sun = np.arcsin(np.clip(R_SUN_KM/sun_distance, 0.0, 1.0))
+    a_moon = np.arcsin(np.clip(SOLAR_UMBRA_OPTICAL_RADIUS_KM/moon_distance, 0.0, 1.0))
+    separation = np.arccos(np.clip(np.sum(sun_hat*moon_hat, axis=-1), -1.0, 1.0))
+    return separation-np.abs(a_moon-a_sun)
+
+
+def _solar_totality_duration_seconds_vectorized(
+    lat_deg: np.ndarray, lon_east_deg: np.ndarray, near_jd: np.ndarray,
+) -> np.ndarray:
+    """Vectorized equivalent of ``solar_totality_duration_seconds``."""
+    lat = np.asarray(lat_deg, dtype=float)
+    lon = np.asarray(lon_east_deg, dtype=float)
+    jd0 = np.asarray(near_jd, dtype=float)
+    f0 = _solar_internal_contact_margin_vectorized(jd0, lat, lon)
+    valid = f0 < -2.0e-13
+    step = 5.0/86400.0
+
+    def bracket(direction):
+        inside = jd0.copy()
+        f_inside = f0.copy()
+        left = jd0.copy()
+        right = jd0.copy()
+        found = np.zeros(jd0.shape, dtype=bool)
+        for k in range(1, 181):
+            outside = jd0+direction*k*step
+            f_outside = _solar_internal_contact_margin_vectorized(outside, lat, lon)
+            crossing = valid & ~found & (f_outside >= 0.0)
+            if direction < 0:
+                left[crossing], right[crossing] = outside[crossing], inside[crossing]
+            else:
+                left[crossing], right[crossing] = inside[crossing], outside[crossing]
+            found |= crossing
+            still = valid & ~found
+            inside[still] = outside[still]
+            f_inside[still] = f_outside[still]
+        return left, right, found
+
+    left_in, right_in, found_in = bracket(-1.0)
+    left_out, right_out, found_out = bracket(1.0)
+
+    def bisect(left, right, found):
+        a, b = left.copy(), right.copy()
+        f_a = _solar_internal_contact_margin_vectorized(a, lat, lon)
+        f_b = _solar_internal_contact_margin_vectorized(b, lat, lon)
+        exact_left = found & (f_a == 0.0)
+        exact_right = found & (f_b == 0.0)
+        for _ in range(48):
+            mid = 0.5*(a+b)
+            f_mid = _solar_internal_contact_margin_vectorized(mid, lat, lon)
+            active = found & ~(exact_left | exact_right)
+            use_left = active & (f_a*f_mid <= 0.0)
+            b = np.where(use_left, mid, b)
+            a = np.where(active & ~use_left, mid, a)
+            f_a = np.where(active & ~use_left, f_mid, f_a)
+        result = np.where(found, 0.5*(a+b), jd0)
+        result = np.where(exact_left, a, result)
+        return np.where(exact_right, b, result)
+
+    c2 = bisect(left_in, right_in, found_in)
+    c3 = bisect(left_out, right_out, found_out)
+    return np.where(found_in & found_out & (c3 > c2), (c3-c2)*86400.0, 0.0)
+
+
 def _build_solar_totality_duration_grid(*, n_cross: int = 13) -> dict[str, np.ndarray]:
     """Build a WGS-84 corridor mesh shaded by local totality duration.
 
@@ -934,8 +1021,13 @@ def _build_solar_totality_duration_grid(*, n_cross: int = 13) -> dict[str, np.nd
             lat, lon, _ = geodetic_from_itrf(point)
             lat_grid[i, j] = lat
             lon_grid[i, j] = lon
-            if abs(fraction) < 1.0-1.0e-12:
-                duration_s[i, j] = solar_totality_duration_seconds(lat, lon, float(jd))
+    interior = np.broadcast_to(
+        np.abs(fractions)[None, :] < 1.0-1.0e-12, lon_grid.shape,
+    )
+    duration_s[interior] = _solar_totality_duration_seconds_vectorized(
+        lat_grid[interior], lon_grid[interior],
+        np.broadcast_to(corridor["jd"][:, None], lon_grid.shape)[interior],
+    )
 
     percent = np.clip(100.0*duration_s/SOLAR_TOTALITY_DURATION_REFERENCE_S,
                       0.0, 100.0)

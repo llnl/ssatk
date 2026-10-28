@@ -44,6 +44,8 @@ class MappedSphere(Artist):
         self.set_zorder(zorder)
         ax.add_artist(self)
         self.set_clip_path(ax.patch)
+        self._view_geometry_key = None
+        self._view_geometry = None
 
     def set_surface(self, center, radius, rotation, sun_hat, ambient, diffuse):
         self.center = np.asarray(center, dtype=float)
@@ -60,28 +62,53 @@ class MappedSphere(Artist):
 
         ax = self.axes
         matrix = ax.get_proj()
-        corners = np.array(np.meshgrid(*[[-1., 1.]]*3)).reshape(3, -1).T
-        corners = self.center+self.radius*corners
-        projected = np.column_stack((corners, np.ones(8))) @ matrix.T
         bounds = np.array([[ax.bbox.x0, ax.bbox.y0], [ax.bbox.x1, ax.bbox.y1]])
-        # A box entirely in front of the camera bounds the projected sphere.
-        if np.all(projected[:, 3] > 0):
-            pixels = ax.transData.transform(projected[:, :2]/projected[:, 3, None])
-            bounds[0] = np.maximum(bounds[0], pixels.min(axis=0)-1)
-            bounds[1] = np.minimum(bounds[1], pixels.max(axis=0)+1)
-        lower = np.floor(bounds[0]).astype(int)
-        upper = np.ceil(bounds[1]).astype(int)
         scale = renderer.get_image_magnification()
-        width, height = np.ceil((upper-lower)*scale).astype(int)
-        if width < 2 or height < 2:
+        data_transform = ax.transData
+        cacheable_transform = data_transform.is_affine
+        data_transform_key = (
+            data_transform.get_affine().get_matrix().tobytes()
+            if cacheable_transform else None
+        )
+        key = (
+            matrix.shape, matrix.tobytes(), tuple(bounds.ravel()), float(scale),
+            data_transform_key, tuple(self.center), float(self.radius),
+        )
+        # A nonlinear transform has no compact, exact fingerprint here. Never
+        # reuse geometry for it rather than approximating its state by probes.
+        if not cacheable_transform or key != self._view_geometry_key:
+            corners = np.array(np.meshgrid(*[[-1., 1.]]*3)).reshape(3, -1).T
+            corners = self.center+self.radius*corners
+            projected = np.column_stack((corners, np.ones(8))) @ matrix.T
+            # A box entirely in front of the camera bounds the projected sphere.
+            if np.all(projected[:, 3] > 0):
+                pixels = data_transform.transform(projected[:, :2]/projected[:, 3, None])
+                bounds[0] = np.maximum(bounds[0], pixels.min(axis=0)-1)
+                bounds[1] = np.minimum(bounds[1], pixels.max(axis=0)+1)
+            lower = np.floor(bounds[0]).astype(int)
+            upper = np.ceil(bounds[1]).astype(int)
+            width, height = np.ceil((upper-lower)*scale).astype(int)
+            if width < 2 or height < 2:
+                self._view_geometry = None
+            else:
+                x, y = np.meshgrid(lower[0]+(np.arange(width)+.5)/scale,
+                                   lower[1]+(np.arange(height)+.5)/scale)
+                xy = data_transform.inverted().transform(
+                    np.column_stack((x.ravel(), y.ravel()))
+                )
+                clip = np.column_stack((xy, -np.ones(len(xy)), np.ones(len(xy))))
+                world = clip @ np.linalg.inv(matrix).T
+                points = (world[:, :3]/world[:, 3, None]).reshape(height, width, 3)
+                camera = _camera(ax, None)
+                hits, clearance = sphere_intersections(
+                    points, self.center, self.radius, **camera
+                )
+                self._view_geometry = (lower, points, hits, clearance, camera)
+            self._view_geometry_key = key if cacheable_transform else None
+        if self._view_geometry is None:
             return
-        x, y = np.meshgrid(lower[0]+(np.arange(width)+.5)/scale,
-                           lower[1]+(np.arange(height)+.5)/scale)
-        xy = ax.transData.inverted().transform(np.column_stack((x.ravel(), y.ravel())))
-        clip = np.column_stack((xy, -np.ones(len(xy)), np.ones(len(xy))))
-        world = clip @ np.linalg.inv(matrix).T
-        points = (world[:, :3]/world[:, 3, None]).reshape(height, width, 3)
-        hits, clearance = sphere_intersections(points, self.center, self.radius, **_camera(ax, None))
+        lower, points, hits, clearance, camera = self._view_geometry
+        height, width = clearance.shape
         # Linear coverage over the boundary pixel avoids a jagged silhouette.
         dy, dx = np.gradient(clearance)
         footprint = np.maximum(np.hypot(dx, dy), np.finfo(float).eps*self.radius)

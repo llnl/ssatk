@@ -81,6 +81,37 @@ def precompute_third_body_positions(t, body_name):
     return interpolated_position
 
 
+def precompute_third_body_positions_exact(t, body_name):
+    """Return exact third-body positions evaluated at the supplied epochs.
+
+    Unlike :func:`precompute_third_body_positions`, this helper deliberately
+    does not interpolate.  It batches the Astropy ephemeris query while
+    retaining the same GCRS conversion used by the point-mass accelerations.
+    """
+    from astropy.coordinates import GCRS, get_body
+    from astropy.time import Time
+    from astropy import units as u
+
+    t_gps = np.asarray(to_gps(t), dtype=float)
+    if t_gps.ndim != 1 or not np.all(np.isfinite(t_gps)):
+        raise ValueError("ephemeris epochs must be a finite one-dimensional array")
+    epochs = Time(t_gps, format="gps", scale="utc")
+    position = get_body(body_name, epochs).transform_to(GCRS(obstime=epochs))
+    result = position.cartesian.xyz.to(u.m).value.T
+    if result.shape != (len(t_gps), 3) or not np.all(np.isfinite(result)):
+        raise ValueError("body positions must be finite with shape (n, 3)")
+    return result
+
+
+def third_body_acceleration(r, body_position, mu):
+    """Evaluate the shared Earth-centered point-mass force lazily."""
+    from ..accelerations_6dof.spacecraft import (
+        third_body_acceleration as shared_third_body_acceleration,
+    )
+
+    return shared_third_body_acceleration(r, body_position, mu)
+
+
 def build_profile(profile, t_arr):
     """
     Build an (n,) acceleration-magnitude profile aligned to t_arr.

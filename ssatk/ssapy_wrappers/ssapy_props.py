@@ -107,25 +107,33 @@ def best_gravity_prop(kwargs=None, ode_kwargs=None):
     return SciPyPropagator(_accel_best_gravity_cache + nonConservative, ode_kwargs=ode_kwargs)
 
 
+_accel_ssapy_cache = None
+
+
 def ssapy_prop(propkw=None, ode_kwargs=None):
     """
     A lighter "ssapy_prop"-style model (no planets, no drag): Earth full + Moon full + Sun + SRP + EarthRad
     """
+    global _accel_ssapy_cache
+
     if propkw is None:
         propkw = ssapy_kwargs()
 
-    moon = get_body("moon")
-    sun = get_body("Sun")
-    earth = get_body("Earth", model="EGM2008")
+    if _accel_ssapy_cache is None:
+        moon = get_body("moon")
+        sun = get_body("Sun")
+        earth = get_body("Earth", model="EGM2008")
 
-    aEarth = AccelKepler() + AccelHarmonic(earth, 140, 140)
-    aSun = AccelThirdBody(sun)
-    aMoon = AccelThirdBody(moon) + AccelHarmonic(moon, 20, 20)
-    aSolRad = AccelSolRad(**propkw)
-    aEarthRad = AccelEarthRad(**propkw)
+        aEarth = AccelKepler() + AccelHarmonic(earth, 140, 140)
+        aSun = AccelThirdBody(sun)
+        aMoon = AccelThirdBody(moon) + AccelHarmonic(moon, 20, 20)
 
-    accel = aEarth + aMoon + aSun + aSolRad + aEarthRad
-    return SciPyPropagator(accel, ode_kwargs=ode_kwargs)
+        # Only gravity is shared. Radiation retains each spacecraft's
+        # parameters in their SSAPy defaultkw dictionaries.
+        _accel_ssapy_cache = aEarth + aMoon + aSun
+
+    nonConservative = AccelSolRad(**propkw) + AccelEarthRad(**propkw)
+    return SciPyPropagator(_accel_ssapy_cache + nonConservative, ode_kwargs=ode_kwargs)
 
 
 if __name__ == "__main__":

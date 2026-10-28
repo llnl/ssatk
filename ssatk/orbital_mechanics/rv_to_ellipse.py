@@ -44,13 +44,32 @@ def rv_to_ellipse(
     b = a * eta if Energy < 0 else np.nan
 
     # ── fundamental angles ──────────────────────────────────────────
-    i   = np.arccos(h_vec[2] / h)
-    raan = np.arccos(n_vec[0] / n) if n else 0.0
-    if n and n_vec[1] < 0: raan = 2*np.pi - raan
-    pa = np.arccos(np.clip(np.dot(n_vec, e_vec)/(n*e), -1, 1)) if n and e else 0.0
-    if n and e and e_vec[2] < 0: pa = 2*np.pi - pa
-    ta = np.arccos(np.clip(np.dot(e_vec, r)/(e*r_mag), -1, 1)) if e else 0.0
-    if e and np.dot(r, v) < 0: ta = 2*np.pi - ta
+    i = np.arccos(h_vec[2] / h)
+
+    # `n` and `e` come from cross/dot products, so a circular or equatorial
+    # orbit lands near but not at exactly zero (~1e-16), never satisfying a
+    # bare `if n`/`if e`. That sent every orbit through the "defined node" /
+    # "defined periapsis" branches below with raan/pa/ta dominated by noise.
+    # Gate on the same tolerances and degenerate-case substitutions as
+    # keplerian.state_to_kepler: an equatorial orbit has no node (raan := 0,
+    # reference direction +x) and a circular orbit has no periapsis (pa := 0,
+    # reference direction the node, or +x if also equatorial).
+    equatorial = n < 1e-10 * h
+    circular = e < 1e-12
+    n_hat = np.array([1.0, 0.0, 0.0]) if equatorial else n_vec / n
+    e_hat = n_hat if circular else e_vec / e
+
+    def _plane_angle(from_hat, to_vec):
+        # Signed angle from the unit vector from_hat to to_vec, positive
+        # toward h_vec (same convention as state_to_kepler._plane_angle).
+        # atan2 is invariant to the common positive scale factor left in
+        # to_vec, so to_vec need not be normalized.
+        cross = np.cross(from_hat, to_vec)
+        return np.arctan2(np.dot(cross, h_vec) / h, np.dot(from_hat, to_vec)) % (2*np.pi)
+
+    raan = 0.0 if equatorial else np.arctan2(n_vec[1], n_vec[0]) % (2*np.pi)
+    pa = 0.0 if circular else _plane_angle(n_hat, e_hat)
+    ta = _plane_angle(e_hat, r)
 
     # mean longitude (elliptic only, needed for period timing)
     if Energy < 0:
@@ -89,6 +108,7 @@ def rv_to_ellipse(
     v_samples[0] = v
 
     if total > 1:
+        sample_ta = ta
         if elliptical:
             # uniform Δf through 0→2π, excluding the initial point
             f_steps = np.linspace(0, 2*np.pi, total, endpoint=False)[1:]
@@ -97,17 +117,16 @@ def rv_to_ellipse(
             cos_f_lim = (p/(2*r_mag) - 1)/e
             cos_f_lim = np.clip(cos_f_lim, -1.0, 1.0)
             f_lim = np.arccos(cos_f_lim)          # true anomaly where r = 2|r0|, outbound
-            # ta is stored in [0, 2 pi); an inbound state has a negative true
-            # anomaly. The steps are increments from ta, so they run to f_lim - ta.
-            ta_signed = ta - 2*np.pi if ta > np.pi else ta
-            f_steps = np.linspace(0, f_lim - ta_signed, total)[1:]
-            ta = ta_signed
+            # Use a signed anomaly for sampling inbound hyperbolic states,
+            # without changing the state-derived metadata anomaly.
+            sample_ta = ta - 2*np.pi if ta > np.pi else ta
+            f_steps = np.linspace(0, f_lim - sample_ta, total)[1:]
 
         # generate the remaining samples
         # u_hat points at r0, which sits at true anomaly ta, so a sample at
         # true anomaly ta + df lies at angle df from u_hat.
         for k, df in enumerate(f_steps, start=1):
-            f = ta + df
+            f = sample_ta + df
             r_k = p / (1 + e*np.cos(f))
             r_hat = np.cos(df)*u_hat + np.sin(df)*v_hat
             t_hat = -np.sin(df)*u_hat + np.cos(df)*v_hat
@@ -119,7 +138,9 @@ def rv_to_ellipse(
             v_samples[k] = v_r*r_hat + v_t*t_hat
 
         # relative times from Kepler's equation
-        t_rel[1:] = _time_since(ta, ta + f_steps, e=e, a=a, p=p, mu=mu)
+        t_rel[1:] = _time_since(
+            sample_ta, sample_ta + f_steps, e=e, a=a, p=p, mu=mu
+        )
 
     # ── absolute times array ─────────────────────────────────────────
     if t0 is not None:

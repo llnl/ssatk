@@ -385,6 +385,7 @@ class SpacecraftFlatPlateDrag(SpacecraftAccel):
     """
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -452,6 +453,7 @@ class SpacecraftFlatPlateSolRad(SpacecraftAccel):
     """Attitude-dependent flat-plate solar-radiation pressure with optional torque."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -512,6 +514,7 @@ class SpacecraftFacetDrag(SpacecraftAccel):
     """Attitude-dependent drag over all facets on a spacecraft body."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -580,6 +583,7 @@ class SpacecraftFacetSolRad(SpacecraftAccel):
     """Attitude-dependent solar-radiation pressure over all body facets."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(
         self,
@@ -628,6 +632,7 @@ class SpacecraftThrusterAccel(SpacecraftAccel):
     """Acceleration and torque from body-mounted thrusters."""
 
     spacecraft_torque_model = True
+    _combined_force_torque_safe = True
 
     def __init__(self, *, body=None, throttle=1.0, thruster_names=None, mass: float | None = None):
         self.body = body
@@ -653,6 +658,16 @@ class SpacecraftThrusterAccel(SpacecraftAccel):
             center_of_mass=_center_of_mass(body),
         )
         return torque
+
+    def _acceleration_torque(self, t, r, v, q, omega, spacecraft):
+        body = _body_or_spacecraft(self.body, spacecraft)
+        force_body, torque_body = thruster_force_torque(
+            _thrusters(body, self.thruster_names),
+            throttle=_call_optional(self.throttle, t, r, v, q, omega, spacecraft),
+            center_of_mass=_center_of_mass(body),
+        )
+        acceleration = _rotate_vector(q, force_body) / _mass_from(self.mass, spacecraft, body)
+        return acceleration, torque_body
 
     def mass_flow_rate(self, *args, **kwargs) -> float:
         """Return positive propellant mass flow in kg/s for selected thrusters."""

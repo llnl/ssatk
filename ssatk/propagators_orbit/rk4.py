@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..constants import EARTH_MU
+from ..constants import EARTH_MU, MOON_MU, SUN_MU
 from ..time_functions import to_gps
 
 from ..accelerations_orbit.accel_moon import accel_point_moon
@@ -9,7 +9,14 @@ from ..accelerations_orbit.accel_radial import accel_radial
 from ..accelerations_orbit.accel_velocity import accel_velocity
 from ..accelerations_orbit.accel_inclination import accel_inclination
 
-from .int_utils import build_profile
+from .int_utils import (
+    build_profile,
+    precompute_third_body_positions_exact,
+    third_body_acceleration,
+)
+
+_DEFAULT_ACCEL_POINT_MOON = accel_point_moon
+_DEFAULT_ACCEL_POINT_SUN = accel_point_sun
 
 
 def rk4(
@@ -64,16 +71,37 @@ def rk4(
     r[0] = np.asarray(r0, float)
     v[0] = np.asarray(v0, float)
 
+    use_batched_ephemerides = n_steps > 1 and (
+        accel_point_moon is _DEFAULT_ACCEL_POINT_MOON
+        and accel_point_sun is _DEFAULT_ACCEL_POINT_SUN
+    )
+    if use_batched_ephemerides:
+        stage_times = np.column_stack((
+            t_abs[:-1],
+            t_abs[:-1] + 0.5 * np.diff(t_abs),
+            t_abs[:-1] + 0.5 * np.diff(t_abs),
+            t_abs[1:],
+        )).ravel()
+        unique_times, inverse = np.unique(stage_times, return_inverse=True)
+        moon_positions = precompute_third_body_positions_exact(unique_times, "moon")
+        sun_positions = precompute_third_body_positions_exact(unique_times, "sun")
+        stage_moon = moon_positions[inverse].reshape(-1, 4, 3)
+        stage_sun = sun_positions[inverse].reshape(-1, 4, 3)
+
     for i in range(n_steps - 1):
         dt = t_abs[i + 1] - t_abs[i]
 
-        def a_total(r_i, v_i, t_i, i_thrust):
+        def a_total(r_i, v_i, t_i, stage_index, i_thrust):
             # Callers may reuse a cached/read-only acceleration vector.
             a = np.array(accel_gravity(r_i), dtype=float, copy=True)
 
             # third-body point-mass terms (Earth-centered inertial)
-            a += accel_point_moon(r_i, t_i)
-            a += accel_point_sun(r_i, t_i)
+            if use_batched_ephemerides:
+                a += third_body_acceleration(r_i, stage_moon[i, stage_index], MOON_MU)
+                a += third_body_acceleration(r_i, stage_sun[i, stage_index], SUN_MU)
+            else:
+                a += accel_point_moon(r_i, t_i)
+                a += accel_point_sun(r_i, t_i)
 
             # thrust profiles
             a += accel_radial(r_i, r_th[i_thrust])
@@ -82,16 +110,19 @@ def rk4(
             return a
 
         # RK4 steps
-        k1_v = a_total(r[i], v[i], t_abs[i], i)
+        k1_v = a_total(r[i], v[i], t_abs[i], 0, i)
         k1_r = v[i]
 
-        k2_v = a_total(r[i] + 0.5 * dt * k1_r, v[i] + 0.5 * dt * k1_v, t_abs[i] + 0.5 * dt, i)
+        k2_v = a_total(r[i] + 0.5 * dt * k1_r, v[i] + 0.5 * dt * k1_v,
+                       t_abs[i] + 0.5 * dt, 1, i)
         k2_r = v[i] + 0.5 * dt * k1_v
 
-        k3_v = a_total(r[i] + 0.5 * dt * k2_r, v[i] + 0.5 * dt * k2_v, t_abs[i] + 0.5 * dt, i)
+        k3_v = a_total(r[i] + 0.5 * dt * k2_r, v[i] + 0.5 * dt * k2_v,
+                       t_abs[i] + 0.5 * dt, 2, i)
         k3_r = v[i] + 0.5 * dt * k2_v
 
-        k4_v = a_total(r[i] + dt * k3_r, v[i] + dt * k3_v, t_abs[i] + dt, i)
+        k4_v = a_total(r[i] + dt * k3_r, v[i] + dt * k3_v,
+                       t_abs[i + 1], 3, i)
         k4_r = v[i] + dt * k3_v
 
         r[i + 1] = r[i] + (dt / 6.0) * (k1_r + 2 * k2_r + 2 * k3_r + k4_r)

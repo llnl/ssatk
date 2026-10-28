@@ -2055,6 +2055,8 @@ def plot_space_view_animated(mode="lunar", search_days=None, n_frames=26,
     since this rebuilds full Earth+Moon meshes per frame — n_frames=28 at
     full 180x360 resolution would be quite slow to generate.
     """
+    if n_frames < 1:
+        raise ValueError("n_frames must be at least 1")
     assert mode in ("lunar", "solar")
     window = _eclipse_window(mode, search_days=search_days, event=event, n_steps=4000, verbose=verbose)
     t_fine = window["t_s"]
