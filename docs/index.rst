@@ -30,6 +30,7 @@ body and component model.
    :caption: Contents:
 
    usage
+   ssa_workflows
    launch_baseline
    spacecraft_view
    gallery_hosting
