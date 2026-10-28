@@ -50,17 +50,10 @@ def _role_signature(func):
     (rare -- some C-implemented callables), in which case ``call_acceleration``
     falls back to the documented ``(r, t)`` / ``(r)`` call patterns.
 
-    Parameters are matched by name (r, v, t, time, epoch) in order, stopping
-    at the first one that isn't a role name. A model like
-    ``accel_equatorial(r, v=None, magnitude=None)`` resolves to ``(r, v)``:
-    ``magnitude`` isn't passed at all and simply keeps its default, rather
-    than silently receiving ``t``. Raises ``TypeError`` only when that first
-    non-role parameter is *required* (no default) -- e.g.
-    ``accel_radial(r, magnitude)`` -- since there is then no default for it
-    to fall back to and no safe value to guess (this is how it used to
-    silently receive a GPS epoch as its ``magnitude``); such a model must be
-    bound (e.g. via ``functools.partial``) before being passed to
-    ``accel_add``.
+    Parameters are matched by name (r, v, t, time, epoch) in order. Required
+    parameters after those roles must be bound before composition; optional
+    parameters keep their defaults.
+
     """
     try:
         sig = inspect.signature(func)

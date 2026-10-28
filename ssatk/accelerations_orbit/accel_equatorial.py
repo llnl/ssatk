@@ -13,9 +13,11 @@ def accel_equatorial(r, v=None, magnitude=None):
     r : array_like, shape (3,)
         Position (radial) vector in meters.
     v : array_like, shape (3,)
-        (Unused; kept for signature consistency.)
+        Unused in direct calls; a scalar here is accepted as magnitude
+        shorthand.
     magnitude : float
         Desired magnitude of the equatorial-plane acceleration in m/s^2.
+        Required when composing the helper with ``accel_add``.
 
     Returns
     -------
@@ -23,7 +25,15 @@ def accel_equatorial(r, v=None, magnitude=None):
         Equatorial-plane acceleration vector in m/s^2.
     """
     if magnitude is None:
-        magnitude = v
+        if v is not None and np.ndim(v) == 0:
+            # Support the direct scalar magnitude shorthand.
+            magnitude = v
+        else:
+            raise TypeError(
+                "accel_equatorial() requires magnitude; bind it (e.g. via "
+                "functools.partial(accel_equatorial, magnitude=...)) before "
+                "passing this model to accel_add"
+            )
     r = position(r)
 
     if magnitude == 0:

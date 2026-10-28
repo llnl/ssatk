@@ -525,7 +525,8 @@ class EarthLayer(BaseLayer):
             verts_x = X.ravel(); verts_y = Y.ravel(); verts_z = Z.ravel()
             H, W = self.n_lat, self.n_lon
             i_idx, j_idx, k_idx = [], [], []
-            cols = []
+            cols = np.empty(2 * (H - 1) * (W - 1), dtype=object)
+            face = 0
             for r in range(H - 1):
                 for c in range(W - 1):
                     v0 = r*W + c; v1 = v0+1; v2 = (r+1)*W + c; v3 = v2+1
@@ -536,11 +537,12 @@ class EarthLayer(BaseLayer):
                     col = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
                     for tri in [(v0,v1,v2),(v1,v3,v2)]:
                         i_idx.append(tri[0]); j_idx.append(tri[1]); k_idx.append(tri[2])
-                        cols.append(col)
+                        cols[face] = col
+                        face += 1
             fig.add_trace(go.Mesh3d(
                 x=verts_x, y=verts_y, z=verts_z,
                 i=i_idx, j=j_idx, k=k_idx,
-                facecolor=cols,
+                facecolor=np.asarray(cols),
                 name="Earth", hoverinfo="skip", showlegend=False,
             ))
         else:

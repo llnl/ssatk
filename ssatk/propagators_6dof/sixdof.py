@@ -760,7 +760,13 @@ def sixdof_rhs(
 
     radius = np.linalg.norm(r)
     a = np.zeros(3) if mu == 0.0 or radius == 0.0 else -mu * r / radius**3
-    if acceleration is not None:
+    paired_force_torque = _paired_force_torque_evaluator(acceleration, torque)
+    if paired_force_torque is not None:
+        paired_acceleration, paired_torque = paired_force_torque(
+            t, r, v, q, omega, mass=mass, wheel_momentum=wheel_momentum
+        )
+        a = a + paired_acceleration
+    elif acceleration is not None:
         a = a + _evaluate_acceleration(acceleration, t, r, v, q, omega, mass, wheel_momentum)
     if ntw_acceleration is not None:
         a = a + frame_to_gcrf_matrix("ntw", r=r, v=v) @ _as_vector3(
@@ -777,8 +783,10 @@ def sixdof_rhs(
     torque_body = np.zeros(3)
     if gravity_gradient:
         torque_body = torque_body + _gravity_gradient_torque_prepared(r, q, inertia, mu=mu)
-    if torque is not None:
+    if paired_force_torque is None and torque is not None:
         torque_body = torque_body + _evaluate_torque(torque, t, r, v, q, omega, mass, wheel_momentum)
+    elif paired_force_torque is not None:
+        torque_body = torque_body + paired_torque
     wheel_torque_scalars = np.zeros(n_wheels)
     wheel_h_body = np.zeros(3)
     if n_wheels:
@@ -1352,6 +1360,11 @@ def _bind_spacecraft_acceleration(model, spacecraft, *, suppress_depleted=True):
         acceleration.accepts_mass = True
         acceleration.accepts_wheel_momentum = True
         acceleration._source_model = model
+        acceleration._binding_key = (id(spacecraft), bool(suppress_depleted))
+        if _combined_force_torque_safe(model) or _is_model_sum_bundle(model):
+            acceleration._combined_evaluator = _make_combined_evaluator(
+                model, spacecraft, suppress_depleted
+            )
         return acceleration
     return model
 
@@ -1382,6 +1395,11 @@ def _bind_spacecraft_torque(model, spacecraft, *, suppress_depleted=True):
         torque.accepts_mass = True
         torque.accepts_wheel_momentum = True
         torque._source_model = model
+        torque._binding_key = (id(spacecraft), bool(suppress_depleted))
+        if _combined_force_torque_safe(model) or _is_model_sum_bundle(model):
+            torque._combined_evaluator = _make_combined_evaluator(
+                model, spacecraft, suppress_depleted
+            )
         return torque
     return model
 
@@ -1427,6 +1445,62 @@ def _bind_spacecraft_mass_flow_rate(model, spacecraft):
     return model
 
 
+def _make_combined_evaluator(model, spacecraft, suppress_depleted):
+    def combined_force_torque(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
+        state = _spacecraft_at_state(
+            spacecraft, t, r, v, q, omega, mass, wheel_momentum,
+            getattr(model, "tank_name", None),
+        )
+
+        def active(child):
+            return not (
+                suppress_depleted
+                and _is_propulsive_model(child)
+                and not getattr(child, "_depletion_handled", False)
+                and _propellant_depleted(state, getattr(child, "tank_name", None))
+            )
+
+        if _combined_force_torque_safe(model):
+            if not active(model):
+                return np.zeros(3), np.zeros(3)
+            return model._acceleration_torque(t, r, v, q, omega, state)
+
+        total_acceleration = np.zeros(3)
+        total_torque = np.zeros(3)
+        for child in model._models:
+            if not active(child):
+                continue
+            if getattr(child, "spacecraft_acceleration_model", False):
+                if _combined_force_torque_safe(child):
+                    acceleration, torque = child._acceleration_torque(
+                        t, r, v, q, omega, state
+                    )
+                    total_acceleration += _as_vector3(acceleration, "acceleration")
+                    total_torque += _as_vector3(torque, "torque")
+                else:
+                    total_acceleration += _as_vector3(
+                        child(spacecraft=state, t=t, r=r, v=v, q=q, omega=omega),
+                        "acceleration",
+                    )
+            elif callable(child) and not getattr(child, "spacecraft_torque_model", False):
+                total_acceleration += _as_vector3(
+                    child(t, r, v, q, omega), "acceleration"
+                )
+            if (
+                getattr(child, "spacecraft_torque_model", False)
+                and not getattr(child, "spacecraft_wheel_torque_model", False)
+                and not _combined_force_torque_safe(child)
+            ):
+                evaluator = child.torque if hasattr(child, "torque") else child
+                total_torque += _as_vector3(
+                    evaluator(spacecraft=state, t=t, r=r, v=v, q=q, omega=omega),
+                    "torque",
+                )
+        return total_acceleration, total_torque
+
+    return combined_force_torque
+
+
 def _coast_mass_flow_rate(model, spacecraft, *, tank_name=None):
     def mass_flow_rate(t, r, v, q, omega, *, mass=None, wheel_momentum=None):
         return _evaluate_mass_flow_rate(model, t, r, v, q, omega, mass, wheel_momentum)
@@ -1444,6 +1518,53 @@ def _evaluate_acceleration(model, t, r, v, q, omega, mass=None, wheel_momentum=N
     if getattr(model, "accepts_mass", False):
         return _as_vector3(model(t, r, v, q, omega, mass=mass), "acceleration")
     return _as_vector3(model(t, r, v, q, omega), "acceleration")
+
+
+def _paired_force_torque_evaluator(acceleration, torque):
+    """Return a combined evaluator for one model used in both RHS channels."""
+    if acceleration is None or torque is None:
+        return None
+    if getattr(acceleration, "_binding_key", None) != getattr(torque, "_binding_key", None):
+        return None
+    acceleration_source = getattr(acceleration, "_source_model", None)
+    torque_source = getattr(torque, "_source_model", None)
+    same_source = acceleration_source is torque_source
+    acceleration_models = getattr(acceleration_source, "_models", None)
+    torque_models = getattr(torque_source, "_models", None)
+    same_model_set = (
+        acceleration_models is not None and acceleration_models is torque_models
+    )
+    if not same_source and not same_model_set:
+        return None
+    evaluator = getattr(acceleration, "_combined_evaluator", None)
+    if evaluator is None or getattr(torque, "_combined_evaluator", None) is None:
+        return None
+    return evaluator
+
+
+def _combined_force_torque_safe(model):
+    """Accept only built-in force models with unchanged public delegators."""
+    if any(
+        name in getattr(model, "__dict__", {})
+        for name in ("acceleration", "torque", "_acceleration_torque")
+    ):
+        return False
+    cls = type(model)
+    owner = next(
+        (base for base in cls.__mro__ if base.__dict__.get("_combined_force_torque_safe")),
+        None,
+    )
+    if owner is None:
+        return False
+    for name in ("__call__", "acceleration", "torque", "_acceleration_torque"):
+        if getattr(cls, name, None) is not getattr(owner, name, None):
+            return False
+    return True
+
+
+def _is_model_sum_bundle(model):
+    """Identify only the aggregate closures created by this module."""
+    return bool(getattr(model, "_ssatk_model_sum_bundle", False))
 
 
 def _evaluate_torque(model, t, r, v, q, omega, mass=None, wheel_momentum=None):
@@ -1689,6 +1810,7 @@ def _sum_model_accelerations(models, *, suppress_depleted=True):
     acceleration.spacecraft_acceleration_model = True
     acceleration.spacecraft_propulsive_model = propulsive
     acceleration._models = models
+    acceleration._ssatk_model_sum_bundle = True
     acceleration.tank_name = _tank_name_for_models(*models)
     acceleration._depletion_handled = True
     return acceleration
@@ -1717,6 +1839,7 @@ def _sum_model_torques(models, *, suppress_depleted=True):
     torque.spacecraft_propulsive_model = propulsive
     torque.torque = torque
     torque._models = models
+    torque._ssatk_model_sum_bundle = True
     torque._depletion_handled = True
     torque.tank_name = _tank_name_for_models(*models)
     return torque
