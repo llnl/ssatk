@@ -1460,8 +1460,9 @@ def compute_eclipse(r, r_sun):
 
 
 def compute_sun_positions(t):
+    """Return SunPosition samples as an ``(N, 3)`` array, including empty input."""
     sun = SunPosition()
-    return np.array([sun(ti) for ti in t])
+    return np.asarray(sun(t)).T
 
 
 # ═════════════════════════════════════════════════════════════════════════════
