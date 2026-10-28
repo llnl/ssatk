@@ -159,11 +159,24 @@ def write_event_metrics(batches, path):
                 times = np.asarray(batch.times)
                 valid = np.asarray(batch.valid)
                 trigger = np.asarray(batch.trigger)
-                row_count = len(times)
                 if times.ndim != 1:
                     raise ValueError("times must be one-dimensional")
-                if valid.shape != (row_count,) or trigger.shape != (row_count,):
-                    raise ValueError("valid and trigger must match batch times")
+                if (
+                    not np.issubdtype(times.dtype, np.number)
+                    or np.issubdtype(times.dtype, np.complexfloating)
+                ):
+                    raise ValueError("times must be real numeric GPS seconds")
+                times = times.astype(float, copy=False)
+                if not np.all(np.isfinite(times)):
+                    raise ValueError("times must be finite GPS seconds")
+                row_count = len(times)
+                for name, flags in (("valid", valid), ("trigger", trigger)):
+                    if flags.ndim != 1 or flags.shape != (row_count,):
+                        raise ValueError(
+                            f"{name} must be one-dimensional and match batch times"
+                        )
+                    if flags.dtype != np.dtype(bool):
+                        raise ValueError(f"{name} must contain boolean values")
                 ids = _json_ids(batch.object_ids)
                 if len(ids) != 2:
                     raise ValueError("event batches must contain two object IDs")
