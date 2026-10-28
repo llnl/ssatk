@@ -32,10 +32,49 @@ def _chord_radius(cosine_limit: float, angular_limit_rad=None) -> float:
     always uses the direct predicates in :func:`screen_pairs`. Supplied angles
     use sin(angle/2) to avoid cancellation in 1-cos(angle) near zero.
     """
-    radius = (np.sqrt(max(0.0, 2.0 - 2.0 * cosine_limit))
-              if angular_limit_rad is None else 2.0 * np.sin(angular_limit_rad / 2.0))
+    if angular_limit_rad is None:
+        # The direct scalar cosine can differ from a dot product of the
+        # pre-normalized rows by a few ulps near one.  Broaden candidates only;
+        # final acceptance remains strictly predicate-based.
+        cosine_limit = max(
+            -1.0, cosine_limit - _roundoff_envelope(cosine_limit)
+        )
+        radius = np.sqrt(max(0.0, 2.0 - 2.0 * cosine_limit))
+    else:
+        radius = 2.0 * np.sin(angular_limit_rad / 2.0)
     allowance = 32.0 * np.finfo(float).eps
     return float(np.nextafter(radius + allowance, np.inf))
+
+
+def _roundoff_envelope(*values: float) -> float:
+    return 32.0 * np.finfo(float).eps * max(1.0, *(abs(value) for value in values))
+
+
+def _near_cutoff(values: np.ndarray, cutoff: float) -> np.ndarray:
+    return np.abs(values - cutoff) <= _roundoff_envelope(cutoff)
+
+
+def _scalar_predicate(
+    first_los,
+    second_los,
+    first_velocity,
+    second_velocity,
+    angular_limit,
+    velocity_threshold,
+) -> bool:
+    first_speed = np.linalg.norm(first_velocity)
+    second_speed = np.linalg.norm(second_velocity)
+    velocity_cosine = np.dot(first_velocity, second_velocity) / (
+        first_speed * second_speed
+    )
+    angle = np.arctan2(
+        np.linalg.norm(np.cross(first_los, second_los)),
+        np.dot(first_los, second_los),
+    )
+    return (
+        angle <= angular_limit
+        and np.clip(velocity_cosine, -1.0, 1.0) > velocity_threshold
+    )
 
 
 def _tree_pairs(features: np.ndarray, cosine_limit: float, angular_limit_rad=None) -> np.ndarray:
@@ -216,6 +255,18 @@ def screen_pairs(
         keep = (angles <= angular_limit_rad) & (
             np.clip(velocity_cosine, -1.0, 1.0) > velocity_threshold
         )
+        ambiguous = _near_cutoff(angles, angular_limit_rad) | _near_cutoff(
+            velocity_cosine, velocity_threshold
+        )
+        for local_index in np.flatnonzero(ambiguous):
+            keep[local_index] = _scalar_predicate(
+                first_los[local_index],
+                second_los[local_index],
+                velocities[indices[first[local_index]]],
+                velocities[indices[second[local_index]]],
+                angular_limit_rad,
+                velocity_threshold,
+            )
         if np.any(keep):
             accepted.append(np.column_stack((indices[first[keep]], indices[second[keep]])))
 
