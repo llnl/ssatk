@@ -248,6 +248,9 @@ For task code, import the module you need:
    from ssatk.plots import orbit_plot
 
 
+The end-to-end synthetic SSA examples are collected in the
+:doc:`SSA workflows <ssa_workflows>` guide.
+
 CCSDS conjunction messages
 ---------------------------
 

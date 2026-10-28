@@ -104,7 +104,7 @@ display-only.
 | `ssatk.propagators_6dof` | 6-DoF spacecraft propagation and targeting (`solve_6dof_target`, `solve_6dof_multi_segment_target`, `ImpulseManeuver`) |
 | `ssatk.accelerations_orbit`, `ssatk.accelerations_6dof` | Acceleration, force, torque and thrust models |
 | `ssatk.coordinates` | GCRF, ITRF, geodetic, lunar, sky and satellite frames (`coordinates.satellite_frames`) |
-| `ssatk.ssa` | Conjunction screening, closest approach, encounter frames, collision probability |
+| `ssatk.ssa` | Chunked observer pair analysis (`analyze_pairs`), angular/velocity screening, pair metrics, buffered event windows; conjunction screening, closest approach, encounter frames, collision probability |
 | `ssatk.navigation` | Batch orbit fits, EKFs, ground-station and optical sensors, star-tracker attitude |
 | `ssatk.compute` | Sampling, coverage statistics, photometry, FFTs, Lyapunov exponents |
 | `ssatk.environment_eop`, `ssatk.environment_space_weather` | Packaged Earth-orientation and space-weather tables |
