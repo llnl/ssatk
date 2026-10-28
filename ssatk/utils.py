@@ -56,9 +56,15 @@ def pd_flatten(data: list, factor: float = 1.0) -> list:
     """
     # Filter out empty strings or any non-convertible strings
     cleaned_data = [x for x in data if x.strip() != '']
-    
-    # Attempt to convert to float
-    return [float(x) / factor for x in cleaned_data if x.strip().replace('.', '', 1).isdigit()]
+
+    # Keep every value accepted by Python's float conversion.
+    converted = []
+    for x in cleaned_data:
+        try:
+            converted.append(float(x) / factor)
+        except ValueError:
+            continue
+    return converted
 
 
 def str_to_array(s: str) -> np.ndarray:
