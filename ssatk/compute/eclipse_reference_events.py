@@ -243,24 +243,42 @@ class SolarBesselianState:
         return -self.z_hat_sunward_itrf
 
 
-def solar_besselian_state(jd_utc: float) -> SolarBesselianState:
-    """Reconstruct physical Earth-fixed Sun/Moon vectors from Besselian data."""
-    jd = float(jd_utc)
-    t = (jd+_SOLAR_DELTA_T_S/86400.0-_SOLAR_T0_TDT_JD)*24.0
-    values = {name: float(_poly(coeff, t)) for name, coeff in _SOLAR_BESSEL.items()}
-    d = math.radians(values["d"])
-    # Besselian mu is expressed on the dynamical timescale.  Rotate Earth by
-    # the UT/TT difference before treating it as a terrestrial hour angle.
-    mu_utc_deg = values["mu"]-0.00417807*_SOLAR_DELTA_T_S
-    mu = math.radians(mu_utc_deg)
-    z_hat = np.array([
-        math.cos(d)*math.cos(mu),
-        -math.cos(d)*math.sin(mu),
-        math.sin(d),
-    ])
-    x_hat = np.array([math.sin(mu), math.cos(mu), 0.0])
-    y_hat = np.cross(z_hat, x_hat)
-    x_hat, y_hat, z_hat = _unit(x_hat), _unit(y_hat), _unit(z_hat)
+def solar_besselian_geometry(jd_utc: float | np.ndarray) -> dict[str, object]:
+    """Return scalar or batched Earth-fixed Sun/Moon Besselian geometry."""
+    jd_array = np.asarray(jd_utc, dtype=float)
+    scalar = jd_array.ndim == 0
+    if scalar:
+        jd = float(jd_array)
+        t = (jd+_SOLAR_DELTA_T_S/86400.0-_SOLAR_T0_TDT_JD)*24.0
+        values = {name: float(_poly(coeff, t)) for name, coeff in _SOLAR_BESSEL.items()}
+        d = math.radians(values["d"])
+        # Besselian mu is expressed on the dynamical timescale.  Rotate Earth
+        # by the UT/TT difference before treating it as a terrestrial hour angle.
+        mu_utc_deg = values["mu"]-0.00417807*_SOLAR_DELTA_T_S
+        mu = math.radians(mu_utc_deg)
+        z_hat = np.array([
+            math.cos(d)*math.cos(mu),
+            -math.cos(d)*math.sin(mu),
+            math.sin(d),
+        ])
+        x_hat = np.array([math.sin(mu), math.cos(mu), 0.0])
+        y_hat = np.cross(z_hat, x_hat)
+        x_hat, y_hat, z_hat = _unit(x_hat), _unit(y_hat), _unit(z_hat)
+    else:
+        t = (jd_array+_SOLAR_DELTA_T_S/86400.0-_SOLAR_T0_TDT_JD)*24.0
+        values = {name: np.polynomial.polynomial.polyval(t, coeff)
+                  for name, coeff in _SOLAR_BESSEL.items()}
+        d = np.radians(values["d"])
+        mu_utc_deg = values["mu"]-0.00417807*_SOLAR_DELTA_T_S
+        mu = np.radians(mu_utc_deg)
+        z_hat = np.stack((
+            np.cos(d)*np.cos(mu), -np.cos(d)*np.sin(mu), np.sin(d),
+        ), axis=-1)
+        x_hat = np.stack((np.sin(mu), np.cos(mu), np.zeros_like(mu)), axis=-1)
+        y_hat = np.cross(z_hat, x_hat)
+        z_hat /= np.linalg.norm(z_hat, axis=-1, keepdims=True)
+        x_hat /= np.linalg.norm(x_hat, axis=-1, keepdims=True)
+        y_hat /= np.linalg.norm(y_hat, axis=-1, keepdims=True)
 
     sin_f1 = _SOLAR_TAN_F1/math.sqrt(1.0+_SOLAR_TAN_F1**2)
     sin_f2 = _SOLAR_TAN_F2/math.sqrt(1.0+_SOLAR_TAN_F2**2)
@@ -271,20 +289,45 @@ def solar_besselian_state(jd_utc: float) -> SolarBesselianState:
     G1 = (sun_radius_er+_SOLAR_K1)/sin_f1
     G2 = (sun_radius_er-_SOLAR_K2)/sin_f2
     G = 0.5*(G1+G2)
+    if scalar:
+        moon = RE_KM*(values["x"]*x_hat+values["y"]*y_hat+z_moon*z_hat)
+        sun = moon+RE_KM*G*z_hat
+    else:
+        moon = RE_KM*(values["x"][..., None]*x_hat
+                      +values["y"][..., None]*y_hat+z_moon[..., None]*z_hat)
+        sun = moon+RE_KM*G*z_hat
+    return {
+        "jd_utc": jd_array if not scalar else float(jd_array),
+        "t_hours_tdt": t,
+        "x": values["x"], "y": values["y"], "d": values["d"],
+        "l1": values["l1"], "l2": values["l2"],
+        "mu_tdt_deg": values["mu"], "mu_utc_deg": mu_utc_deg,
+        "x_hat_itrf": x_hat, "y_hat_itrf": y_hat,
+        "z_hat_sunward_itrf": z_hat,
+        "moon_itrf_km": moon, "sun_itrf_km": sun,
+        "sun_moon_distance_km": G*RE_KM,
+    }
 
-    moon = RE_KM*(values["x"]*x_hat+values["y"]*y_hat+z_moon*z_hat)
-    sun = moon+RE_KM*G*z_hat
+
+def solar_besselian_state(jd_utc: float) -> SolarBesselianState:
+    """Reconstruct physical Earth-fixed Sun/Moon vectors from Besselian data."""
+    geometry = solar_besselian_geometry(jd_utc)
+    moon = geometry["moon_itrf_km"]
+    sun = geometry["sun_itrf_km"]
     return SolarBesselianState(
-        jd_utc=jd,
-        t_hours_tdt=t,
-        x=values["x"], y=values["y"], d_deg=values["d"],
-        l1=values["l1"], l2=values["l2"],
-        mu_tdt_deg=values["mu"], mu_utc_deg=mu_utc_deg,
-        x_hat_itrf=x_hat, y_hat_itrf=y_hat, z_hat_sunward_itrf=z_hat,
+        jd_utc=float(geometry["jd_utc"]),
+        t_hours_tdt=float(geometry["t_hours_tdt"]),
+        x=float(geometry["x"]), y=float(geometry["y"]), d_deg=float(geometry["d"]),
+        l1=float(geometry["l1"]), l2=float(geometry["l2"]),
+        mu_tdt_deg=float(geometry["mu_tdt_deg"]),
+        mu_utc_deg=float(geometry["mu_utc_deg"]),
+        x_hat_itrf=np.asarray(geometry["x_hat_itrf"]),
+        y_hat_itrf=np.asarray(geometry["y_hat_itrf"]),
+        z_hat_sunward_itrf=np.asarray(geometry["z_hat_sunward_itrf"]),
         moon_itrf_km=moon, sun_itrf_km=sun,
         moon_distance_km=float(np.linalg.norm(moon)),
         sun_distance_km=float(np.linalg.norm(sun)),
-        sun_moon_distance_km=float(G*RE_KM),
+        sun_moon_distance_km=float(geometry["sun_moon_distance_km"]),
     )
 
 
