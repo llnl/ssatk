@@ -224,6 +224,15 @@ def get_similar_orbits(
 
     propkw = ssapy_kwargs(mass=mass, area=area, CD=CD, CR=CR)
 
+    # propkw and integration_timestep are the same for every generated orbit
+    # in this loop, so the propagator (and the gravity model it caches) can be
+    # built once here instead of once per point in ssapy_orbit.
+    if prop is None:
+        ode_kwargs = None
+        if integration_timestep is not None:
+            ode_kwargs = {"max_step": float(integration_timestep)}
+        prop = ssapy_prop(propkw=propkw, ode_kwargs=ode_kwargs)
+
     traj_list = []
     t_out = None
 

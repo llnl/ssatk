@@ -26,12 +26,20 @@ def walker_delta(*, planes=72, satellites_per_plane=22, altitude_m=550e3,
     epoch = epoch if isinstance(epoch, Time) else Time(epoch, scale="utc")
     if not epoch.isscalar or not np.isfinite(epoch.gps):
         raise ValueError("epoch must be a finite scalar time")
-    total = int(planes*satellites_per_plane)
-    states = [Orbit.fromKeplerianElements(
-        a=EARTH_RADIUS+altitude_m, e=0., i=np.deg2rad(inclination_deg), pa=0.,
-        raan=2*np.pi*plane/planes,
-        trueAnomaly=2*np.pi*(slot/satellites_per_plane+phasing*plane/total),
-        t=epoch.gps, mu=EARTH_MU,
-    ) for plane in range(int(planes)) for slot in range(int(satellites_per_plane))]
-    return Orbit(r=np.array([state.r for state in states]),
-                 v=np.array([state.v for state in states]), t=epoch.gps, mu=EARTH_MU)
+    planes = int(planes)
+    satellites_per_plane = int(satellites_per_plane)
+    total = planes * satellites_per_plane
+    plane_index = np.repeat(np.arange(planes), satellites_per_plane)
+    slot_index = np.tile(np.arange(satellites_per_plane), planes)
+    return Orbit.fromKeplerianElements(
+        a=np.full(total, EARTH_RADIUS + altitude_m),
+        e=np.zeros(total),
+        i=np.full(total, np.deg2rad(inclination_deg)),
+        pa=np.zeros(total),
+        raan=2 * np.pi * plane_index / planes,
+        trueAnomaly=2 * np.pi * (
+            slot_index / satellites_per_plane + phasing * plane_index / total
+        ),
+        t=epoch.gps,
+        mu=EARTH_MU,
+    )
