@@ -81,7 +81,8 @@ def normed(arr):
     return arr / np.sqrt(np.einsum("...i,...i", arr, arr))[..., None]
 
 
-def einsum_norm(a, indices='ij,ji->i'):
+def einsum_norm(a, indices='ij,ij->i'):
+    """Return the Euclidean norm of each row in an array of vectors."""
     return np.sqrt(np.einsum(indices, a, a))
 
 
@@ -246,6 +247,9 @@ def perpendicular_vectors(v):
 
 
 def points_on_circle(r, v, rad, num_points=4):
+    """Return `num_points` points equally spaced on a circle of radius `rad`,
+    centered at `r`, lying in the plane perpendicular to `v`.
+    """
     # Convert inputs to numpy arrays
     r = np.array(r)
     v = np.array(v)
@@ -274,14 +278,13 @@ def points_on_circle(r, v, rad, num_points=4):
     y = rad * np.cos(angles) * u[1] + rad * np.sin(angles) * w[1]
     z = rad * np.cos(angles) * u[2] + rad * np.sin(angles) * w[2]
 
-    # Apply rotation about z-axis by 90 degrees
-    rot_matrix = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
-    rotated_points = np.dot(rot_matrix, np.column_stack((x, y, z)).T).T
+    # u and w span the plane perpendicular to v.
+    points_on_plane = np.column_stack((x, y, z))
 
-    # Translate the rotated points to the center point r
-    points_rotated = rotated_points + r.reshape(1, 3)
+    # Translate the points to the center point r
+    points_translated = points_on_plane + r.reshape(1, 3)
 
-    return points_rotated
+    return points_translated
 
 
 if __name__ == '__main__':
