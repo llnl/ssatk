@@ -18,13 +18,10 @@ def to_gps(t):
 
     Author: Travis Yeager (yeager7@llnl.gov)
     """
-    if np.size(t) > 1:
-        if isinstance(t[0], Time):
-            try:
-                t = t.gps
-            except AttributeError:
-                t = np.array([time.gps for time in t])
-    else:
-        if isinstance(t, Time):
-            t = t.gps
+    if isinstance(t, Time):
+        return t.gps
+    if np.size(t) and np.ndim(t):
+        values = np.asarray(t, dtype=object)
+        if isinstance(values.flat[0], Time):
+            return np.array([epoch.gps for epoch in values.flat]).reshape(values.shape)
     return t
