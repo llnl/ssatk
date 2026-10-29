@@ -901,8 +901,20 @@ def run_all_demos(
     archive_path = output_root.parent / (output_root.name + ".zip")
     archive_path.unlink(missing_ok=True)
 
-    if clean and output_root.exists():
-        shutil.rmtree(output_root)
+    if clean and (output_root / "manifest.json").is_file():
+        manifest = json.loads((output_root / "manifest.json").read_text(encoding="utf-8"))
+        owned_files = {name for result in manifest for name in result["files"]}
+        # Validate every path before deleting any files; never follow a manifest
+        # path or symlink outside the gallery, and never remove whole directories.
+        paths_to_remove = []
+        for name in owned_files:
+            candidate = (output_root / unquote(name)).resolve()
+            if not candidate.is_relative_to(output_root) or candidate == output_root:
+                raise ValueError(f"Gallery manifest path escapes output directory: {name!r}")
+            if candidate.is_file():
+                paths_to_remove.append(candidate)
+        for candidate in paths_to_remove:
+            candidate.unlink()
     output_root.mkdir(parents=True, exist_ok=True)
 
     results: list[DemoResult] = []

@@ -8,7 +8,7 @@ from .demo_gallery import run_all_demos
 
 
 def default_output_dir() -> Path:
-    return output_root() / "documents"
+    return output_root() / "gallery"
 
 
 def _looks_like_demos_dir(path: Path) -> bool:
@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         "--output",
         default=str(default_output_dir()),
         help="Output directory for generated demo artifacts and report "
-             "(default: ~/ssatk_output/documents)",
+             "(default: ~/ssatk_output/gallery)",
     )
     parser.add_argument(
         "--open",
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-clean",
         action="store_true",
-        help="Do not delete the existing output directory before running",
+        help="Keep files from the previous gallery build before running",
     )
     parser.add_argument(
         "--full",

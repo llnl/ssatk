@@ -46,7 +46,9 @@ and Chrome in addition to these Python extras:
 
 The output directory must be separate from the demo source tree; a build
 refuses to clean a source directory or one of its parents. Use a dedicated
-output directory: existing contents are removed unless ``--no-clean`` is set.
+output directory (the default is ``~/ssatk_output/gallery``). Cleanup removes
+only files listed by the previous gallery manifest, preserving unrelated files.
+Use ``--no-clean`` to retain previous demo outputs as well.
 A rebuild removes the previous adjacent ZIP first and creates a replacement
 only if all demos and link checks succeed. With ``--strict``, any skipped demo
 also prevents the ZIP and returns a nonzero exit status. The publishing
