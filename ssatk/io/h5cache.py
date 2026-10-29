@@ -134,14 +134,14 @@ def _write_value(h5group, key, value, *, compression="gzip", compression_opts=4)
     return
 
 
-def _read_node(node):
+def _read_node(node, *, allow_pickle=False):
     """
     Read from an h5py Group or Dataset and reconstruct the Python object.
     """
     if isinstance(node, h5py.Group):
         out = {}
         for name, child in node.items():
-            out[_dec_key(name)] = _read_node(child)
+            out[_dec_key(name)] = _read_node(child, allow_pickle=allow_pickle)
         return out
 
     # Dataset
@@ -171,6 +171,8 @@ def _read_node(node):
         return np.array(node[()])
 
     if kind == "pickle":
+        if not allow_pickle:
+            raise ValueError("Loading pickled cache objects requires allow_pickle=True for trusted files.")
         arr = np.array(node[()], dtype=np.uint8).ravel()
         payload = arr.tobytes()
         return pickle.loads(payload)
@@ -287,7 +289,7 @@ def h5cache(
     return out
 
 
-def h5load(name_or_path, *, summary=True, max_items=200):
+def h5load(name_or_path, *, summary=True, max_items=200, allow_pickle=False):
     """
     Load an h5cache() HDF5 cache and return the reconstructed dictionary.
 
@@ -295,6 +297,8 @@ def h5load(name_or_path, *, summary=True, max_items=200):
     - Otherwise treat it as a name under datapath(...).
 
     If summary=True, prints a path summary of the HDF5 contents.
+    Embedded pickles require allow_pickle=True; only enable for trusted files
+    because unpickling can execute arbitrary code.
     """
     if h5py is None:
         raise ImportError(f"h5py is required for h5load(): {_H5PY_IMPORT_ERROR}")
@@ -342,5 +346,5 @@ def h5load(name_or_path, *, summary=True, max_items=200):
             _print_summary(f)
 
         if "vars" in f:
-            return _read_node(f["vars"])
-        return _read_node(f)
+            return _read_node(f["vars"], allow_pickle=allow_pickle)
+        return _read_node(f, allow_pickle=allow_pickle)

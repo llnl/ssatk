@@ -126,7 +126,11 @@ def ssatk_read(
     as_array: bool = False,
     **kwargs,
 ) -> Any:
-    """Load data using the file extension in ``path`` to select the format."""
+    """Load data using the file extension in ``path`` to select the format.
+
+    Embedded HDF5 pickles require ``allow_pickle=True``. Enable this only for
+    trusted files, since unpickling can execute arbitrary Python code.
+    """
     load_path = _resolve_path(path, root=root, for_save=False)
     suffix = _extension(load_path)
     if suffix not in _SUPPORTED_EXTS:
@@ -137,7 +141,7 @@ def ssatk_read(
         raise ValueError("key= is only supported for HDF5 and NPZ inputs.")
 
     if suffix in _HDF5_EXTS:
-        return _load_hdf5(load_path, key=key)
+        return _load_hdf5(load_path, key=key, allow_pickle=allow_pickle)
     if suffix in _JSON_EXTS:
         return load_json(load_path)
     if suffix in _JSONL_EXTS:
@@ -324,11 +328,11 @@ def _save_hdf5(
                     handle.attrs[str(name)] = value
 
 
-def _load_hdf5(path: Path, *, key: str | None) -> Any:
+def _load_hdf5(path: Path, *, key: str | None, allow_pickle: bool = False) -> Any:
     if key is not None:
         parts = _hdf5_key_parts(key)
         top = parts[0]
-        loaded = load_dict_from_hdf5(str(path), keys={top})
+        loaded = load_dict_from_hdf5(str(path), keys={top}, allow_pickle=allow_pickle)
         if top not in loaded:
             raise KeyError(key)
         value = loaded[top]
@@ -347,8 +351,8 @@ def _load_hdf5(path: Path, *, key: str | None) -> Any:
     if default_key:
         top_of_default = str(default_key).split("/", 1)[0]
         if top_level_keys == {top_of_default}:
-            return _load_hdf5(path, key=str(default_key))
-    loaded = load_dict_from_hdf5(str(path))
+            return _load_hdf5(path, key=str(default_key), allow_pickle=allow_pickle)
+    loaded = load_dict_from_hdf5(str(path), allow_pickle=allow_pickle)
     if set(loaded) == {"data"}:
         return loaded["data"]
     return loaded

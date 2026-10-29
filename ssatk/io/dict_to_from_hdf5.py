@@ -279,7 +279,7 @@ def save_dict_to_hdf5(
 # ---------- LOAD ----------
 
 
-def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
+def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None, *, allow_pickle: bool = False) -> dict:
     """
     Load a dictionary previously stored with save_dict_to_hdf5(filename, data, ...).
 
@@ -291,6 +291,9 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
         If provided, only the specified top-level keys are loaded from disk.
         All other keys are ignored, avoiding unnecessary decompression of
         large datasets. If None (default), all keys are loaded.
+    allow_pickle : bool, optional
+        Allow embedded Python pickles, including Time metadata. Only enable
+        for trusted files: unpickling can execute arbitrary code.
 
     Behavior:
         - Groups marked with __is_sequence__=True are reconstructed as lists,
@@ -319,6 +322,8 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
                 if "meta" in obj:
                     meta_ds = obj["meta"]
                     if meta_ds.attrs.get("pickled", False):
+                        if not allow_pickle:
+                            raise ValueError("Loading pickled Time metadata requires allow_pickle=True for trusted files.")
                         meta_bytes = bytes(meta_ds[...].tolist())
                         meta = pickle.loads(meta_bytes)
                         t.meta.update(meta)
@@ -364,6 +369,8 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
 
         # pickled object?
         if ds.attrs.get("__type__") == "pickle" or ds.attrs.get("pickled", False):
+            if not allow_pickle:
+                raise ValueError("Loading pickled HDF5 objects requires allow_pickle=True for trusted files.")
             arr = np.array(ds[...], dtype="uint8")
             return pickle.loads(arr.tobytes())
 
