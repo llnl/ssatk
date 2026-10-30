@@ -56,6 +56,13 @@ class SpaceWeatherTable:
         gps = np.asarray([record.gps_seconds for record in self.records])
         if not np.all(np.diff(gps) > 0.0):
             raise ValueError("Space-weather records must be strictly chronological.")
+        # Match EarthOrientationTable: keep the immutable index out of value equality.
+        gps.setflags(write=False)
+        object.__setattr__(self, "_source_gps_seconds", gps)
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__post_init__()
 
     @property
     def start_gps(self) -> float:
@@ -73,7 +80,7 @@ class SpaceWeatherTable:
             raise ValueError(
                 f"Space-weather time {gps} s is outside [{self.start_gps}, {self.end_gps}) s."
             )
-        source_times = np.asarray([record.gps_seconds for record in self.records])
+        source_times = self._source_gps_seconds
         index = int(np.searchsorted(source_times, gps, side="right") - 1)
         record = self.records[index]
         if record.predicted and not allow_predicted:
