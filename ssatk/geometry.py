@@ -223,7 +223,7 @@ def _cad(path, scale, linear_deflection, angular_deflection):
 
 @dataclass
 class SpacecraftMesh:
-    """Body-frame vertices in metres and zero-based polygonal faces."""
+    """Body-frame vertices in metres and zero-based convex polygonal faces."""
 
     vertices: np.ndarray
     faces: object
@@ -252,6 +252,14 @@ class SpacecraftMesh:
             raise ValueError("RGB colors must lie in [0, 1]")
         triangles, triangle_colors, boundaries, triangle_faces = [], [], [], []
         for face_index, (face, color) in enumerate(zip(self.faces, self.colors)):
+            if len(face) > 3:
+                points = self.vertices[face] - self.vertices[face[0]]
+                edges = np.roll(points, -1, axis=0) - points
+                normal = np.cross(points, np.roll(points, -1, axis=0)).sum(axis=0)
+                tolerance = np.finfo(float).eps * len(face) * np.linalg.norm(normal) * np.max(np.sum(points**2, axis=1))
+                for point, edge in zip(points, edges):
+                    if np.any(np.cross(edge, points - point) @ normal < -tolerance):
+                        raise ValueError("Concave mesh faces are unsupported; supply triangulated faces.")
             for index in range(1, len(face) - 1):
                 triangle = [face[0], face[index], face[index + 1]]
                 first, second, third = self.vertices[triangle]

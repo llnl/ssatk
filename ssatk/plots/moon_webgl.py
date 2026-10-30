@@ -68,9 +68,11 @@ from ssatk.plots.rendering import is_low_spec
 from ssatk.plots.rendering import _with_low_spec
 
 import base64
+import html
 import http.server
 import json
 import os
+import re
 import socketserver
 import threading
 import webbrowser
@@ -1531,25 +1533,24 @@ def moon_webgl(r=None, t=None, r_frame="gcrf",
     from ssatk.plots.camera import _camera_spec
     from pathlib import Path
     camera_script = Path(__file__).with_name("animation_camera.js").read_text()
-    doc = _HTML
-    for key, val in (("{title}", title),
+    replacements = dict((("{title}", html.escape(str(title))),
                      ("{three_loader}", three_loader),
-                     ("{subtitle}", subtitle),
-                     ("{meta}", json.dumps(meta)),
-                     ("{orbit}", json.dumps(tracks)),
-                     ("{stars}", json.dumps(stars)),
-                     ("{asset_urls}", json.dumps(asset_urls)),
+                     ("{subtitle}", html.escape(str(subtitle))),
+                     ("{meta}", json.dumps(meta).replace("<", "\\u003c")),
+                     ("{orbit}", json.dumps(tracks).replace("<", "\\u003c")),
+                     ("{stars}", json.dumps(stars).replace("<", "\\u003c")),
+                     ("{asset_urls}", json.dumps(asset_urls).replace("<", "\\u003c")),
                      ("{radius}", repr(R_MOON_KM)),
-                     ("{vert}", json.dumps(_VERT)),
-                     ("{frag}", json.dumps(fragment)),
-                     ("{low_spec}", json.dumps(is_low_spec())),
+                     ("{vert}", json.dumps(_VERT).replace("<", "\\u003c")),
+                     ("{frag}", json.dumps(fragment).replace("<", "\\u003c")),
+                     ("{low_spec}", json.dumps(is_low_spec()).replace("<", "\\u003c")),
                      ("{sun_az}", repr(float(sun_azimuth_deg))),
                      ("{sun_el}", repr(float(sun_elevation_deg))),
                      ("{exposure}", repr(float(exposure))),
-                     ("{camera_config}", json.dumps(asdict(_camera_spec(camera)))),
+                     ("{camera_config}", json.dumps(asdict(_camera_spec(camera))).replace("<", "\\u003c")),
                      ("{camera_script}", camera_script),
-                     ("{animation_seconds}", repr(animation_seconds))):
-        doc = doc.replace(key, val)
+                     ("{animation_seconds}", repr(animation_seconds))))
+    doc = re.sub("|".join(map(re.escape, replacements)), lambda match: replacements[match[0]], _HTML)
 
     out = os.path.expanduser(save_path) if save_path \
         else os.path.join(d, "moon_webgl.html")
