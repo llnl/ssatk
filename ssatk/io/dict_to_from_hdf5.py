@@ -326,7 +326,7 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None, *, allow
                             raise ValueError("Loading pickled Time metadata requires allow_pickle=True for trusted files.")
                         meta_bytes = bytes(meta_ds[...].tolist())
                         meta = pickle.loads(meta_bytes)
-                        t.meta.update(meta)
+                        t.meta = dict(meta)
                 return t
 
             # Explicit sequence or mapping marker
