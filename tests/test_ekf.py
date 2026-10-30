@@ -35,6 +35,21 @@ def test_wrap_angle_residual_handles_circular_innovation():
     )
 
 
+def test_measurement_quality_matches_scalar_gaussian_reference():
+    """R1: innovation variance 4+1=5 m², NIS=10²/5=20 (unitless), 1e-12."""
+    prior = EKFState([0.0], [[4.0]], time=2.0)
+    ekf = ExtendedKalmanFilter(prior)
+    model = CartesianMeasurement((0,))
+    rejected = ekf.update([10.0], model, [[1.0]], max_nis=9.0, time=3.0)
+    assert ekf.last_update["nis"] == pytest.approx(20.0, abs=1e-12)
+    assert not ekf.last_update["accepted"]
+    assert rejected is prior
+    accepted = ekf.update([10.0], model, [[1.0]])
+    assert ekf.last_update["accepted"]
+    np.testing.assert_allclose(accepted.x, [8.0], atol=1e-12, rtol=0)
+    np.testing.assert_allclose(accepted.covariance, [[0.8]], atol=1e-12, rtol=0)
+
+
 def test_station_observation_removes_known_bias_before_ekf_update(monkeypatch):
     station = GroundStation(0.0, 0.0)
 

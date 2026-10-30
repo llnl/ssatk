@@ -78,6 +78,7 @@ class ExtendedKalmanFilter:
 
     def __init__(self, state: EKFState):
         self.state = state
+        self.last_update = None
 
     def predict(
         self,
@@ -105,7 +106,18 @@ class ExtendedKalmanFilter:
         time: float | None = None,
         angle_indices=None,
         residual=None,
+        max_nis: float | None = None,
     ) -> EKFState:
+        """Update the estimate, optionally rejecting innovations above ``max_nis``.
+
+        ``last_update`` reports the residual, its covariance, the dimensionless
+        normalized innovation squared (NIS), and whether the update was accepted.
+        A rejected observation leaves the state and epoch unchanged. For Gaussian
+        innovations, NIS has a chi-squared distribution with measurement dimension
+        degrees of freedom; callers choose a threshold appropriate to their model.
+        """
+        if max_nis is not None and (not np.isfinite(max_nis) or max_nis < 0):
+            raise ValueError("max_nis must be finite and nonnegative.")
         prediction, jacobian = model(self.state.x.copy())
         prediction = np.asarray(prediction, dtype=float)
         measurement = np.asarray(measurement, dtype=float)
@@ -124,9 +136,16 @@ class ExtendedKalmanFilter:
         innovation = wrap_angle_residual(innovation, angle_indices) if angle_indices else innovation
         innovation_covariance = jacobian @ self.state.covariance @ jacobian.T + noise
         try:
+            nis = float(innovation @ np.linalg.solve(innovation_covariance, innovation))
             gain = np.linalg.solve(innovation_covariance, jacobian @ self.state.covariance).T
         except np.linalg.LinAlgError as exc:
             raise ValueError("measurement covariance is singular.") from exc
+        accepted = max_nis is None or nis <= max_nis
+        self.last_update = {"innovation": innovation.copy(),
+                            "innovation_covariance": innovation_covariance.copy(),
+                            "nis": nis, "accepted": accepted}
+        if not accepted:
+            return self.state
         updated = self.state.x + gain @ innovation
         identity = np.eye(n)
         residual = identity - gain @ jacobian
