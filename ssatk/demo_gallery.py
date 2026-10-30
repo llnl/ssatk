@@ -12,9 +12,10 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
-from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from contextlib import contextmanager
 from dataclasses import dataclass, asdict, field, replace
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -108,35 +109,6 @@ class DemoResult:
     error: str = ""
     category: str = ""
     figure_calls: dict = field(default_factory=dict)
-
-
-class DemoTimeoutError(TimeoutError):
-    """Raised when one demo exceeds the gallery time budget."""
-
-
-class demo_timeout:
-    """Unix SIGALRM timeout wrapper; no-op where alarms are unavailable."""
-
-    def __init__(self, seconds: float | None):
-        self.seconds = seconds
-        self.previous_handler = None
-
-    def __enter__(self):
-        if not self.seconds or not hasattr(signal, "SIGALRM"):
-            return self
-        self.previous_handler = signal.getsignal(signal.SIGALRM)
-        signal.signal(signal.SIGALRM, self._raise_timeout)
-        signal.setitimer(signal.ITIMER_REAL, float(self.seconds))
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if self.seconds and hasattr(signal, "SIGALRM"):
-            signal.setitimer(signal.ITIMER_REAL, 0.0)
-            signal.signal(signal.SIGALRM, self.previous_handler)
-        return False
-
-    def _raise_timeout(self, signum, frame):
-        raise DemoTimeoutError(f"Demo exceeded {self.seconds:g} seconds")
 
 
 def discover_demo_files(demos_dir: Path) -> list[Path]:
@@ -263,6 +235,42 @@ def _invoke_demo(module, output_root: Path, *, fast: bool = True):
     return function(*args, **kwargs)
 
 
+def _entrypoint_worker(path, output_root, fast, metadata_path):
+    """Execute one function demo in the deadline-controlled child process."""
+    module = import_module_from_path(Path(path))
+    result = _invoke_demo(module, Path(output_root), fast=bool(int(fast)))
+    metadata = {}
+    for attribute, key in (("GALLERY_CATEGORY", "category"), ("TITLE", "title"), ("DESCRIPTION", "description")):
+        if hasattr(module, attribute):
+            metadata[key] = str(getattr(module, attribute))
+    if isinstance(result, dict):
+        for key in ("title", "description", "reason"):
+            if key in result:
+                metadata[key] = str(result[key])
+        metadata["skipped"] = bool(result.get("skipped", False))
+    Path(metadata_path).write_text(json.dumps(metadata), encoding="utf-8")
+
+
+def _run_demo_process(command, *, cwd, env, timeout):
+    """Enforce deadlines on the process tree, including Windows venv launchers."""
+    with subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True,
+                          start_new_session=os.name != "nt",
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.kill()
+            exc.stdout, exc.stderr = process.communicate()
+            raise
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def _demo_relative_path(path: Path, demos_dir: Path | None) -> Path:
     if demos_dir is not None:
         try:
@@ -307,26 +315,24 @@ def _run_demo_script(path, output_root, demos_dir, fast, timeout_seconds):
 
     stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
     try:
-        if _has_function_entrypoint(path):
-            # Import is part of demo execution: include its output and deadline.
-            with demo_timeout(timeout_seconds), redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                module = import_module_from_path(path)
-                category = str(getattr(module, "GALLERY_CATEGORY", category)).strip() or category
-                title = str(getattr(module, "TITLE", title))
-                description = str(getattr(module, "DESCRIPTION", description))
-                result = _invoke_demo(module, output_root, fast=fast)
-        else:
-            # A script without a declared entry point executes only as __main__.
-            # subprocess.run also enforces the deadline on platforms without SIGALRM.
-            result = subprocess.run(
-                [sys.executable, str(path.resolve())], cwd=str(demo_cwd),
-                env=os.environ.copy(), capture_output=True, text=True,
-                timeout=timeout_seconds or None,
-            )
-            stdout_buf.write(result.stdout or "")
-            stderr_buf.write(result.stderr or "")
-            if result.returncode != 0:
-                raise RuntimeError(f"Subprocess exited with code {result.returncode}")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) + os.pathsep + env.get("PYTHONPATH", "")
+        with tempfile.TemporaryDirectory(prefix="ssatk-demo-") as temporary:
+            metadata_path = Path(temporary) / "metadata.json"
+            if _has_function_entrypoint(path):
+                command = [sys.executable, "-u", "-c",
+                           "import sys; from ssatk.demo_gallery import _entrypoint_worker; _entrypoint_worker(*sys.argv[1:])",
+                           str(path.resolve()), str(output_root), str(int(fast)), str(metadata_path)]
+            else:
+                command = [sys.executable, "-u", str(path.resolve())]
+            completed = _run_demo_process(command, cwd=str(demo_cwd), env=env,
+                                          timeout=timeout_seconds or None)
+            stdout_buf.write(completed.stdout or "")
+            stderr_buf.write(completed.stderr or "")
+            if completed.returncode != 0:
+                raise RuntimeError(f"Subprocess exited with code {completed.returncode}: {completed.stderr}")
+            result = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+            category = result.get("category", category)
         stdout_text = _filter_console_text(stdout_buf.getvalue())
         stderr_text = _filter_console_text(stderr_buf.getvalue())
 
