@@ -108,10 +108,50 @@ class SpaceEnvironment:
     earth_dipole_equatorial_field: float = EARTH_DIPOLE_EQUATOR_FIELD
     earth_dipole_axis: ArrayLike = (0.0, 0.0, 1.0)
 
+    nrlmsise_geomagnetic_mode: str = "daily"
+
     def absolute_time(self, time):
         """Return GPS seconds for ``time``, applying ``epoch`` as an offset when set."""
 
         return _absolute_time(time, self.epoch)
+
+    def check_data_coverage(self, times) -> dict:
+        """Validate EOP and MSIS weather coverage before a run and return provenance.
+
+        Uses the configured prediction policies. Weather includes the preceding
+        57 hours required by MSIS history. Custom providers without tables must
+        provide their own coverage checks.
+        """
+        from .environment_eop import load_packaged_eop
+        from .environment_space_weather import load_packaged_space_weather
+
+        epochs = np.asarray([self.absolute_time(t) for t in times], dtype=float)
+        if epochs.ndim != 1 or not len(epochs) or not np.all(np.isfinite(epochs)):
+            raise ValueError("times must contain finite epochs.")
+        start, end = float(epochs.min()), float(epochs.max())
+        eop = self.earth_orientation_model
+        weather = self.space_weather_model
+        eop = load_packaged_eop() if eop is None else eop
+        weather = load_packaged_space_weather() if weather is None else weather
+        result = {}
+        for name, table, first, allow in (
+            ("eop", eop, start, self.earth_orientation_allow_predicted),
+            ("space_weather", weather, start - 57 * 3600, self.space_weather_allow_predicted),
+        ):
+            if not hasattr(table, "coverage") or not hasattr(table, "records"):
+                raise TypeError(f"{name} provider must supply table coverage for preflight.")
+            table.at(first, allow_predicted=allow)
+            table.at(end, allow_predicted=allow)
+            for record in table.records:
+                if first <= record.gps_seconds <= end:
+                    table.at(record.gps_seconds, allow_predicted=allow)
+            if name == "space_weather":
+                days = [record.date_utc for record in table.records
+                        if first - 86400 <= record.gps_seconds <= end]
+                if any((right - left).days != 1 for left, right in zip(days, days[1:])):
+                    raise ValueError("Space-weather coverage contains missing days.")
+            result[name] = table.coverage
+        return result
 
     def earth_orientation(self, time, *, allow_predicted: bool = False):
         """Return reproducible EOP for ``time`` from the configured data table."""
@@ -207,6 +247,8 @@ class SpaceEnvironment:
         This method requires the optional ``pymsis`` dependency. Geographic
         coordinates use the packaged EOP table and WGS84 geodetic conversion;
         solar and geomagnetic drivers come from ``SpaceWeatherTable``.
+        ``nrlmsise_geomagnetic_mode="storm"`` uses the historical three-hour
+        Ap inputs; ``"daily"`` (default) uses daily Ap.
         """
 
         try:
@@ -217,6 +259,8 @@ class SpaceEnvironment:
                 "install with 'pip install ssatk[atmosphere]'."
             ) from exc
 
+        if self.nrlmsise_geomagnetic_mode not in {"daily", "storm"}:
+            raise ValueError("nrlmsise_geomagnetic_mode must be 'daily' or 'storm'.")
         model_time = self.absolute_time(time)
         from .coordinates.earth_fixed import gcrf_to_itrf_eop
 
@@ -259,6 +303,7 @@ class SpaceEnvironment:
             [f107a],
             np.asarray([aps], dtype=float),
             version=self.nrlmsise_version if version is None else version,
+            geomagnetic_activity=-1 if self.nrlmsise_geomagnetic_mode == "storm" else 1,
         )
         density = float(np.asarray(output).reshape(-1, 11)[0, 0])
         if not np.isfinite(density) or density < 0.0:

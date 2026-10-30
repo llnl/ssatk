@@ -14,7 +14,8 @@ from ssatk.environment_space_weather import load_packaged_space_weather
 
 
 @pytest.mark.parametrize("version", [0, 2.1])
-def test_nrlmsise00_density_uses_packaged_eop_and_space_weather(version):
+@pytest.mark.parametrize("mode,activity", [("daily", 1), ("storm", -1)])
+def test_nrlmsise00_density_uses_packaged_eop_and_space_weather(version, mode, activity):
     """R2: direct pymsis call with independently parsed weather and WGS84 LLH.
 
     This checks wrapper inputs/units, not the empirical model's accuracy against
@@ -22,7 +23,8 @@ def test_nrlmsise00_density_uses_packaged_eop_and_space_weather(version):
     ERFA in test_environment_eop.py; its output is a shared input here.
     """
     msis = pytest.importorskip("pymsis").msis
-    environment = SpaceEnvironment(atmosphere_density_model="nrlmsise00", nrlmsise_version=version)
+    environment = SpaceEnvironment(atmosphere_density_model="nrlmsise00", nrlmsise_version=version,
+                                   nrlmsise_geomagnetic_mode=mode)
     epoch = Time("2024-01-15T12:00:00", scale="utc")
     density = environment.density(
         400_000.0,
@@ -41,7 +43,8 @@ def test_nrlmsise00_density_uses_packaged_eop_and_space_weather(version):
     xyz = gcrf_to_itrf_eop([[6_778_137.0, 0, 0]], [epoch.gps])[0]
     location = EarthLocation.from_geocentric(*xyz, unit=u.m)
     expected = msis.run([epoch.to_datetime()], [location.lon.deg], [location.lat.deg],
-                        [location.height.to_value(u.km)], [f107], [f107a], [aps], version=version)
+                        [location.height.to_value(u.km)], [f107], [f107a], [aps], version=version,
+                        geomagnetic_activity=activity)
     # pymsis returns single precision; allow 2 ppm for geodetic conversion.
     assert density == pytest.approx(float(expected.reshape(-1, 11)[0, 0]), rel=2e-6, abs=0)
 

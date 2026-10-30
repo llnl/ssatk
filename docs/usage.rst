@@ -34,6 +34,50 @@ memory helper.
 Node.js 20+ is only needed for validating the JavaScript satellite-viewer source;
 GitHub Actions installs it with ``actions/setup-node``.
 
+Checking and refreshing environment inputs
+-----------------------------------------------
+
+Before an atmosphere run, call ``environment.check_data_coverage(times)`` with
+the full run's first and last epochs. It checks configured EOP and weather
+prediction policies, including the preceding 57 hours of MSIS Ap history, and
+returns each table's ``coverage`` and source. The weather end is exclusive;
+the EOP end is inclusive. ``observed_end_gps`` describes the last observed
+record; it does not override prediction checks within the interval.
+
+Snapshots are never refreshed implicitly. To refresh explicitly, download
+``https://celestrak.org/SpaceData/SW-All.csv`` and
+``https://datacenter.iers.org/data/9/finals2000A.all`` into a new, dated directory
+in your data repository. Retain the originals for reproducibility, record the
+download URLs and dates, and validate the new files before selecting them:
+
+.. code-block:: python
+
+   from pathlib import Path
+   from ssatk.environment import SpaceEnvironment
+   from ssatk.environment_eop import read_eop
+   from ssatk.environment_space_weather import read_space_weather
+
+   snapshot = Path("environment_snapshot")  # caller-selected downloaded files
+   environment = SpaceEnvironment(
+       earth_orientation_model=read_eop(snapshot / "finals2000A.all"),
+       space_weather_model=read_space_weather(snapshot / "SW-All.csv"),
+       atmosphere_density_model="nrlmsise00",
+   )
+   print(environment.check_data_coverage([start_gps, end_gps]))
+
+Future EOP or weather records require the respective explicit
+``earth_orientation_allow_predicted`` or ``space_weather_allow_predicted``
+opt-in. A refresh cannot guarantee that observations exist for future dates.
+The optional ``nrlmsise_geomagnetic_mode="storm"`` uses historical three-hour
+Ap inputs; the default ``"daily"`` retains daily Ap. Run
+``python -m demos.space_environment.demo_msis_modes`` for a comparison.
+
+For imported CDMs, run
+``python -m demos.data_io.demo_cdm_collision_probability message.cdm --combined-radius-m 5``.
+Supply the combined physical radius for the actual objects. This recipe assumes
+independent Gaussian errors and a short rectilinear encounter; it does not
+establish covariance realism or correlation from the CDM alone.
+
 Running a gallery demo
 ----------------------
 

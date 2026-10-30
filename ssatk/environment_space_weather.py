@@ -72,6 +72,13 @@ class SpaceWeatherTable:
     def end_gps(self) -> float:
         return self.records[-1].gps_seconds + 86_400.0
 
+    @property
+    def coverage(self) -> dict:
+        """Coverage in GPS seconds; the weather end is exclusive."""
+        observed = [record.gps_seconds for record in self.records if not record.predicted]
+        return {"source": self.source, "start_gps": self.start_gps, "end_gps": self.end_gps,
+                "observed_end_gps": max(observed) + 86400 if observed else None}
+
     def at(self, time, *, allow_predicted: bool = False) -> SpaceWeatherRecord:
         """Return the daily record containing a GPS-second or UTC time."""
 
@@ -147,7 +154,8 @@ def read_space_weather(path: str | Path) -> SpaceWeatherTable:
     """Read a CelesTrak ``SW-All.csv`` file."""
 
     with Path(path).open("r", encoding="utf-8", newline="") as handle:
-        return _parse_rows(csv.DictReader(handle))
+        table = _parse_rows(csv.DictReader(handle))
+    return SpaceWeatherTable(table.records, source=str(Path(path)))
 
 
 @lru_cache(maxsize=1)
