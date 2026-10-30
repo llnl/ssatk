@@ -9,6 +9,18 @@ from ssatk.ssa.conjunction import catalog_conjunction_screen
 T_CROSS = 1000.0
 
 
+def test_quadratic_between_sample_collision_is_not_screened_out():
+    """R1: x=(t-1)² touches x=0 at t=1 s; endpoint chord stays at 1 m."""
+    t = np.array([0., 2.])
+    first = SimpleNamespace(t=t, r=np.zeros((2, 3)), v=np.zeros((2, 3)))
+    second = SimpleNamespace(t=t, r=np.array([[1., 0, 0], [1., 0, 0]]),
+                             v=np.array([[-2., 0, 0], [2., 0, 0]]))
+    events = catalog_conjunction_screen({"a": first, "b": second}, .01)
+    assert len(events) == 1
+    assert events[0].closest_approach.tca == pytest.approx(1., abs=1e-6)  # s
+    assert events[0].closest_approach.miss_distance == pytest.approx(0., abs=1e-10)  # m
+
+
 def _circular(radius, inclination_deg, t):
     # Circular orbit through the +x node at t = T_CROSS.
     n = np.sqrt(EARTH_MU / radius**3)

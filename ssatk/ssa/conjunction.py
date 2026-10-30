@@ -15,12 +15,11 @@ from itertools import pairwise
 import numpy as np
 from scipy.integrate import quad
 from scipy.special import ndtr, ndtri
-from scipy.spatial import cKDTree
 
 
 @dataclass(frozen=True)
 class ConjunctionCandidate:
-    """One coarse interval whose linearized miss distance is below a threshold."""
+    """One interval whose refined Hermite miss distance is below a threshold."""
 
     t_start: float
     t_end: float
@@ -137,12 +136,6 @@ def _time_grid(first: _Trajectory, second: _Trajectory) -> np.ndarray:
     )
 
 
-def _linear_position(trajectory: _Trajectory, time: float) -> np.ndarray:
-    index = min(np.searchsorted(trajectory.t, time, side="right") - 1, trajectory.t.size - 2)
-    fraction = (time - trajectory.t[index]) / (trajectory.t[index + 1] - trajectory.t[index])
-    return trajectory.r[index] + fraction * (trajectory.r[index + 1] - trajectory.r[index])
-
-
 def _hermite_state(trajectory: _Trajectory, time: float) -> tuple[np.ndarray, np.ndarray]:
     index = min(np.searchsorted(trajectory.t, time, side="right") - 1, trajectory.t.size - 2)
     h = trajectory.t[index + 1] - trajectory.t[index]
@@ -170,24 +163,22 @@ def _scalar_nonnegative(value, name):
     return value
 
 
-def _linear_candidate(first, second, start, end, threshold):
-    relative_start = _linear_position(second, start) - _linear_position(first, start)
-    relative_end = _linear_position(second, end) - _linear_position(first, end)
-    if end == start:
-        minimum_time = start
-        minimum = float(np.linalg.norm(relative_start))
-    else:
-        relative_velocity = (relative_end - relative_start) / (end - start)
-        speed_squared = float(np.dot(relative_velocity, relative_velocity))
-        tau = 0.0 if speed_squared == 0.0 else np.clip(
-            -float(np.dot(relative_start, relative_velocity)) / speed_squared,
-            0.0,
-            end - start,
-        )
-        minimum_time = start + tau
-        minimum = float(np.linalg.norm(relative_start + tau * relative_velocity))
-    if minimum <= threshold:
-        return ConjunctionCandidate(start, end, minimum_time, minimum)
+def _interval_candidate(first, second, start, end, threshold):
+    pa, va = _hermite_state(first, start)
+    pb, vb = _hermite_state(second, start)
+    qa, wa = _hermite_state(first, end)
+    qb, wb = _hermite_state(second, end)
+    duration = end - start
+    # Cubic Hermite curves lie within their Bezier control-point hull.
+    controls = np.array([pb - pa, pb - pa + duration * (vb - va) / 3,
+                         qb - qa - duration * (wb - wa) / 3, qb - qa])
+    lower, upper = controls.min(axis=0), controls.max(axis=0)
+    nearest = np.maximum(lower, 0) + np.minimum(upper, 0)
+    if np.linalg.norm(nearest) > threshold:
+        return None
+    closest = refine_closest_approach(first, second, (start, end))
+    if closest.miss_distance <= threshold:
+        return ConjunctionCandidate(start, end, closest.tca, closest.miss_distance)
     return None
 
 
@@ -196,10 +187,10 @@ def coarse_conjunction_screen(
     trajectory_b,
     threshold,
 ) -> tuple[ConjunctionCandidate, ...]:
-    """Screen overlapping trajectories using linear interval minima.
+    """Screen overlapping cubic-Hermite trajectories with conservative interval bounds.
 
     Each returned bracket is one interval of the overlapping union time grid
-    whose analytic constant-relative-velocity minimum is at or below
+    whose refined cubic-Hermite minimum is at or below
     ``threshold`` metres.
     """
 
@@ -207,11 +198,11 @@ def coarse_conjunction_screen(
     first, second = _trajectory(trajectory_a), _trajectory(trajectory_b)
     grid = _time_grid(first, second)
     if grid.size == 1:
-        candidate = _linear_candidate(first, second, grid[0], grid[0], threshold)
+        candidate = _interval_candidate(first, second, grid[0], grid[0], threshold)
         return () if candidate is None else (candidate,)
     candidates = []
     for start, end in pairwise(grid):
-        candidate = _linear_candidate(first, second, start, end, threshold)
+        candidate = _interval_candidate(first, second, start, end, threshold)
         if candidate is not None:
             candidates.append(candidate)
     return tuple(candidates)
@@ -291,6 +282,12 @@ def refine_closest_approach(
         )
         if derivative.size > 1 and np.any(np.abs(derivative) > 0.0):
             roots = np.polynomial.polynomial.polyroots(derivative)
+            # Zero-separation contacts create repeated roots after squaring;
+            # include unsquared coordinate roots to avoid losing their precision.
+            for coordinate in coefficients.T:
+                polynomial = np.trim_zeros(coordinate, trim="b")
+                if polynomial.size > 1:
+                    roots = np.concatenate((roots, np.polynomial.polynomial.polyroots(polynomial)))
             root_tolerance = min(1.0e-7, max(1.0e-12, xatol / max(duration, 1.0)))
             for root in roots:
                 if abs(root.imag) <= root_tolerance * max(1.0, abs(root.real)):
@@ -328,32 +325,14 @@ def catalog_conjunction_screen(
     if len(items) < 2:
         return ()
 
-    segment_objects = np.concatenate(
-        [np.full(trajectory.t.size - 1, index, dtype=int) for index, (_, trajectory) in enumerate(items)]
-    )
-    segment_starts = np.concatenate([trajectory.t[:-1] for _, trajectory in items])
-    segment_ends = np.concatenate([trajectory.t[1:] for _, trajectory in items])
-    position_starts = np.concatenate([trajectory.r[:-1] for _, trajectory in items])
-    position_ends = np.concatenate([trajectory.r[1:] for _, trajectory in items])
-    centers = 0.5 * (position_starts + position_ends)
-    radii = 0.5 * np.linalg.norm(position_ends - position_starts, axis=1)
-    segment_pairs = cKDTree(centers).query_pairs(
-        threshold + 2.0 * float(np.max(radii)), output_type="ndarray"
-    )
+    # Visit overlapping intervals for one object pair at a time. Never allocate
+    # the quadratic set of all spatial segment pairs before filtering time.
     candidates_by_pair = {}
-    for segment_a, segment_b in segment_pairs:
-        first, second = sorted((segment_objects[segment_a], segment_objects[segment_b]))
-        if first == second:
-            continue
-        start = max(segment_starts[segment_a], segment_starts[segment_b])
-        end = min(segment_ends[segment_a], segment_ends[segment_b])
-        if end < start or np.linalg.norm(centers[segment_a] - centers[segment_b]) > (
-            radii[segment_a] + radii[segment_b] + threshold
-        ):
-            continue
-        candidate = _linear_candidate(items[first][1], items[second][1], start, end, threshold)
-        if candidate is not None:
-            candidates_by_pair.setdefault((first, second), []).append(candidate)
+    for first in range(len(items)):
+        for second in range(first + 1, len(items)):
+            candidates = coarse_conjunction_screen(items[first][1], items[second][1], threshold)
+            if candidates:
+                candidates_by_pair[first, second] = candidates
 
     events = []
     for (first, second), candidates in sorted(candidates_by_pair.items()):
