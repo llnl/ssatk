@@ -140,6 +140,57 @@ def _metric_columns(metrics, row_count):
     return columns
 
 
+def read_event_summary(path):
+    """Reload window results for ``iter_event_metrics`` with fingerprint checks.
+
+    The source and observer are still required for replay. Loading a summary
+    does not authenticate its provenance; replay verifies the saved fingerprints.
+    """
+    from ssatk.ssa.event_windows import EventWindow
+    from ssatk.ssa.workflows import PairAnalysisConfig, PairAnalysisResult
+
+    payload = json.loads(_target_path(path).read_text(encoding="utf-8"))
+    if payload.get("schema") != "ssatk.ssa.event_summary.v1":
+        raise ValueError("Unsupported SSA event summary schema.")
+    ids = tuple(_json_ids(payload["object_ids"]))
+    if len(set(ids)) != len(ids):
+        raise ValueError("Event object IDs must be unique.")
+    indices = {value: index for index, value in enumerate(ids)}
+    windows = []
+    for item in payload["windows"]:
+        fields = dict(item)
+        pair = fields.pop("object_ids")
+        if len(pair) != 2 or any(value not in indices for value in pair):
+            raise ValueError("Event window references unknown object IDs.")
+        windows.append(EventWindow(pair=tuple(indices[value] for value in pair), **fields))
+    metadata = payload["metadata"]
+    start, end = metadata["start_time_gps_s"], metadata["end_time_gps_s"]
+    count = metadata["sample_count"]
+    if not np.all(np.isfinite([start, end])) or start > end:
+        raise ValueError("Summary times must be finite and ordered.")
+    if type(count) is not int or count < 0 or type(payload["completeness"]) is not bool:
+        raise ValueError("Summary sample count and completeness are invalid.")
+    for window in windows:
+        if not start <= window.start <= window.trigger_start <= window.trigger_end <= window.end <= end:
+            raise ValueError("Window times lie outside the summary or padding.")
+    expected_counts = {"objects": len(ids), "windows": len(windows),
+                       "trigger_samples": sum(window.trigger_count for window in windows)}
+    if payload["counts"] != expected_counts:
+        raise ValueError("Summary counts disagree with its windows.")
+    config = PairAnalysisConfig(**payload["config"])
+    provenance = payload["provenance"]
+    for key in ("sample_fingerprint_sha256", "declared_times_sha256"):
+        value = provenance.get(key, "")
+        if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise ValueError(f"Summary lacks a valid {key} for replay.")
+    if provenance.get("config") != asdict(config):
+        raise ValueError("Summary configuration differs from its provenance.")
+    if type(provenance.get("declared_sample_count")) is not int or provenance["declared_sample_count"] < count:
+        raise ValueError("Summary declared sample count is invalid.")
+    return PairAnalysisResult(ids, tuple(windows), config, start, end, count,
+                              payload["completeness"], payload["diagnostics"], provenance)
+
+
 def _csv_value(value):
     value = value.item() if isinstance(value, np.generic) else value
     if isinstance(value, Real) and not math.isfinite(value):
@@ -207,4 +258,4 @@ def write_event_metrics(batches, path):
     return target
 
 
-__all__ = ["write_event_summary", "write_event_metrics"]
+__all__ = ["write_event_summary", "read_event_summary", "write_event_metrics"]

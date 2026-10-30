@@ -8,6 +8,7 @@ import numpy as np
 
 import ssatk
 from ssatk.navigation import GroundStation
+from ssatk.io.ssa_events import read_event_summary, write_event_summary
 from ssatk.plots.plotutils import figsave
 from ssatk.ssa.observer import from_ground_station
 from ssatk.ssa.pair_screening import screen_pairs
@@ -97,6 +98,8 @@ def main(make_figures=True, benchmark=False):
         min_elevation_rad=-np.pi / 2,
     )
     result = analyze_pairs(provider, observer, config=config, chunk_size=7)
+    summary = write_event_summary(result, "events/observer_pair_summary.json")
+    result = read_event_summary(summary)
     row_estimate = estimate_event_rows(result, times)
     metric_batches = list(iter_event_metrics(result, provider, observer, chunk_size=7))
     metric_rows = sum(len(batch.times) for batch in metric_batches)
