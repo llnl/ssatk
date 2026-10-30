@@ -51,6 +51,9 @@ def test_solve_6dof_multi_segment_target_reaches_terminal_state_with_constraints
     np.testing.assert_allclose(result.trajectory.v[-1], [3.0, 0.0, 0.0], atol=1e-7, rtol=0)
     np.testing.assert_allclose(result.controls[:, 0].sum(), 0.6, atol=2e-8, rtol=0)
     np.testing.assert_allclose(result.trajectory.v[-1], 5*result.controls.sum(axis=0), atol=1e-12, rtol=0)
+    # R1: x(10)=a1*(5²/2+5*5)+a2*5²/2, displacement in metres.
+    np.testing.assert_allclose(result.trajectory.r[-1],
+                               37.5*result.controls[0] + 12.5*result.controls[1], atol=1e-10, rtol=0)
     assert np.all(np.abs(result.controls) <= 1.0)
 
 
