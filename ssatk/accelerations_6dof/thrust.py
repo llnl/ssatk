@@ -72,6 +72,7 @@ class ThrustCurve:
         if _np.any(self.thrusts < 0.0):
             raise ValueError("thrusts must be non-negative.")
         self.fill_value = _validate_nonnegative(fill_value, "fill_value")
+        self.time_breakpoints = self.times.copy()
 
     def __call__(self, t, *args) -> float:
         return float(_np.interp(float(t), self.times, self.thrusts, left=self.fill_value, right=self.fill_value))
@@ -115,6 +116,7 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
         self.tank_name = None if tank_name is None else str(tank_name)
         self.start = float(start)
         self.stop = float(stop)
+        self.time_breakpoints = _np.array([self.start, self.stop])
         if self.stop < self.start:
             raise ValueError("stop must be greater than or equal to start.")
 
@@ -175,6 +177,7 @@ def thrust_profile_constant(thrust: float, *, start: float = -_np.inf, stop: flo
     def profile(t, *args):
         return thrust if start <= float(t) <= stop else 0.0
 
+    profile.time_breakpoints = _np.array([start, stop])
     return profile
 
 
@@ -247,6 +250,7 @@ def thrust_profile_exponential(
         at_stop = thrust if rise_tau == 0.0 else thrust * (1.0 - _np.exp(-(stop - start) / rise_tau))
         return float(at_stop * _np.exp(-(t - stop) / decay_tau))
 
+    profile.time_breakpoints = _np.array([start, stop])
     return profile
 
 
@@ -276,6 +280,12 @@ def thrust_profile_pulsed(
             return 0.0
         return thrust if (t - start) % period < duty_cycle * period else 0.0
 
+    def boundaries(left, right):
+        first = max(0, int(_np.floor((left - start) / period)))
+        last = int(_np.ceil((min(right, stop) - start) / period))
+        on = start + _np.arange(first, max(first, last) + 1) * period
+        return _np.concatenate(([start, stop], on, on + duty_cycle * period))
+    profile.time_breakpoints = boundaries
     return profile
 
 
@@ -532,4 +542,5 @@ def _ramped_thrust_profile(
             return thrust * blend((stop - t) / fall_time)
         return thrust
 
+    profile.time_breakpoints = _np.array([start, start + rise_time, fall_start, stop])
     return profile

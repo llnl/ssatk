@@ -23,6 +23,26 @@ R0 = [7.0e6, 0.0, 0.0]
 V0 = [0.0, float(np.sqrt(EARTH_MU / 7.0e6)), 0.0]
 
 
+@pytest.mark.parametrize("kind", ["orbit", "stm", "sixdof"])
+@pytest.mark.parametrize("epoch", [0.0, 1.4e9])
+def test_interior_burn_matches_integrated_rectangular_pulse(kind, epoch):
+    """R1: 1 m/s² during [50,51] gives 1 m/s and 49.5 m at t=100 s."""
+    from ssatk.accelerations_6dof import make_finite_burn_acceleration, thrust_profile_constant
+    from ssatk.propagators_6dof import propagate_6dof
+
+    burn = make_finite_burn_acceleration(
+        thrust_profile_constant(1, start=epoch + 50, stop=epoch + 51),
+        mass=1, frame="gcrf", direction=[1, 0, 0],
+    )
+    function = {"orbit": propagate_orbit_state, "stm": propagate_orbit_state_with_stm,
+                "sixdof": propagate_6dof}[kind]
+    options = {"inertia": np.eye(3)} if kind == "sixdof" else {}
+    result = function(r0=[1, 0, 0], v0=[0, 0, 0], t0=epoch,
+                      times=epoch + np.array([0, 100]), mu=0, acceleration=burn, **options)
+    np.testing.assert_allclose(result.v[-1], [1, 0, 0], atol=1e-6, rtol=0)  # m/s
+    np.testing.assert_allclose(result.r[-1], [50.5, 0, 0], atol=1e-4, rtol=0)  # m
+
+
 @EPOCHS
 def test_orbit_state_is_bit_identical_across_epochs(epoch):
     def run(reference):
