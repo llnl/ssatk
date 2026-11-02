@@ -31,6 +31,7 @@ body and component model.
 
    usage
    ssa_workflows
+   artemis_radiation_demo
    launch_baseline
    spacecraft_view
    gallery_hosting
