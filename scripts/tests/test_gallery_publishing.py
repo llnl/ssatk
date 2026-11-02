@@ -161,9 +161,10 @@ def test_cli_skip_policy_blocks_publication_but_preserves_diagnostics(tmp_path, 
     from ssatk.run_all_demos import main
 
     demos, site = tmp_path / "demos", tmp_path / "site"
+    _demo(demos, "def main(): pass\n")
+    run_all_demos(demos, site)
     _demo(demos, 'def main(): return {"skipped": True, "reason": "Missing reference data"}\n')
     archive = tmp_path / "site.zip"
-    archive.write_bytes(b"stale previous build")
     args = ["--demos-dir", str(demos), "--output", str(site)]
     status = main(args + (["--strict"] if strict else []))
     assert status == (1 if strict else 0)

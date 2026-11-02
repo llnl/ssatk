@@ -905,7 +905,9 @@ def run_all_demos(
     if not paths:
         raise ValueError(f"No enabled demos found in {demos_dir}")
     archive_path = output_root.parent / (output_root.name + ".zip")
-    archive_path.unlink(missing_ok=True)
+    manifest_path = output_root / "manifest.json"
+    if archive_path.exists() and not manifest_path.is_file():
+        raise FileExistsError(f"Refusing to replace an archive without a gallery manifest: {archive_path}")
 
     if clean and (output_root / "manifest.json").is_file():
         manifest = json.loads((output_root / "manifest.json").read_text(encoding="utf-8"))
@@ -921,6 +923,7 @@ def run_all_demos(
                 paths_to_remove.append(candidate)
         for candidate in paths_to_remove:
             candidate.unlink()
+    archive_path.unlink(missing_ok=True)
     output_root.mkdir(parents=True, exist_ok=True)
 
     results: list[DemoResult] = []
