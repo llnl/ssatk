@@ -31,10 +31,10 @@ const stars = new THREE.Points(starGeometry,new THREE.ShaderMaterial({
       gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
   fragmentShader:`varying vec3 vColor;
     void main(){float alpha=1.0-smoothstep(0.12,0.5,length(gl_PointCoord-vec2(0.5)));
-      if(alpha<=0.01)discard; gl_FragColor=vec4(vColor*alpha,1.0);
+      if(alpha<=0.01)discard; gl_FragColor=vec4(vColor,alpha);
       #include <colorspace_fragment>
     }`,
-  vertexColors:true,transparent:false,depthTest:false,depthWrite:false
+  vertexColors:true,transparent:true,depthTest:true,depthWrite:false
 }));
 stars.quaternion.copy(world.quaternion);stars.frustumCulled=false;stars.renderOrder=-1000;
 scene.add(stars);
@@ -64,6 +64,8 @@ const moon = new THREE.Mesh(new THREE.SphereGeometry(1737.4/DATA.earth_radius_km
 const pathGeometry = new THREE.BufferGeometry().setFromPoints(DATA.r.map(row=>new THREE.Vector3(...row)));
 world.add(new THREE.Line(pathGeometry,new THREE.LineBasicMaterial({color:0x4c8b98,transparent:true,opacity:0.32})));
 const trailGeometry = pathGeometry.clone();
+const trailPositions = trailGeometry.attributes.position;
+let trailTipIndex = null;
 world.add(new THREE.Line(trailGeometry,new THREE.LineBasicMaterial({color:0x82f6ec})));
 const craft = new THREE.Mesh(new THREE.SphereGeometry(0.035,16,12),new THREE.MeshBasicMaterial({color:0xeaffff}));
 world.add(craft);
@@ -120,8 +122,12 @@ window.setMovieTime=function(value){
   let index=0;while(index<DATA.seconds.length-2&&DATA.seconds[index+1]<seconds)index++;
   const fraction=clamp((seconds-DATA.seconds[index])/(DATA.seconds[index+1]-DATA.seconds[index]),0,1);
   const position=sample(DATA.r,index,fraction);craft.position.copy(position);ring.position.copy(position);
+  // Restore the previous partial segment before moving or scrubbing the tip.
+  if(trailTipIndex!==null)trailPositions.setXYZ(trailTipIndex,...DATA.r[trailTipIndex]);
+  trailTipIndex=index+1;
+  trailPositions.setXYZ(trailTipIndex,position.x,position.y,position.z);trailPositions.needsUpdate=true;
   moon.position.copy(sample(DATA.moon,index,fraction));
-  trailGeometry.setDrawRange(0,index+1);
+  trailGeometry.setDrawRange(0,index+2);
   const spin=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),DATA.earth_omega*seconds);
   earthGroup.quaternion.copy(earthStart).multiply(spin);
   const pullback=smooth((movieTime-14)/12), distance=12+(lastMoon.length()*1.18-12)*pullback;
