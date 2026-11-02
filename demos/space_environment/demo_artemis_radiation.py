@@ -30,7 +30,7 @@ from ssatk.plots.plotutils import figsave
 TITLE = "Artemis III | Earth to Moon | IRENE"
 DESCRIPTION = "Hypothetical four-day lunar transfer with mean trapped-particle absorbed tissue dose."
 PROMPT = ("Visualize in 3D Artemis 3 going from Earth to the Moon, overlaid on the "
-          "radiation belts, calculating total radiation exposure with IRENE versus mission day.")
+          "radiation belts, plotting cumulative trapped-particle absorbed dose from IRENE by mission day.")
 
 
 def mission():
