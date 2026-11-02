@@ -21,6 +21,48 @@ def test_quadratic_between_sample_collision_is_not_screened_out():
     assert events[0].closest_approach.miss_distance == pytest.approx(0., abs=1e-10)  # m
 
 
+def test_three_contacts_inside_one_cubic_sample_interval_remain_separate():
+    """R1: a cubic with roots at 1/4, 1/2 and 3/4 has three distinct contacts."""
+    roots = np.array([0.25, 0.5, 0.75])
+    coefficients = np.polynomial.polynomial.polyfromroots(roots)
+    derivative = np.polynomial.polynomial.polyder(coefficients)
+    times = np.array([0.0, 1.0])
+    first = SimpleNamespace(t=times, r=np.zeros((2, 3)), v=np.zeros((2, 3)))
+    second = SimpleNamespace(
+        t=times,
+        r=np.array([[np.polynomial.polynomial.polyval(t, coefficients), 0, 0] for t in times]),
+        v=np.array([[np.polynomial.polynomial.polyval(t, derivative), 0, 0] for t in times]),
+    )
+
+    events = catalog_conjunction_screen({"a": first, "b": second}, 1e-8)
+
+    assert len(events) == 3
+    np.testing.assert_allclose(
+        [event.closest_approach.tca for event in events], roots, rtol=0, atol=1e-9
+    )
+    np.testing.assert_allclose(
+        [event.closest_approach.miss_distance for event in events], 0, rtol=0, atol=1e-12
+    )
+
+
+def test_trajectories_touching_at_only_one_epoch_are_screened():
+    """R1: two closed trajectory domains sharing t=1 s have a 2 m contact."""
+    first = SimpleNamespace(
+        t=np.array([0.0, 1.0]), r=np.zeros((2, 3)), v=np.zeros((2, 3))
+    )
+    second = SimpleNamespace(
+        t=np.array([1.0, 2.0]),
+        r=np.array([[2.0, 0, 0], [2.0, 0, 0]]),
+        v=np.zeros((2, 3)),
+    )
+
+    events = catalog_conjunction_screen({"a": first, "b": second}, 2.0)
+
+    assert len(events) == 1
+    assert events[0].closest_approach.tca == pytest.approx(1.0, abs=0)  # s
+    assert events[0].closest_approach.miss_distance == pytest.approx(2.0, abs=0)  # m
+
+
 def _circular(radius, inclination_deg, t):
     # Circular orbit through the +x node at t = T_CROSS.
     n = np.sqrt(EARTH_MU / radius**3)

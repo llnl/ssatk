@@ -163,23 +163,132 @@ def _scalar_nonnegative(value, name):
     return value
 
 
-def _interval_candidate(first, second, start, end, threshold):
+def _relative_hermite_coefficients(first, second, start, end):
     pa, va = _hermite_state(first, start)
     pb, vb = _hermite_state(second, start)
     qa, wa = _hermite_state(first, end)
     qb, wb = _hermite_state(second, end)
     duration = end - start
+    return duration, np.array(
+        [
+            pb - pa,
+            duration * (vb - va),
+            -3.0 * (pb - pa) + 3.0 * (qb - qa) - 2.0 * duration * (vb - va) - duration * (wb - wa),
+            2.0 * (pb - pa) - 2.0 * (qb - qa) + duration * (vb - va) + duration * (wb - wa),
+        ]
+    )
+
+
+def _interval_candidates(first, second, start, end, threshold):
+    if end == start:
+        closest = refine_closest_approach(first, second, (start, end))
+        if closest.miss_distance <= threshold:
+            return (ConjunctionCandidate(start, end, closest.tca, closest.miss_distance),)
+        return ()
+
+    duration, coefficients = _relative_hermite_coefficients(first, second, start, end)
     # Cubic Hermite curves lie within their Bezier control-point hull.
-    controls = np.array([pb - pa, pb - pa + duration * (vb - va) / 3,
-                         qb - qa - duration * (wb - wa) / 3, qb - qa])
+    controls = np.array(
+        [
+            coefficients[0],
+            coefficients[0] + coefficients[1] / 3,
+            coefficients[0] + 2 * coefficients[1] / 3 + coefficients[2] / 3,
+            np.sum(coefficients, axis=0),
+        ]
+    )
     lower, upper = controls.min(axis=0), controls.max(axis=0)
     nearest = np.maximum(lower, 0) + np.minimum(upper, 0)
     if np.linalg.norm(nearest) > threshold:
-        return None
-    closest = refine_closest_approach(first, second, (start, end))
-    if closest.miss_distance <= threshold:
-        return ConjunctionCandidate(start, end, closest.tca, closest.miss_distance)
-    return None
+        return ()
+
+    squared_distance = np.zeros(7, dtype=float)
+    for coordinate in coefficients.T:
+        product = np.polynomial.polynomial.polymul(coordinate, coordinate)
+        squared_distance[: product.size] += product
+    derivative = np.polynomial.polynomial.polyder(
+        np.trim_zeros(squared_distance, trim="b")
+    )
+    parameters = [0.0, 1.0]
+    if derivative.size > 1 and np.any(np.abs(derivative) > 0.0):
+        roots = np.polynomial.polynomial.polyroots(derivative)
+        for coordinate in coefficients.T:
+            polynomial = np.trim_zeros(coordinate, trim="b")
+            if polynomial.size > 1:
+                roots = np.concatenate(
+                    (roots, np.polynomial.polynomial.polyroots(polynomial))
+                )
+        root_tolerance = 1.0e-10
+        for root in roots:
+            if abs(root.imag) <= root_tolerance * max(1.0, abs(root.real)):
+                parameter = float(root.real)
+                if -root_tolerance <= parameter <= 1.0 + root_tolerance:
+                    parameters.append(float(np.clip(parameter, 0.0, 1.0)))
+    parameters = np.unique(parameters)
+
+    candidates = []
+    for left, right in pairwise(parameters):
+        interval_start = start + left * duration
+        interval_end = start + right * duration
+        left_distance = np.linalg.norm(
+            np.polynomial.polynomial.polyval(left, coefficients)
+        )
+        right_distance = np.linalg.norm(
+            np.polynomial.polynomial.polyval(right, coefficients)
+        )
+        if min(left_distance, right_distance) > threshold:
+            continue
+        closest = refine_closest_approach(
+            first, second, (interval_start, interval_end)
+        )
+        if closest.miss_distance <= threshold:
+            candidates.append(
+                ConjunctionCandidate(
+                    interval_start, interval_end, closest.tca, closest.miss_distance
+                )
+            )
+    return tuple(candidates)
+
+
+def _segment_bounds(trajectory, start, end):
+    position_start, velocity_start = _hermite_state(trajectory, start)
+    position_end, velocity_end = _hermite_state(trajectory, end)
+    duration = end - start
+    controls = np.array(
+        [
+            position_start,
+            position_start + duration * velocity_start / 3,
+            position_end - duration * velocity_end / 3,
+            position_end,
+        ]
+    )
+    return controls.min(axis=0), controls.max(axis=0)
+
+
+def _bounds_within_threshold(first, second, threshold):
+    gap = np.maximum(
+        np.maximum(first[0] - second[1], second[0] - first[1]), 0.0
+    )
+    return bool(np.all(gap <= threshold))
+
+
+def _merge_candidates(first, second, candidates, threshold):
+    merged = []
+    for candidate in sorted(candidates, key=lambda value: value.bracket):
+        if merged and candidate.t_start <= merged[-1].t_end:
+            position_a, _ = _hermite_state(first, candidate.t_start)
+            position_b, _ = _hermite_state(second, candidate.t_start)
+            if np.linalg.norm(position_b - position_a) <= threshold:
+                bracket = (
+                    merged[-1].t_start,
+                    max(merged[-1].t_end, candidate.t_end),
+                )
+                closest = refine_closest_approach(first, second, bracket)
+                merged[-1] = ConjunctionCandidate(
+                    bracket[0], bracket[1], closest.tca, closest.miss_distance
+                )
+                continue
+        merged.append(candidate)
+    return tuple(merged)
 
 
 def coarse_conjunction_screen(
@@ -198,14 +307,11 @@ def coarse_conjunction_screen(
     first, second = _trajectory(trajectory_a), _trajectory(trajectory_b)
     grid = _time_grid(first, second)
     if grid.size == 1:
-        candidate = _interval_candidate(first, second, grid[0], grid[0], threshold)
-        return () if candidate is None else (candidate,)
+        return _interval_candidates(first, second, grid[0], grid[0], threshold)
     candidates = []
     for start, end in pairwise(grid):
-        candidate = _interval_candidate(first, second, start, end, threshold)
-        if candidate is not None:
-            candidates.append(candidate)
-    return tuple(candidates)
+        candidates.extend(_interval_candidates(first, second, start, end, threshold))
+    return _merge_candidates(first, second, candidates, threshold)
 
 
 def refine_closest_approach(
@@ -257,21 +363,8 @@ def refine_closest_approach(
         duration = end - start
         if duration == 0.0:
             continue
-        position_start, velocity_start = state(start)
-        position_end, velocity_end = state(end)
-        coefficients = np.array(
-            [
-                position_start,
-                duration * velocity_start,
-                -3.0 * position_start
-                + 3.0 * position_end
-                - 2.0 * duration * velocity_start
-                - duration * velocity_end,
-                2.0 * position_start
-                - 2.0 * position_end
-                + duration * velocity_start
-                + duration * velocity_end,
-            ]
+        _, coefficients = _relative_hermite_coefficients(
+            first, second, start, end
         )
         squared_distance = np.zeros(7, dtype=float)
         for coordinate in coefficients.T:
@@ -325,14 +418,59 @@ def catalog_conjunction_screen(
     if len(items) < 2:
         return ()
 
-    # Visit overlapping intervals for one object pair at a time. Never allocate
-    # the quadratic set of all spatial segment pairs before filtering time.
+    # Sweep one common time interval at a time, then reject disjoint spatial
+    # Bezier hulls before refining the surviving object pairs.
     candidates_by_pair = {}
-    for first in range(len(items)):
-        for second in range(first + 1, len(items)):
-            candidates = coarse_conjunction_screen(items[first][1], items[second][1], threshold)
-            if candidates:
-                candidates_by_pair[first, second] = candidates
+    grid = np.unique(np.concatenate([trajectory.t for _, trajectory in items]))
+    starts, ends = {}, {}
+    for index, (_, trajectory) in enumerate(items):
+        starts.setdefault(trajectory.t[0], []).append(index)
+        ends.setdefault(trajectory.t[-1], []).append(index)
+    active = set()
+    for start, end in pairwise(grid):
+        active.update(starts.get(start, ()))
+        active.difference_update(ends.get(start, ()))
+        bounds = {
+            index: _segment_bounds(items[index][1], start, end)
+            for index in active
+        }
+        ordered = sorted(active, key=lambda index: bounds[index][0][0])
+        for offset, first in enumerate(ordered):
+            first_bounds = bounds[first]
+            for second_offset in range(offset + 1, len(ordered)):
+                second = ordered[second_offset]
+                second_bounds = bounds[second]
+                if second_bounds[0][0] > first_bounds[1][0] + threshold:
+                    break
+                if not _bounds_within_threshold(first_bounds, second_bounds, threshold):
+                    continue
+                pair = (min(first, second), max(first, second))
+                candidates = _interval_candidates(
+                    items[pair[0]][1], items[pair[1]][1], start, end, threshold
+                )
+                if candidates:
+                    candidates_by_pair.setdefault(pair, []).extend(candidates)
+
+    for time in starts.keys() & ends.keys():
+        starting, ending = starts[time], ends[time]
+        positions = {
+            index: _hermite_state(items[index][1], time)[0]
+            for index in (*starting, *ending)
+        }
+        ordered_starts = sorted(starting, key=lambda index: positions[index][0])
+        start_x = np.array([positions[index][0] for index in ordered_starts])
+        for first in ending:
+            lower = np.searchsorted(start_x, positions[first][0] - threshold, side="left")
+            upper = np.searchsorted(start_x, positions[first][0] + threshold, side="right")
+            for second in ordered_starts[lower:upper]:
+                if first == second:
+                    continue
+                pair = (min(first, second), max(first, second))
+                if np.linalg.norm(positions[first] - positions[second]) <= threshold:
+                    candidates_by_pair.setdefault(pair, []).append(
+                        ConjunctionCandidate(time, time, time,
+                                             float(np.linalg.norm(positions[first] - positions[second])))
+                    )
 
     events = []
     for (first, second), candidates in sorted(candidates_by_pair.items()):

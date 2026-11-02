@@ -8,8 +8,10 @@ Public API:
 
 import os
 import pickle
+import shutil
 import tempfile
 import datetime as _dt
+from pathlib import Path
 from typing import Any, Mapping, Optional, Set, Union
 
 import h5py
@@ -33,6 +35,54 @@ def save_dict_to_hdf5(
     pickle_objects: bool = True,
     compression: Union[str, None] = "gzip",
     compression_opts: Union[int, None] = 4,
+) -> None:
+    """Save a dictionary, staging append/update operations before replacement."""
+    if mode in {"a", "r+"}:
+        filename = os.fspath(filename)
+        parent = Path(filename).absolute().parent
+        parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=parent, suffix=".h5.tmp")
+        os.close(fd)
+        try:
+            if os.path.exists(filename):
+                shutil.copy2(filename, tmp_path)
+            elif mode == "a":
+                os.remove(tmp_path)
+            _save_dict_to_hdf5_direct(
+                tmp_path,
+                data,
+                mode=mode,
+                pickle_objects=pickle_objects,
+                compression=compression,
+                compression_opts=compression_opts,
+            )
+            os.replace(tmp_path, filename)
+        except BaseException:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return
+
+    _save_dict_to_hdf5_direct(
+        filename,
+        data,
+        mode=mode,
+        pickle_objects=pickle_objects,
+        compression=compression,
+        compression_opts=compression_opts,
+    )
+
+
+def _save_dict_to_hdf5_direct(
+    filename: str,
+    data: Mapping[str, Any],
+    mode: str,
+    *,
+    pickle_objects: bool,
+    compression: Union[str, None],
+    compression_opts: Union[int, None],
 ) -> None:
     """
     Save a (possibly nested) Python dictionary to an HDF5 file.

@@ -1,5 +1,8 @@
 import inspect
+import os
 import pickle
+import stat
+import tempfile
 from datetime import datetime
 from pathlib import Path
 import types
@@ -269,22 +272,28 @@ def h5cache(
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{filename}_{ts}"
 
-    out = datapath(f"{filename}.h5")
+    out = Path(datapath(f"{filename}.h5"))
 
-    # write
-    with h5py.File(out, "w") as f:
-        f.attrs["__ssatk_cache__"] = "1"
-        f.attrs["__key_encoding__"] = "percent(%25) and slash(%2F)"
-        root = f.require_group("vars")
-        root.attrs["__kind__"] = "dict"
-        for k, v in filtered.items():
-            _write_value(
-                root,
-                k,
-                v,
-                compression=compression,
-                compression_opts=compression_opts,
-            )
+    # Build beside the destination so readers never observe a partial cache.
+    old_mode = stat.S_IMODE(out.stat().st_mode) if out.exists() else None
+    with tempfile.TemporaryDirectory(dir=out.parent, prefix=f".{out.name}.") as staging:
+        temporary = Path(staging) / out.name
+        with h5py.File(temporary, "w") as f:
+            f.attrs["__ssatk_cache__"] = "1"
+            f.attrs["__key_encoding__"] = "percent(%25) and slash(%2F)"
+            root = f.require_group("vars")
+            root.attrs["__kind__"] = "dict"
+            for k, v in filtered.items():
+                _write_value(
+                    root,
+                    k,
+                    v,
+                    compression=compression,
+                    compression_opts=compression_opts,
+                )
+        if old_mode is not None:
+            temporary.chmod(old_mode)
+        os.replace(temporary, out)
 
     return out
 

@@ -43,6 +43,27 @@ def test_interior_burn_matches_integrated_rectangular_pulse(kind, epoch):
     np.testing.assert_allclose(result.r[-1], [50.5, 0, 0], atol=1e-4, rtol=0)  # m
 
 
+@pytest.mark.parametrize("kind", ["orbit", "sixdof"])
+@pytest.mark.parametrize("bounds", [(1.0, 2.0), (-1.0, 0.0)])
+def test_zero_duration_burn_at_propagation_endpoint_has_no_impulse(kind, bounds):
+    """R1: a unit burn starting at final or ending at initial time has zero impulse."""
+    from ssatk.accelerations_6dof import make_finite_burn_acceleration, thrust_profile_constant
+    from ssatk.propagators_6dof import propagate_6dof
+
+    burn = make_finite_burn_acceleration(
+        thrust_profile_constant(1.0, start=bounds[0], stop=bounds[1]),
+        mass=1.0, frame="gcrf", direction=[1, 0, 0],
+    )
+    function = {"orbit": propagate_orbit_state, "sixdof": propagate_6dof}[kind]
+    options = {"inertia": np.eye(3)} if kind == "sixdof" else {}
+    result = function(
+        r0=[0, 0, 0], v0=[0, 0, 0], t0=0.0, times=[0.0, 1.0],
+        mu=0.0, acceleration=burn, **options,
+    )
+    np.testing.assert_allclose(result.v[-1], [0, 0, 0], atol=1e-12, rtol=0)  # m/s
+    np.testing.assert_allclose(result.r[-1], [0, 0, 0], atol=1e-12, rtol=0)  # m
+
+
 @EPOCHS
 def test_orbit_state_is_bit_identical_across_epochs(epoch):
     def run(reference):

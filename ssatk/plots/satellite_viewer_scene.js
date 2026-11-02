@@ -1617,22 +1617,28 @@ function pairSeparationKm(instA, instB, t) {
 // Ternary search for the true time of closest approach in a coarse bracket.
 // Separation-vs-time near an approach is smooth and unimodal, so ternary
 // search converges to the minimum quickly. Also returns the relative speed at
-// TCA (finite difference of the separation vector over 1 s).
+// TCA from the interpolated state or SGP4 velocity at that same time.
 function refineConjunction(instA, instB, tCoarseMs, stepMs) {
   let lo = tCoarseMs - stepMs, hi = tCoarseMs + stepMs;
   for (let k = 0; k < 60 && (hi - lo) > 1; k++) {
     const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
     if (pairSeparationKm(instA, instB, m1) <= pairSeparationKm(instA, instB, m2)) hi = m2; else lo = m1;
   }
-  const tca = (lo + hi) / 2;
-  const missKm = pairSeparationKm(instA, instB, tca);
-  const a0 = eciAtMs(instA, tca - 500), b0 = eciAtMs(instB, tca - 500);
-  const a1 = eciAtMs(instA, tca + 500), b1 = eciAtMs(instB, tca + 500);
+  let tca = (lo + hi) / 2;
+  let missKm = pairSeparationKm(instA, instB, tca);
+  for (const t of [tCoarseMs - stepMs, tCoarseMs + stepMs]) {
+    const distance = pairSeparationKm(instA, instB, t);
+    if (distance < missKm) { tca = t; missKm = distance; }
+  }
+  const a = instA.entry.mode === 'state'
+    ? stateVectorStateAtMs(instA, tca) : tleStateAtMs(instA.satrec, tca);
+  const b = instB.entry.mode === 'state'
+    ? stateVectorStateAtMs(instB, tca) : tleStateAtMs(instB.satrec, tca);
   let relVelKmS = 0;
-  if (a0 && b0 && a1 && b1) {
-    relVelKmS = Math.hypot((a1.x - b1.x) - (a0.x - b0.x),
-                           (a1.y - b1.y) - (a0.y - b0.y),
-                           (a1.z - b1.z) - (a0.z - b0.z)); // over a 1.0 s span -> km/s
+  if (a && b && a.velocity && b.velocity) {
+    relVelKmS = Math.hypot(b.velocity.x - a.velocity.x,
+                          b.velocity.y - a.velocity.y,
+                          b.velocity.z - a.velocity.z);
   }
   return { tcaMs: tca, missKm, relVelKmS };
 }
@@ -1688,10 +1694,6 @@ function screenConjunctions() {
         const bound = conjunctionIntervalLowerBound(A, B, lo, hi);
         if (bound > conjunctionThresholdKm || (best && bound >= best.missKm)) return;
         const r = refineConjunction(A, B, (lo + hi) / 2, (hi - lo) / 2);
-        for (const t of [lo, hi]) {
-          const distance = pairSeparationKm(A, B, t);
-          if (distance < r.missKm) { r.tcaMs = t; r.missKm = distance; }
-        }
         if (r.missKm <= conjunctionThresholdKm && (!best || r.missKm < best.missKm)) best = r;
         if (best && bound >= best.missKm) return;
         // Subdivide bounded polynomial intervals to avoid assuming a single minimum.

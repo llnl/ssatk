@@ -281,10 +281,14 @@ def thrust_profile_pulsed(
         return thrust if (t - start) % period < duty_cycle * period else 0.0
 
     def boundaries(left, right):
-        first = max(0, int(_np.floor((left - start) / period)))
-        last = int(_np.ceil((min(right, stop) - start) / period))
-        on = start + _np.arange(first, max(first, last) + 1) * period
-        return _np.concatenate(([start, stop], on, on + duty_cycle * period))
+        if 0.0 < duty_cycle < 1.0:
+            first = max(0, int(_np.floor((left - start) / period)))
+            last = int(_np.ceil((min(right, stop) - start) / period))
+            on = start + _np.arange(first, max(first, last) + 1) * period
+            points = _np.concatenate(([start, stop], on, on + duty_cycle * period))
+        else:
+            points = _np.array([start, stop])
+        return _np.unique(points[(points >= start) & (points <= stop)])
     profile.time_breakpoints = boundaries
     return profile
 

@@ -24,6 +24,16 @@ def test_concave_face_requires_explicit_triangulation_with_correct_area():
     assert area == pytest.approx(7., abs=1e-12)  # m²
 
 
+def test_nonplanar_polygon_face_requires_explicit_triangulation():
+    """R1: two inclined unit triangles total sqrt(1.01) m², within 1e-12 m²."""
+    vertices = [[0, 0, 0], [1, 0, 0], [1, 1, 0.1], [0, 1, 0]]
+    with pytest.raises(ValueError, match="Nonplanar"):
+        SpacecraftMesh(vertices, [[0, 1, 2, 3]])
+    mesh = SpacecraftMesh(vertices, [[0, 1, 2], [0, 2, 3]])
+    body = SpacecraftBody.from_mesh(vertices=mesh.vertices, faces=mesh.faces, mass=1.0)
+    assert sum(facet.area for facet in body.facets) == pytest.approx(np.sqrt(1.01), abs=1e-12)
+
+
 def test_imported_box_facets_and_inertia_match_rectangular_prism(tmp_path):
     """R1: 2x3x4 m box, area 52 m² and I=mass/12*(side²+side²), 1e-12."""
     reference = SpacecraftBody.box(mass=12.0, size=[2, 3, 4])

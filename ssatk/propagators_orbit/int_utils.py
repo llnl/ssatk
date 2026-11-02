@@ -22,12 +22,12 @@ def model_time_breakpoints(models, start, end):
         points.extend(np.asarray(values, dtype=float).reshape(-1))
         for name in ("_source_model", "thrust", "throttle"):
             pending.append(getattr(model, name, None))
-        for name in ("_models", "accels"):
+        for name in ("_models", "accels", "torques"):
             pending.extend(getattr(model, name, ()))
     points = np.asarray(points)
     if np.any(np.isnan(points)):
         raise ValueError("model time_breakpoints cannot contain NaN.")
-    return np.unique(points[(points > start) & (points < end)])
+    return np.unique(points[(points >= start) & (points <= end)])
 
 
 def solve_ivp_at_breakpoints(fun, t_span, y0, *, breakpoints=(), time_origin=0.0, **options):
@@ -35,20 +35,30 @@ def solve_ivp_at_breakpoints(fun, t_span, y0, *, breakpoints=(), time_origin=0.0
     from scipy.integrate import OdeSolution, solve_ivp
 
     points = np.asarray(breakpoints, dtype=float)
-    points = np.unique(points[(points > t_span[0]) & (points < t_span[1])])
-    if not len(points):
+    points = np.unique(points[(points >= t_span[0]) & (points <= t_span[1])])
+    interior = points[(points > t_span[0]) & (points < t_span[1])]
+    start_is_breakpoint = bool(np.any(points == t_span[0]))
+    end_is_breakpoint = bool(np.any(points == t_span[1]))
+    if not len(interior) and not start_is_breakpoint and not end_is_breakpoint:
         return solve_ivp(fun, t_span, y0, **options)
     requested = options.pop("t_eval", None)
     dense_output = options.pop("dense_output", False)
     solutions = []
-    boundaries = np.concatenate(([t_span[0]], points, [t_span[1]]))
+    boundaries = np.concatenate(([t_span[0]], interior, [t_span[1]]))
+    breakpoints_set = set(points.tolist())
     for left, right in zip(boundaries[:-1], boundaries[1:]):
         kwargs = dict(options)
         if kwargs.get("first_step") is not None:
             kwargs["first_step"] = min(kwargs["first_step"], right - left)
         # At a discontinuity use the limit inside this interval on both ends.
-        inside_left = np.nextafter(time_origin + left, time_origin + right) - time_origin
-        inside_right = np.nextafter(time_origin + right, time_origin + left) - time_origin
+        inside_left = (
+            np.nextafter(time_origin + left, time_origin + right) - time_origin
+            if left in breakpoints_set else left
+        )
+        inside_right = (
+            np.nextafter(time_origin + right, time_origin + left) - time_origin
+            if right in breakpoints_set else right
+        )
         def interval_rhs(t, y):
             epoch = np.clip(t, inside_left, inside_right)
             return fun(epoch, y)

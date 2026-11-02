@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import warnings
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -51,14 +51,20 @@ class SpaceWeatherTable:
     source: str = "unknown"
 
     def __post_init__(self):
-        if not self.records:
+        records = tuple(self.records)
+        if not records:
             raise ValueError("Space-weather table must contain at least one record.")
-        gps = np.asarray([record.gps_seconds for record in self.records])
+        object.__setattr__(self, "records", records)
+        gps = np.asarray([record.gps_seconds for record in records])
         if not np.all(np.diff(gps) > 0.0):
             raise ValueError("Space-weather records must be strictly chronological.")
+        if any(right.date_utc <= left.date_utc for left, right in zip(records, records[1:])):
+            raise ValueError("Space-weather record dates must be strictly chronological.")
         # Match EarthOrientationTable: keep the immutable index out of value equality.
         gps.setflags(write=False)
         object.__setattr__(self, "_source_gps_seconds", gps)
+        end_gps = _gps_for_dates([records[-1].date_utc + timedelta(days=1)])[0]
+        object.__setattr__(self, "_end_gps", float(end_gps))
 
     def __setstate__(self, state):
         self.__dict__.update(state)
@@ -70,14 +76,27 @@ class SpaceWeatherTable:
 
     @property
     def end_gps(self) -> float:
-        return self.records[-1].gps_seconds + 86_400.0
+        return self._end_gps
 
     @property
     def coverage(self) -> dict:
         """Coverage in GPS seconds; the weather end is exclusive."""
-        observed = [record.gps_seconds for record in self.records if not record.predicted]
-        return {"source": self.source, "start_gps": self.start_gps, "end_gps": self.end_gps,
-                "observed_end_gps": max(observed) + 86400 if observed else None}
+        observed = max(
+            (record for record in self.records if not record.predicted),
+            key=lambda record: record.gps_seconds,
+            default=None,
+        )
+        observed_end = None
+        if observed is not None:
+            observed_end = float(
+                _gps_for_dates([observed.date_utc + timedelta(days=1)])[0]
+            )
+        return {
+            "source": self.source,
+            "start_gps": self.start_gps,
+            "end_gps": self.end_gps,
+            "observed_end_gps": observed_end,
+        }
 
     def at(self, time, *, allow_predicted: bool = False) -> SpaceWeatherRecord:
         """Return the daily record containing a GPS-second or UTC time."""
@@ -90,6 +109,14 @@ class SpaceWeatherTable:
         source_times = self._source_gps_seconds
         index = int(np.searchsorted(source_times, gps, side="right") - 1)
         record = self.records[index]
+        if index + 1 < len(self.records):
+            next_record = self.records[index + 1]
+            if (next_record.date_utc - record.date_utc).days > 1:
+                expected_next_day = _gps_for_dates([record.date_utc + timedelta(days=1)])[0]
+                if gps >= expected_next_day:
+                    raise ValueError(
+                        f"Space-weather coverage has a missing day after {record.date_utc}."
+                    )
         if record.predicted and not allow_predicted:
             raise ValueError(
                 "Space-weather query intersects predicted records; pass "

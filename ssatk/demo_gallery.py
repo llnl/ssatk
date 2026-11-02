@@ -916,9 +916,12 @@ def run_all_demos(
         # path or symlink outside the gallery, and never remove whole directories.
         paths_to_remove = []
         for name in owned_files:
-            candidate = (output_root / unquote(name)).resolve()
-            if not candidate.is_relative_to(output_root) or candidate == output_root:
+            candidate = output_root / unquote(name)
+            resolved = candidate.resolve()
+            if not resolved.is_relative_to(output_root) or resolved == output_root:
                 raise ValueError(f"Gallery manifest path escapes output directory: {name!r}")
+            if any(part.is_symlink() for part in (candidate, *candidate.parents)):
+                raise ValueError(f"Gallery manifest path follows a symlink: {name!r}")
             if candidate.is_file():
                 paths_to_remove.append(candidate)
         for candidate in paths_to_remove:
