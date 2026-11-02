@@ -201,3 +201,80 @@ a data-fed burn workflow, not the LEO mission contract, ascent or flight
 qualification. ``qualification_status`` remains ``NOT RUN``. Retained JSON
 output belongs in SSAPy-Data or an explicitly selected external evidence location,
 not in the Toolkit source commit.
+
+Step 3: time, frames and launch initialization
+----------------------------------------------
+
+:func:`~ssatk.launch.preflight.launch_initial_state` extends the existing
+pad-state workflow with the attitude and angular rate needed by the Toolkit's
+6-DoF propagator. Supply a catalog site, a scalar UTC string or Astropy ``Time``,
+an explicit ``heading_deg`` in [0, 360), and WGS84 ellipsoidal ``height_m``.
+The record retains UTC, TAI, TT, UT1 and GPS seconds. UT1 comes from the same
+observed packaged EOP as the shared IAU 2006/2000A frame model, including across
+UTC leap seconds; no network lookup or fallback Earth orientation is used.
+
+Matrices map vectors by ``matrix @ vector``; their transposes are the inverse
+rotations. The output contains ENU-to-ITRF, ITRF-to-GCRF, ENU-to-GCRF,
+body-to-ENU and body-to-GCRF rotations. Body +Z is geodetic up, +X is the heading
+clockwise from north, and +Y completes the right-handed frame. The active
+``q_body_to_gcrf`` quaternion is ``[w, x, y, z]``. ``omega_body_rad_s`` is body
+relative to GCRF, expressed in body axes, matching ``Spacecraft`` and
+``sixdof_rhs``. An Earth-attached body's inertial angular rate and velocity are
+nonzero even though its pad-relative rates vanish.
+
+Pass the state directly to the existing Toolkit spacecraft object::
+
+   from ssatk.propagators_6dof import Spacecraft
+
+   spacecraft = Spacecraft(
+       r=state["gcrf_position_m"], v=state["gcrf_velocity_m_s"],
+       t=state["epoch_gps_s"], q=state["q_body_to_gcrf"],
+       omega=state["omega_body_rad_s"],
+   )
+   orbit = spacecraft.to_orbit()
+
+``to_orbit`` uses SSAPy's existing ``Orbit`` for the translational state; it
+does not carry attitude or establish that the pad state is an achieved orbit.
+Actual mass, inertia and release forces must be supplied before propagation.
+
+Position, velocity and body angular rate share the existing Earth-rotation
+model. Its derivative now evaluates the full orientation at GPS +/-5 seconds,
+including precession, nutation, polar motion and interpolated UT1, and projects
+the numerical rate onto the rotation's skew-symmetric tangent. Coverage and
+observed-quality checks include both derivative neighbors; unavailable or
+predicted neighbors block initialization. This is not a calibrated release or
+support-force model. ``geocentric_radius_m`` is distinct from ``height_m``;
+``terrain_height_m`` remains unset because no terrain source has been selected.
+
+The existing explicit-EOP transforms accept matching ``(N, 3)`` velocities via
+``v=``. Without ``v``, they retain their vector-only behavior. For moving points::
+
+   position_itrf, velocity_itrf = gcrf_to_itrf_eop(position_gcrf, epoch, v=velocity_gcrf)
+   position_enu = enu_to_itrf.T @ (position_itrf[0] - pad_position_itrf)
+   velocity_enu = enu_to_itrf.T @ velocity_itrf[0]
+
+``itrf_to_gcrf_eop`` is the inverse state transform. Both include the rotation
+derivative. Merely rotating inertial velocity, or subtracting the pad's inertial
+velocity without the rotation term away from its origin, is incorrect. Use
+``body_to_enu.T`` to turn the local ENU displacement and velocity into body axes.
+
+Run the initialization and shared-frame reference tests::
+
+   python3 -m pytest -q tests/test_launch_initialization.py tests/test_launch_preflight.py tests/test_environment_eop.py tests/test_earth_rotation_route.py
+
+These compare against WGS84 closed forms, independent Astropy frame and pad
+states, raw packaged IERS-A leap-second data and ERFA, inverse rotations,
+moving-point stationarity, and finite-difference 6-DoF quaternion kinematics.
+They are initialization checks, not surveyed-pad or flight-telemetry validation.
+
+Retain a three-sample pad-fixed demonstration record::
+
+   python3 -m demos.launch.demo_launch_initialization --heading 90 --output ../SSAPy-Data/.cache/launch_validation/step3-initialization.json
+
+The default site and epoch are the Demo-2 example; heading 90 is illustrative,
+not an approved mission heading. The demo verifies the EOP wheel manifest and
+payload, records the actual installed software, and never overwrites evidence.
+Missing or unobserved EOP is ``BLOCKED``, a resource mismatch is ``FAIL``, and
+invalid input is ``ERROR``. ``PASS`` is initialization-scoped;
+``qualification_status`` remains ``NOT RUN``. Mission inputs, clean-install
+qualification, ascent and Step-4 stage/tank accounting are not waived.

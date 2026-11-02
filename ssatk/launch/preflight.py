@@ -31,7 +31,10 @@ from astropy.coordinates import EarthLocation
 from astropy.time import Time
 
 from ..coordinates.earth_fixed import gcrf_to_itrf
+from ..coordinates._earth_rotation import _RATE_STEP_S, gcrs_to_itrs_matrix_and_rate
+from ..coordinates.attitude import quaternion_from_matrix
 from ..coordinates.geodetic import llh_to_gcrf
+from ..coordinates.satellite_frames import enu_to_ecef_matrix
 from ..data import data_path, resource_package
 from ..environment_eop import load_packaged_eop
 from .sites import launch_pads
@@ -44,6 +47,7 @@ __all__ = [
     "ResourceVerificationError",
     "RUN_STATUSES",
     "collect_software_baseline",
+    "launch_initial_state",
     "launch_site_state",
     "load_mission_contract",
     "run_launch_preflight",
@@ -363,6 +367,8 @@ def launch_site_state(
     if not epoch.isscalar:
         raise ValueError("epoch_utc must be scalar")
     epoch = epoch.utc
+    if not np.isfinite(epoch.gps):
+        raise ValueError("epoch_utc must be finite")
 
     site_record = launch_pads[site]
     longitude_deg = float(site_record["longitude"])
@@ -371,6 +377,8 @@ def launch_site_state(
     eop_table = load_packaged_eop()
     try:
         eop_record = eop_table.at(epoch, allow_predicted=allow_predicted_eop)
+        for offset in (-_RATE_STEP_S, _RATE_STEP_S):
+            eop_table.at(epoch.gps + offset, allow_predicted=allow_predicted_eop)
     except ValueError as exc:
         if epoch.gps < eop_table.start_gps or epoch.gps > eop_table.end_gps:
             table_start = Time(eop_table.start_gps, format="gps", scale="utc").isot
@@ -381,10 +389,10 @@ def launch_site_state(
                 "available for this epoch at any allow_predicted_eop setting."
             ) from exc
         raise EOPCoverageError(
-            f"{epoch.isot} UTC falls in the predicted part of the packaged "
-            "Earth-orientation table; pass allow_predicted_eop=True to "
-            "launch_site_state (or set allow_predicted_eop in the mission "
-            "contract) to opt in explicitly."
+            f"{epoch.isot} UTC or its +/-{_RATE_STEP_S:g} s derivative neighbors "
+            f"cannot use the packaged Earth-orientation table: {exc}. "
+            "Predicted records require allow_predicted_eop=True; uncovered "
+            "epochs cannot be supported by opting in."
         ) from exc
 
     location = EarthLocation.from_geodetic(
@@ -428,6 +436,74 @@ def launch_site_state(
         },
         "conventions": dict(LAUNCH_CONVENTIONS),
     }
+
+
+def launch_initial_state(
+    site: str,
+    epoch_utc: str | Time,
+    *,
+    heading_deg: float,
+    height_m: float = 0.0,
+) -> dict[str, Any]:
+    """Initialize a pad-fixed body for the Toolkit's GCRF 6-DoF convention.
+
+    Heading is clockwise from geodetic north, in [0, 360) degrees. Body
+    +X points along that heading, +Z is geodetic up, and +Y completes the
+    right-handed frame. Matrices and the active [w, x, y, z] quaternion
+    map body/local vectors into their named destination frames.
+
+    Inertial velocity and body-relative-to-GCRF angular rate use the shared
+    IAU 2006/2000A Earth-rotation model and its full orientation derivative.
+    No release dynamics, terrain height or mission qualification is implied.
+    """
+    heading_deg = _finite_number(heading_deg, "heading_deg")
+    if not 0.0 <= heading_deg < 360.0:
+        raise ValueError("heading_deg must be in [0, 360) degrees")
+    state = launch_site_state(site, epoch_utc, height_m=height_m)
+    epoch = Time(state["epoch_gps_s"], format="gps", scale="utc")
+    eop_table = load_packaged_eop()
+    try:
+        records = [eop_table.at(epoch.gps + offset) for offset in (0.0, -_RATE_STEP_S, _RATE_STEP_S)]
+    except ValueError as exc:
+        raise EOPCoverageError(f"initialization and its derivative neighbors need observed EOP: {exc}") from exc
+    for record in records:
+        if any(flag != "I" for flag in (record.polar_motion_flag, record.ut1_flag, record.nutation_flag)):
+            raise EOPCoverageError("initialization requires observed polar motion, UT1 and nutation at derivative neighbors")
+    record = records[0]
+    rotation, rate = gcrs_to_itrs_matrix_and_rate(epoch, eop=eop_table)
+    enu_to_itrf = enu_to_ecef_matrix(state["latitude_deg"], state["longitude_deg"])
+    heading = np.deg2rad(heading_deg)
+    body_to_enu = np.array([
+        [np.sin(heading), -np.cos(heading), 0.0],
+        [np.cos(heading), np.sin(heading), 0.0],
+        [0.0, 0.0, 1.0],
+    ])
+    enu_to_gcrf = rotation.T @ enu_to_itrf
+    body_to_gcrf = enu_to_gcrf @ body_to_enu
+    body_rate = rate.T @ enu_to_itrf @ body_to_enu
+    spin = body_to_gcrf.T @ body_rate
+    spin = 0.5 * (spin - spin.T)
+    epoch.delta_ut1_utc = record.ut1_minus_utc_s
+    state.update({
+        "scope": "STEP 3 INITIALIZATION ONLY",
+        "qualification_status": "NOT RUN",
+        "epoch_tai": epoch.tai.isot,
+        "epoch_tt": epoch.tt.isot,
+        "epoch_ut1": epoch.ut1.isot,
+        "heading_deg": heading_deg,
+        "height_datum": "WGS84 ellipsoidal",
+        "geocentric_radius_m": float(np.linalg.norm(state["itrf_position_m"])),
+        "terrain_height_m": None,
+        "enu_to_itrf": enu_to_itrf.tolist(),
+        "itrf_to_gcrf": rotation.T.tolist(),
+        "enu_to_gcrf": enu_to_gcrf.tolist(),
+        "body_to_enu": body_to_enu.tolist(),
+        "body_to_gcrf": body_to_gcrf.tolist(),
+        "q_body_to_gcrf": quaternion_from_matrix(body_to_gcrf).tolist(),
+        "omega_body_rad_s": [float(spin[2, 1]), float(spin[0, 2]), float(spin[1, 0])],
+        "omega_relative_to_pad_rad_s": [0.0, 0.0, 0.0],
+    })
+    return state
 
 
 def run_launch_preflight(

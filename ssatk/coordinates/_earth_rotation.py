@@ -43,16 +43,6 @@ __all__ = ["gcrs_to_itrs_matrix", "gcrs_to_itrs_matrix_and_rate"]
 _ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
 _MAS_TO_RAD = _ARCSEC_TO_RAD / 1000.0
 
-# Half-width (s) of the central difference used for dR/dt (see
-# gcrs_to_itrs_matrix_and_rate). Measured against a surface point's closed-form
-# speed (omega_E * rho; tests/test_earth_rotation_route.py), the achievable
-# accuracy is *not* monotonic in the step: precession/nutation/polar motion
-# change negligibly over a few seconds, so dR/dt is dominated by the Earth
-# Rotation Angle's rate, but erfa.era00's own finite difference is limited by
-# float64 precision in the UT1 Julian date -- smaller steps lose precision to
-# cancellation (measured ~0.08 m/s surface-speed error at 1 ms), while larger
-# steps pick up real O(step^2) curvature (~0.15 m/s at 600 s). 5-10 s is the
-# measured sweet spot, with errors of a few 1e-5 m/s at a WGS84 surface point.
 _RATE_STEP_S = 5.0
 
 
@@ -105,22 +95,14 @@ def _records(gps: np.ndarray, eop, allow_predicted: bool, *, extrapolate: bool =
 def _cip_and_polar_terms(gps: np.ndarray, records):
     """Return ``(tta, ttb, uta, utb, x, y, xp, yp)`` for ``gps``/``records``.
 
-    ``utb`` (the UT1 Julian date fraction) is the only output that a caller
-    should vary to probe nearby epochs: precession-nutation (``x``, ``y``),
-    polar motion (``xp``, ``yp``) and TT change negligibly over the few
-    seconds :func:`gcrs_to_itrs_matrix_and_rate` probes, so it reuses these
-    rather than re-querying the EOP table at the shifted epochs.
+    TT and UT1 retain two-part Julian dates. Astropy converts UTC leap
+    seconds using the UT1-UTC values from the supplied records.
     """
 
     time = Time(gps, format="gps", scale="utc")
-    tt_mjd = np.asarray(time.tt.mjd, dtype=float)
-    utc_mjd = np.asarray(time.utc.mjd, dtype=float)
-
-    n = len(records)
-    tta = np.full(n, 2400000.5)
-    ttb = tt_mjd
-    uta = np.full(n, 2400000.5)
-    utb = np.array([utc_mjd[i] + records[i].ut1_minus_utc_s / 86400.0 for i in range(n)])
+    time.delta_ut1_utc = np.array([record.ut1_minus_utc_s for record in records])
+    tta, ttb = time.tt.jd1, time.tt.jd2
+    uta, utb = time.ut1.jd1, time.ut1.jd2
 
     x0, y0, _s = erfa.xys06a(tta, ttb)
     dx = np.array([(record.dx_mas or 0.0) for record in records]) * _MAS_TO_RAD
@@ -197,32 +179,29 @@ def gcrs_to_itrs_matrix_and_rate(
 ):
     """Return ``(R, dR/dt)`` at ``t``.
 
-    ``dR/dt`` is a central difference restricted to the Earth Rotation Angle
-    term: precession-nutation, polar motion and TT are evaluated once at the
-    requested epoch (via the EOP table, so this still rejects -- or, with
-    ``extrapolate=True``, extrapolates -- an epoch the table can't support)
-    and held fixed, while the UT1 Julian date that feeds ``erfa.era00`` inside
-    the same ``erfa.c2txy`` composition is shifted by ``+-step_s`` to form the
-    difference. See the module-level note on ``_RATE_STEP_S`` for the
-    measured accuracy this buys over differencing the full table lookup (and
-    the epoch-independent float64 floor either way), and
+    ``dR/dt`` is a centered difference of the full orientation at GPS
+    ``t +/- step_s`` (five seconds by default), including precession,
+    nutation, polar motion and interpolated UT1. The same coverage and
+    prediction policy applies at the center and both neighbors. See
     :func:`gcrs_to_itrs_matrix` for ``extrapolate``. Use the result as
     ``v_itrs = R @ v_gcrs + (dR/dt) @ r_gcrs``.
+
+    Project the numerical rate onto the rotation's skew-symmetric tangent
+    so forward/inverse velocities satisfy the derivative of ``R R.T = I``.
     """
 
     t_arr = np.asarray(to_gps(t), dtype=float)
     scalar = t_arr.ndim == 0
     gps = np.atleast_1d(t_arr)
+    if not np.isfinite(step_s) or step_s <= 0:
+        raise ValueError("step_s must be finite and positive")
     eop_table = _eop_table(eop)
-    records = _records(gps, eop_table, allow_predicted, extrapolate=extrapolate)
-
-    tta, ttb, uta, utb, x, y, xp, yp = _cip_and_polar_terms(gps, records)
-    step_days = step_s / 86400.0
-
-    r = erfa.c2txy(tta, ttb, uta, utb, x, y, xp, yp)
-    r_ahead = erfa.c2txy(tta, ttb, uta, utb + step_days, x, y, xp, yp)
-    r_behind = erfa.c2txy(tta, ttb, uta, utb - step_days, x, y, xp, yp)
+    neighbors = np.concatenate([gps, gps + step_s, gps - step_s])
+    records = _records(neighbors, eop_table, allow_predicted, extrapolate=extrapolate)
+    r, r_ahead, r_behind = np.split(_rotation_matrices(neighbors, records), 3)
     rate = (r_ahead - r_behind) / (2.0 * step_s)
+    spin = rate @ np.swapaxes(r, -1, -2)
+    rate = 0.5 * (spin - np.swapaxes(spin, -1, -2)) @ r
 
     if scalar:
         return r[0], rate[0]
