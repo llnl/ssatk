@@ -66,6 +66,20 @@ Within each demo, animations and HTML views precede images, downloads and logs.
 
 ---
 
+## Artemis III radiation demo
+
+`space_environment/demo_artemis_radiation.py` opens with a brief mission overview.
+Click **Start demo** to reveal the Earth-to-Moon trajectory and synchronized
+IRENE dose chart. This is an illustrative four-day lunar transfer.
+
+```bash
+python -m demos.space_environment.demo_artemis_radiation
+```
+
+Add `--movie` to record the overview and scene to MP4 using the existing browser
+and video extras. Missing official IRENE output is labeled pending. See
+`docs/artemis_radiation_demo.rst` for setup, output paths and scientific scope.
+
 ## Running after `pip install ssatk`
 
 If `ssatk` is installed and the console entry point is available, the

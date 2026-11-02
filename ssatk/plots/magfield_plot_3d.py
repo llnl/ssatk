@@ -424,12 +424,55 @@ VALIDATION = {
 
 
 
+def _flux_surface_mesh(coordinates, values, grid_n, level):
+    """Triangulate a regular XYZ flux grid using linear marching tetrahedra."""
+    coordinates = np.asarray(coordinates, dtype=float)
+    values = np.asarray(values, dtype=float)
+    if (grid_n < 2 or coordinates.shape != (grid_n ** 3, 3)
+            or values.shape != (grid_n ** 3,) or not np.isfinite(level)
+            or not np.isfinite(coordinates).all() or not np.isfinite(values).all()):
+        raise ValueError("Expected a finite regular XYZ grid and contour level")
+    grid = np.arange(grid_n ** 3).reshape((grid_n,) * 3)
+    corners = np.stack([grid[x:x + grid_n - 1, y:y + grid_n - 1, z:z + grid_n - 1].ravel()
+                        for x, y, z in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
+                                        (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1))], axis=1)
+    # All six tetrahedra share the body diagonal, keeping adjacent cell faces consistent.
+    tetrahedra = corners[:, ((0, 1, 2, 6), (0, 2, 3, 6), (0, 3, 7, 6),
+                            (0, 7, 4, 6), (0, 4, 5, 6), (0, 5, 1, 6))].reshape(-1, 4)
+    above = values[tetrahedra] >= level
+    counts = above.sum(axis=1)
+    triangles = []
+    for count in (1, 2, 3):
+        cells = tetrahedra[counts == count]
+        sides = above[counts == count]
+        if not len(cells):
+            continue
+        order = np.argsort(sides, axis=1, kind="stable")
+        cells = np.take_along_axis(cells, order, axis=1)
+        if count == 2:
+            first, second = cells[:, [0, 0, 1, 1]], cells[:, [2, 3, 2, 3]]
+        elif count == 1:
+            first, second = cells[:, :3], cells[:, [3, 3, 3]]
+        else:
+            first, second = cells[:, [0, 0, 0]], cells[:, 1:]
+        fraction = (level - values[first]) / (values[second] - values[first])
+        points = coordinates[first] + fraction[..., None] * (coordinates[second] - coordinates[first])
+        if count == 2:
+            points = points[:, ((0, 1, 2), (1, 3, 2)), :].reshape(-1, 3, 3)
+        triangles.append(points)
+    vertices = np.concatenate(triangles).reshape(-1, 3) if triangles else np.empty((0, 3))
+    return vertices, np.arange(len(vertices)).reshape(-1, 3)
+
+
+
 def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
-                      pitch_angle_deg=25.0, opacity=0.30, cache=True, radiation_model="irene", **kw):
+                      pitch_angle_deg=25.0, opacity=0.30, cache=True, radiation_model="irene",
+                      mesh=False, executable=None, model_data=None, **kw):
     """Mean integral belt flux surfaces; IRENE AE9/AP9 is the default backend.
 
     Legacy AE8/AP8 is available only by explicit radiation_model="ae8ap8".
     IRENE uses its own magnetic-coordinate database, separate from IGRF/T96.
+    ``mesh=True`` returns explicit Mesh3d triangles for other scene renderers.
     """
     if radiation_model not in {"irene", "ae8ap8"}:
         raise ValueError("radiation_model must be 'irene' or 'ae8ap8'")
@@ -438,7 +481,8 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
         from ssatk.io.irene import (find_irene_runtime, prepare_irene_flux_grid,
                                            read_irene_flux_grid, run_irene)
 
-        runtime = find_irene_runtime()
+        runtime = (find_irene_runtime(executable=executable, model_data=model_data)
+                   if executable is not None or model_data is not None else find_irene_runtime())
         if runtime is None:
             raise FileNotFoundError(
                 "IRENE AE9/AP9 runtime not found: belt_style=\"flux\" (the default) requires it. "
@@ -478,7 +522,8 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
             prepare_irene_flux_grid(Q[selected] * 1000, date, private)
             print(f"  belts: evaluating official IRENE on {selected.sum()} GEO grid points", flush=True)
             try:
-                result = run_irene(private)
+                result = (run_irene(private, executable=runtime[0], model_data=runtime[1])
+                          if executable is not None or model_data is not None else run_irene(private))
             except Exception as exc:
                 raise RuntimeError(f"IRENE run failed; inputs and logs preserved at {private}") from exc
             # Publish atomically. A concurrent call may finish the same key
@@ -571,6 +616,20 @@ def _flux_isosurfaces(date, axis, grid_n=56, extent_re=7.2, levels=(0.18,),
         if V.max() <= 0:
             continue
         vmax = float(V.max())
+        if mesh:
+            for level in levels:
+                vertices, faces = _flux_surface_mesh(Q, V, grid_n, level * vmax)
+                if len(faces):
+                    traces.append(go.Mesh3d(
+                        x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
+                        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2], opacity=opacity,
+                        color='#ffc775' if species == 'p' else '#639efe',
+                        meta={"model": proton_label if species == 'p' else electron_label,
+                              "threshold_mev": 10 if species == 'p' else 1,
+                              "contour_flux": level * vmax, "flux_unit": "cm^-2 s^-1",
+                              "epoch_utc": date.isoformat() + "Z", "model_label": model_label},
+                        name=f'{label} · {model_label}', hoverinfo='none'))
+            continue
         # One trace per species carrying all levels (surface_count): each extra
         # Isosurface would repeat the whole coordinate grid in the saved HTML.
         traces.append(go.Isosurface(
