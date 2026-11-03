@@ -127,15 +127,17 @@ def _load_ssapy_plot_constants():
     }
 
 
-def load_star_catalog(mag_limit=6.5, when=None):
-    """Return the real catalog sky as compact, JSON-ready arrays."""
+def load_star_catalog(mag_limit=6.5, when=None, *, frame="teme-of-date"):
+    """Return JSON-ready catalog stars in TEME-of-date or GCRF directions."""
     from ssatk.plots.starfield import star_directions
 
+    if frame not in {"teme-of-date", "gcrf"}:
+        raise ValueError("frame must be 'teme-of-date' or 'gcrf'")
     when = when or datetime.now(timezone.utc)
     if when.tzinfo is not None:
         when = when.astimezone(timezone.utc).replace(tzinfo=None)
-    # The viewer scene is TEME (SGP4 output, Earth turned by GMST).
-    stars = star_directions(mag_limit=mag_limit, when=when, frame="teme")
+    stars = star_directions(mag_limit=mag_limit, when=when,
+                            frame="teme" if frame == "teme-of-date" else "gcrf")
     if stars is None:
         raise FileNotFoundError(
             "Accurate satellite-viewer stars require bright_stars.csv from "
@@ -149,7 +151,7 @@ def load_star_catalog(mag_limit=6.5, when=None):
     sizes = np.clip(4.8 - 0.48 * magnitudes, 1.0, 6.5)
     return {
         "epoch": when.isoformat(timespec="seconds") + "Z",
-        "frame": "teme-of-date",
+        "frame": frame,
         "v": np.round(vectors, 7).ravel().tolist(),
         "c": np.round(np.clip(colors * brightness[:, None], 0, 1), 3).ravel().tolist(),
         "s": np.round(sizes, 2).tolist(),
