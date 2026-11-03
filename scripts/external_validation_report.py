@@ -104,12 +104,17 @@ def _metadata(case: dict[str, Any], *, fast: bool) -> dict[str, Any]:
     }
 
 
-def run_external_validation(*, output_path: Path | None = None, fast: bool = True) -> dict[str, Any]:
+def run_external_validation(*, output_path: Path | None = None, fast: bool = True, case_ids=None) -> dict[str, Any]:
     """Run fixed external cases and optionally write a deterministic JSON report."""
+    selected = set(case_ids) if case_ids is not None else {case["id"] for case in _CASES}
+    if not selected or selected - {case["id"] for case in _CASES}:
+        raise ValueError("Select at least one known external validation case.")
     cases = []
     with tempfile.TemporaryDirectory(prefix="ssatk-external-validation-") as temporary:
         output_dir = Path(temporary)
         for specification in _CASES:
+            if specification["id"] not in selected:
+                continue
             try:
                 result = _call(specification, fast=fast, output_dir=output_dir)
             except Exception as error:  # noqa: BLE001 - retain failing case context in the report.
@@ -163,8 +168,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path.home() / "ssatk_output" / "reports" / "external_validation.json")
     parser.add_argument("--full", action="store_true", help="Use the longer fixed benchmark durations.")
     parser.add_argument("--require-external", action="store_true", help="Fail if any external runtime is skipped.")
+    parser.add_argument("--case", action="append", choices=[case["id"] for case in _CASES],
+                        help="Run only the selected case; may be repeated.")
     args = parser.parse_args(argv)
-    report = run_external_validation(output_path=args.output, fast=not args.full)
+    report = run_external_validation(output_path=args.output, fast=not args.full, case_ids=args.case)
     print(json.dumps(report, indent=2, sort_keys=True))
     summary = report["summary"]
     return int(bool(summary["failed"] or summary["errors"] or (args.require_external and summary["skipped"])))

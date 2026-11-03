@@ -6,10 +6,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.integrate import solve_ivp
 
 from ..constants import EARTH_MU
-from .int_utils import acceleration_adapter
+from .int_utils import acceleration_adapter, model_time_breakpoints, solve_ivp_at_breakpoints
 
 ArrayLike = np.ndarray | list[float] | tuple[float, ...]
 AccelerationModel = Callable[..., ArrayLike]
@@ -80,10 +79,12 @@ def propagate_orbit_state(
     # 2.4e-6 s at GPS 1.4e9; a step-discontinuous acceleration then aborts the
     # run. Acceleration models still receive the absolute epoch.
     t_ref = float(t0)
-    sol = solve_ivp(
+    sol = solve_ivp_at_breakpoints(
         lambda t, y: _rhs(t_ref + t, y, mu=mu, models=models),
         (0.0, float(times[-1]) - t_ref),
         y0,
+        time_origin=t_ref,
+        breakpoints=model_time_breakpoints(models, t_ref, float(times[-1])) - t_ref,
         t_eval=times - t_ref,
         method=method,
         rtol=rtol,
@@ -154,10 +155,12 @@ def propagate_orbit_state_with_stm(
         )
         return np.concatenate([derivative, (jacobian @ matrix).ravel()])
 
-    sol = solve_ivp(
+    sol = solve_ivp_at_breakpoints(
         rhs,
         (0.0, float(times[-1]) - t_ref),
         y0,
+        time_origin=t_ref,
+        breakpoints=model_time_breakpoints(models, t_ref, float(times[-1])) - t_ref,
         t_eval=times - t_ref,
         method=method,
         rtol=rtol,

@@ -75,10 +75,11 @@ jobs:
         run: python scripts/check_repository_policy.py --base-ref "$BASE_REF" --head-ref HEAD
 
       - name: Run analytical validation profile
+        id: benchmark-validation
         run: python -m ssatk.benchmark --profile validation --quick --no-dashboard --fail-on-validation --output-dir .ci-output/benchmark-validation
 
       - name: Upload analytical validation results
-        if: always()
+        if: always() && steps.benchmark-validation.outcome != 'skipped'
         uses: actions/upload-artifact@v6
         with:
           name: analytical-validation-release

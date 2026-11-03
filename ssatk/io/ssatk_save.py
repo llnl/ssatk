@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -126,7 +129,11 @@ def ssatk_read(
     as_array: bool = False,
     **kwargs,
 ) -> Any:
-    """Load data using the file extension in ``path`` to select the format."""
+    """Load data using the file extension in ``path`` to select the format.
+
+    Embedded HDF5 pickles require ``allow_pickle=True``. Enable this only for
+    trusted files, since unpickling can execute arbitrary Python code.
+    """
     load_path = _resolve_path(path, root=root, for_save=False)
     suffix = _extension(load_path)
     if suffix not in _SUPPORTED_EXTS:
@@ -137,7 +144,7 @@ def ssatk_read(
         raise ValueError("key= is only supported for HDF5 and NPZ inputs.")
 
     if suffix in _HDF5_EXTS:
-        return _load_hdf5(load_path, key=key)
+        return _load_hdf5(load_path, key=key, allow_pickle=allow_pickle)
     if suffix in _JSON_EXTS:
         return load_json(load_path)
     if suffix in _JSONL_EXTS:
@@ -274,61 +281,69 @@ def _save_hdf5(
     pickle_objects: bool,
     metadata: Mapping[str, Any] | None,
 ) -> None:
-    is_mapping = isinstance(data, Mapping)
-    clear_default_key = False
-    if key is None and is_mapping:
-        _validate_mapping_keys(data)
-        if path.exists() and not overwrite:
-            root_keys = [_hdf5_key_parts(str(name)) for name in data]
-            conflicts = ["/".join(parts) for parts in root_keys if _hdf5_key_exists(path, parts)]
-            if conflicts:
-                raise FileExistsError(f"HDF5 key(s) already exist in {path}: {conflicts}")
-            mode = "a"
+    destination = path
+    # Commit the entire update, including metadata, only after serialization succeeds.
+    with tempfile.TemporaryDirectory(dir=path.parent, prefix=".ssatk-hdf5-") as staging:
+        path = Path(staging) / destination.name
+        if destination.exists():
+            shutil.copy2(destination, path)
+        is_mapping = isinstance(data, Mapping)
+        clear_default_key = False
+        if key is None and is_mapping:
+            _validate_mapping_keys(data)
+            if path.exists() and not overwrite:
+                root_keys = [_hdf5_key_parts(str(name)) for name in data]
+                conflicts = ["/".join(parts) for parts in root_keys if _hdf5_key_exists(path, parts)]
+                if conflicts:
+                    raise FileExistsError(f"HDF5 key(s) already exist in {path}: {conflicts}")
+                mode = "a"
+            else:
+                mode = "w"
+            payload = dict(data)
+            default_key = None
+            # A mapping write adds/keeps named top-level keys, so any earlier
+            # "the whole file is one default value" marker from a prior
+            # non-mapping save no longer applies -- leaving it would make
+            # ssatk_read silently ignore every key written here.
+            clear_default_key = True
         else:
-            mode = "w"
-        payload = dict(data)
-        default_key = None
-        # A mapping write adds/keeps named top-level keys, so any earlier
-        # "the whole file is one default value" marker from a prior
-        # non-mapping save no longer applies -- leaving it would make
-        # ssatk_read silently ignore every key written here.
-        clear_default_key = True
-    else:
-        parts = _hdf5_key_parts(key, default="data")
-        if _hdf5_key_exists(path, parts):
-            if not overwrite:
-                raise FileExistsError(f"HDF5 key already exists in {path}: {'/'.join(parts)}")
-            _delete_hdf5_key(path, parts)
-        payload = _nested_for_key(parts, data)
-        mode = "a"
-        default_key = "/".join(parts) if key is None else None
+            parts = _hdf5_key_parts(key, default="data")
+            if _hdf5_key_exists(path, parts):
+                if not overwrite:
+                    raise FileExistsError(f"HDF5 key already exists in {path}: {'/'.join(parts)}")
+                _delete_hdf5_key(path, parts)
+            payload = _nested_for_key(parts, data)
+            mode = "a"
+            default_key = "/".join(parts) if key is None else None
 
-    save_dict_to_hdf5(
-        str(path),
-        payload,
-        mode=mode,
-        pickle_objects=pickle_objects,
-        compression=compression,
-        compression_opts=None if compression is None else compression_opts,
-    )
-    if metadata or default_key or clear_default_key:
-        import h5py
+        save_dict_to_hdf5(
+            str(path),
+            payload,
+            mode=mode,
+            pickle_objects=pickle_objects,
+            compression=compression,
+            compression_opts=None if compression is None else compression_opts,
+        )
+        if metadata or default_key or clear_default_key:
+            import h5py
 
-        with h5py.File(path, "a") as handle:
-            if default_key:
-                handle.attrs["__ssatk_default_key__"] = default_key
-            elif clear_default_key and "__ssatk_default_key__" in handle.attrs:
-                del handle.attrs["__ssatk_default_key__"]
-            if metadata:
-                for name, value in metadata.items():
-                    handle.attrs[str(name)] = value
+            with h5py.File(path, "a") as handle:
+                if default_key:
+                    handle.attrs["__ssatk_default_key__"] = default_key
+                elif clear_default_key and "__ssatk_default_key__" in handle.attrs:
+                    del handle.attrs["__ssatk_default_key__"]
+                if metadata:
+                    for name, value in metadata.items():
+                        handle.attrs[str(name)] = value
+        os.replace(path, destination)
 
 
-def _load_hdf5(path: Path, *, key: str | None) -> Any:
+
+def _load_hdf5(path: Path, *, key: str | None, allow_pickle: bool = False) -> Any:
     if key is not None:
         parts = _hdf5_key_parts(key)
         top = parts[0]
-        loaded = load_dict_from_hdf5(str(path), keys={top})
+        loaded = load_dict_from_hdf5(str(path), keys={top}, allow_pickle=allow_pickle)
         if top not in loaded:
             raise KeyError(key)
         value = loaded[top]
@@ -347,8 +362,8 @@ def _load_hdf5(path: Path, *, key: str | None) -> Any:
     if default_key:
         top_of_default = str(default_key).split("/", 1)[0]
         if top_level_keys == {top_of_default}:
-            return _load_hdf5(path, key=str(default_key))
-    loaded = load_dict_from_hdf5(str(path))
+            return _load_hdf5(path, key=str(default_key), allow_pickle=allow_pickle)
+    loaded = load_dict_from_hdf5(str(path), allow_pickle=allow_pickle)
     if set(loaded) == {"data"}:
         return loaded["data"]
     return loaded

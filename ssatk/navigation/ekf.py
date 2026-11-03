@@ -78,6 +78,7 @@ class ExtendedKalmanFilter:
 
     def __init__(self, state: EKFState):
         self.state = state
+        self.last_update = None
 
     def predict(
         self,
@@ -105,15 +106,40 @@ class ExtendedKalmanFilter:
         time: float | None = None,
         angle_indices=None,
         residual=None,
+        max_nis: float | None = None,
     ) -> EKFState:
+        """Update the estimate, optionally rejecting innovations above ``max_nis``.
+
+        ``last_update`` reports the residual, its covariance, the dimensionless
+        normalized innovation squared (NIS), and whether the update was accepted.
+        A rejected observation leaves the state and epoch unchanged. For Gaussian
+        innovations, NIS has a chi-squared distribution with measurement dimension
+        degrees of freedom; callers choose a threshold appropriate to their model.
+        """
+        self.last_update = None
+        if max_nis is not None:
+            try:
+                max_nis = float(max_nis)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("max_nis must be finite and nonnegative.") from exc
+            if not np.isfinite(max_nis) or max_nis < 0:
+                raise ValueError("max_nis must be finite and nonnegative.")
         prediction, jacobian = model(self.state.x.copy())
         prediction = np.asarray(prediction, dtype=float)
         measurement = np.asarray(measurement, dtype=float)
-        if prediction.ndim != 1 or measurement.shape != prediction.shape:
+        if prediction.ndim != 1 or not prediction.size or measurement.shape != prediction.shape:
             raise ValueError("measurement and model output must be one-dimensional and equal-sized.")
+        if not np.all(np.isfinite(prediction)):
+            raise ValueError("model output must be finite.")
         m, n = prediction.size, self.state.x.size
         jacobian = _matrix(jacobian, (m, n), "measurement jacobian")
         noise = _matrix(noise, (m, m), "measurement noise")
+        noise_scale = max(float(np.max(np.abs(noise))), np.finfo(float).tiny)
+        if not np.allclose(noise, noise.T, rtol=0.0, atol=1e-10 * noise_scale):
+            raise ValueError("measurement noise must be symmetric.")
+        noise = 0.5 * (noise + noise.T)
+        if np.any(np.linalg.eigvalsh(noise) < -1e-10 * noise_scale):
+            raise ValueError("measurement noise must be positive semidefinite.")
         innovation = measurement - prediction if residual is None else np.asarray(
             residual(measurement, prediction), dtype=float
         )
@@ -123,10 +149,19 @@ class ExtendedKalmanFilter:
             angle_indices = getattr(model, "angle_indices", ())
         innovation = wrap_angle_residual(innovation, angle_indices) if angle_indices else innovation
         innovation_covariance = jacobian @ self.state.covariance @ jacobian.T + noise
+        innovation_covariance = 0.5 * (innovation_covariance + innovation_covariance.T)
         try:
+            np.linalg.cholesky(innovation_covariance)
+            nis = float(innovation @ np.linalg.solve(innovation_covariance, innovation))
             gain = np.linalg.solve(innovation_covariance, jacobian @ self.state.covariance).T
         except np.linalg.LinAlgError as exc:
-            raise ValueError("measurement covariance is singular.") from exc
+            raise ValueError("innovation covariance must be positive definite.") from exc
+        accepted = max_nis is None or nis <= max_nis
+        self.last_update = {"innovation": innovation.copy(),
+                            "innovation_covariance": innovation_covariance.copy(),
+                            "nis": nis, "accepted": accepted}
+        if not accepted:
+            return self.state
         updated = self.state.x + gain @ innovation
         identity = np.eye(n)
         residual = identity - gain @ jacobian

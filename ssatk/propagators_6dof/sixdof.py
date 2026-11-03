@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
 import numpy as np
-from scipy.integrate import solve_ivp
+from ..propagators_orbit.int_utils import model_time_breakpoints, solve_ivp_at_breakpoints
 
 from ..constants import EARTH_MU, EARTH_RADIUS
 from ..coordinates.attitude import (
@@ -956,7 +956,7 @@ def propagate_6dof(
         )
         method = projected_solver(method, project)
 
-    sol = solve_ivp(
+    sol = solve_ivp_at_breakpoints(
         lambda t, y: sixdof_rhs(
             t_ref + t,
             y,
@@ -978,6 +978,10 @@ def propagate_6dof(
         ),
         (0.0, float(times_elapsed[-1])),
         y0,
+        time_origin=t_ref,
+        breakpoints=model_time_breakpoints(
+            (acceleration, body_acceleration, ntw_acceleration, torque, mass_flow_rate, wheel_torque),
+            t_ref, float(times[-1])) - t_ref,
         t_eval=times_elapsed,
         rtol=rtol,
         atol=atol,

@@ -8,7 +8,7 @@ Output
 demo_magfield_plot.html  — interactive 3D (rotate/zoom in browser)
 demo_magfield_plot.png   — static preview
 demo_magfield_lines.mp4  — camera tour of the internal field
-demo_magfield_belts.mp4  — camera tour with illustrative L-shell belts
+demo_magfield_belts.mp4  — camera tour with the selected radiation-belt model
 
 The videos move the camera around a fixed 2025 IGRF model; they do not
 simulate field evolution or particle motion. Export needs ssatk[browser,video]

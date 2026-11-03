@@ -732,7 +732,7 @@ def _page_html(payload: dict[str, object]) -> str:
     payload = dict(payload)
     payload["data_assets"] = {"earth_albedo": earth_asset, "moon_albedo": moon_asset}
     _, photometry_lut_b64 = _photometry_lut()
-    payload_json = json.dumps(payload, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
+    payload_json = json.dumps(payload, separators=(",", ":"), allow_nan=False, ensure_ascii=False).replace("<", "\\u003c")
     title = html.escape(str(payload["title"]))
     mode = str(payload["mode"])
     scope = str(payload["scope"])

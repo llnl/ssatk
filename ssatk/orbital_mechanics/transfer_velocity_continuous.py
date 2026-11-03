@@ -82,6 +82,9 @@ def transfer_velocity_continuous(
         dense_output=True,
     )
 
+    if not sol.success:
+        raise RuntimeError(f"continuous transfer propagation failed: {sol.message}")
+
     if v_target is not None:
         if sol.status != 1 or sol.t_events[0].size == 0:
             raise ValueError("Target delta-v not reached within max_time")

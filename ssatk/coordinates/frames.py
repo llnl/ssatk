@@ -216,8 +216,7 @@ class FrameTransform:
             return r.copy()
 
         if self.frame == Frame.ECF:
-            tg = t_gps or self.t_gps or 0.0
-            return eci_to_ecf_matrix(tg) @ r
+            return self._rotation_matrix(r, v, t_gps) @ r
 
         if self.frame in (Frame.LVLH, Frame.RTN):
             if v is None:
@@ -261,7 +260,8 @@ class FrameTransform:
         if self.frame == Frame.ECI:
             return np.eye(3)
         if self.frame == Frame.ECF:
-            return eci_to_ecf_matrix(t_gps or self.t_gps or 0.0)
+            epoch = self.t_gps if t_gps is None else t_gps
+            return eci_to_ecf_matrix(0.0 if epoch is None else epoch)
         if self.frame in (Frame.LVLH, Frame.RTN):
             return lvlh_matrix(r, v)
         if self.frame == Frame.NTW:

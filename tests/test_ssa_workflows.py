@@ -32,11 +32,13 @@ def _source():
 
 @pytest.mark.parametrize("workers", [1, 2])
 @pytest.mark.parametrize("chunk_size", [1, 2, 6])
-def test_analysis_windows_and_metrics_match_closed_form(workers, chunk_size):
+def test_analysis_windows_and_metrics_match_closed_form(workers, chunk_size, tmp_path):
     source, observer, angles = _source()
     config = PairAnalysisConfig(angular_limit_rad=.4, pre_padding_s=1,
                                 post_padding_s=1, max_gap_s=3)
     result = analyze_pairs(source, observer, config=config, chunk_size=chunk_size, workers=workers)
+    from ssatk.io.ssa_events import read_event_summary, write_event_summary
+    result = read_event_summary(write_event_summary(result, tmp_path / "summary.json"))
     # Explicit interval union: [0,1] and [3,3] padded by 1 merge; gap to [8,8].
     assert result.windows == (
         EventWindow((0, 1), 0, 4, 0, 3, 3),

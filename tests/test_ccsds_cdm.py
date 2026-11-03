@@ -88,6 +88,20 @@ def test_read_standard_layout_and_si_conversion():
     assert message.object1.extra_fields["USER_DEFINED"] == "retained"
 
 
+def test_cdm_probability_example_matches_centered_gaussian_disk():
+    """R1: centered isotropic 100 m² covariance, R=5 m: 1-exp(-R²/200)."""
+    from dataclasses import replace
+    from demos.data_io.demo_cdm_collision_probability import calculate
+
+    message = read_cdm(_fixture())
+    covariance = np.diag([50., 50., 50., 1., 1., 1.])
+    first = replace(message.object1, state=np.array([7e6, 0, 0, 0, 7500, 0]), covariance_rtn=covariance)
+    second = replace(message.object2, state=np.array([7e6, 0, 0, 0, -7500, 0]), covariance_rtn=covariance)
+    message = replace(message, object1=first, object2=second, miss_distance_m=0.)
+    probability = calculate(format_cdm(message), combined_radius_m=5.)
+    assert probability == pytest.approx(-np.expm1(-25./200.), abs=1e-10)  # dimensionless
+
+
 def test_gcrf_rtn_covariance_rotation_and_immutable_arrays():
     message = read_cdm(_fixture())
     obj = message.object1
