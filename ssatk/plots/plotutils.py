@@ -839,7 +839,7 @@ def _raise_unrecognized_kwargs(kwargs, func_name):
 
 def figsave(figure, save_path=None, dpi=200, default_name="figure", **save_kwargs):
     """
-    Save a Matplotlib figure through the SSATK figure-output policy.
+    Save a Matplotlib figure or HTML string through the SSATK figure-output policy.
 
     Behavior:
       * If save_path is None or True -> save under figpath(default_name).
@@ -849,6 +849,7 @@ def figsave(figure, save_path=None, dpi=200, default_name="figure", **save_kwarg
       * If save_path has no extension -> save as JPG ('.jpg' is appended).
       * If save_path ends with '.pdf' (case-insensitive) -> append/write to PDF
         via save_plot_to_pdf.
+      * HTML strings require a '.html' path and are written as UTF-8.
       * If save_path has any other extension -> use it directly with figure.savefig().
     """
     save_path, save_kwargs = _pop_save_path_aliases(save_kwargs, save_path=save_path)
@@ -864,6 +865,13 @@ def figsave(figure, save_path=None, dpi=200, default_name="figure", **save_kwarg
     if extension == "":
         extension = ".jpg"
         save_path = base_name + extension
+
+    if isinstance(figure, str):
+        if extension.lower() != ".html":
+            raise ValueError("HTML strings require a .html save path")
+        Path(save_path).write_text(figure, encoding="utf-8")
+        print(f"Figure saved at: {save_path}")
+        return save_path
 
     # PDF: use custom handler
     if extension.lower() == ".pdf":

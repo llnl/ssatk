@@ -3,6 +3,7 @@
 import json
 
 import numpy as np
+import pytest
 
 from ssatk.io import irene
 
@@ -64,3 +65,47 @@ def test_flux_grid_si_positions_and_exact_flux(tmp_path):
     np.testing.assert_allclose(result["geo_m"], positions, rtol=0, atol=1e-9)
     np.testing.assert_allclose(result["electron_flux"], [12, 34], rtol=0, atol=1e-12)
     np.testing.assert_allclose(result["proton_flux"], [56, 78], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("normal", [(1, 0, 0), (1, 2, 3), (-2, 1, -3)])
+def test_flux_surface_mesh_linear_contours(normal):
+    """Linear field contour: plane residual within 1e-14 grid units."""
+    from ssatk.plots.magfield_plot_3d import _flux_surface_mesh
+
+    coordinates = np.stack(np.meshgrid(*([np.linspace(-1, 1, 4)] * 3), indexing="ij"), axis=-1).reshape(-1, 3)
+    values = coordinates @ normal
+    vertices, faces = _flux_surface_mesh(coordinates, values, 4, 0.17)
+    assert len(faces) > 0
+    np.testing.assert_allclose(vertices @ normal, 0.17, rtol=0, atol=1e-14)
+    assert np.all(np.abs(vertices) <= 1)
+    assert faces.min() == 0 and faces.max() == len(vertices) - 1
+    for level in (values.min() - 1, values.max() + 1):
+        empty_vertices, empty_faces = _flux_surface_mesh(coordinates, values, 4, level)
+        assert empty_vertices.shape == empty_faces.shape == (0, 3)
+
+
+
+def test_flux_surface_mesh_closed_sphere():
+    """Sphere contour: bounded radius within 1e-14 grid units, two faces per edge."""
+    from ssatk.plots.magfield_plot_3d import _flux_surface_mesh
+
+    coordinates = np.stack(np.meshgrid(*([np.linspace(-1.5, 1.5, 9)] * 3), indexing="ij"), axis=-1).reshape(-1, 3)
+    vertices, faces = _flux_surface_mesh(coordinates, np.sum(coordinates ** 2, axis=1), 9, 0.83)
+    assert len(faces) > 0
+    assert np.all(np.linalg.norm(vertices, axis=1) <= np.sqrt(0.83) + 1e-14)
+    _, inverse = np.unique(np.round(vertices, 12), axis=0, return_inverse=True)
+    indexed = inverse[faces]
+    edges = np.sort(np.concatenate([indexed[:, [0, 1]], indexed[:, [1, 2]], indexed[:, [2, 0]]]), axis=1)
+    _, counts = np.unique(edges, axis=0, return_counts=True)
+    assert np.all(counts == 2), "Contour must be closed without cracks or duplicate faces"
+
+
+
+def test_artemis_mission_endpoint():
+    """Lambert arrival is 2,000 km Earthward of the Moon, within 1 m."""
+    from demos.space_environment import demo_artemis_radiation as demo
+    times, positions, moon = demo.mission()
+    assert (times[-1] - times[0]).to_value("day") == pytest.approx(4)
+    assert np.linalg.norm(positions[-1] - moon[-1]) == pytest.approx(2e6, abs=1)
+    assert np.all(np.diff(times.gps) > 0)
+    assert np.max(np.diff(times.gps)[:719]) <= 30
