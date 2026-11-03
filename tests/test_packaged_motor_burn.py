@@ -18,6 +18,9 @@ def test_packaged_motor_burn_matches_mass_balance_and_rocket_equation():
     catalog's ``totImpulseNs``, which the C5 RASP curve used here meets
     within roughly 0.01%; 1% leaves comfortable room for a packaged curve
     that is close to, but not exactly, its catalog impulse.
+    The reported sampled impulse and inferred effective Isp are checked
+    against these independent references at 1e-12 relative tolerance; Isp
+    uses exact standard gravity, 9.80665 m/s^2.
 
     The adaptive integration resolves the piecewise-linear thrust at half its
     smallest sample interval; transverse speed is zero within 1e-12 m/s.
@@ -48,6 +51,10 @@ def test_packaged_motor_burn_matches_mass_balance_and_rocket_equation():
 
     exhaust_velocity = independent_impulse_n_s / propellant_mass
     reference_delta_v = exhaust_velocity * np.log(initial_mass / dry_mass)
+    reference_isp_s = exhaust_velocity / 9.80665
+
+    assert result["sampled_impulse_n_s"] == pytest.approx(independent_impulse_n_s, rel=1e-12, abs=0)
+    assert result["effective_isp_s"] == pytest.approx(reference_isp_s, rel=1e-12, abs=0)
 
     assert result["final_mass_kg"] == pytest.approx(dry_mass, rel=1e-6, abs=0)
     assert result["delta_v_m_s"] == pytest.approx(reference_delta_v, rel=1e-6, abs=0)
