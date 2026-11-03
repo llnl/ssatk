@@ -195,6 +195,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_lambertian_photometry.py,3,R1 R2 R3,Independent Planck quadrature; Lambert phase geometry; solar magnitude,Shared geometric Sun input; apparent-Sun model difference checked separately
    tests/test_launch_gravity_turn.py,1,R1,Known vertical/azimuth/half-turn thrust directions plus gravity,Prescribed steering law
    tests/test_launch_initialization.py,6,R1 R2 R4 R5,WGS84 pad/heading; Astropy frames; IERS-A leap seconds; inverse states; finite-difference 6-DoF attitude,Initialization only; finite-difference rotation rate; no release dynamics or terrain source
+   tests/test_launch_mass_accounting.py,5,R1 R2 R4 R5,Independent cylinder volume quadrature; depletion finite differences and continuity; detachment tensor conservation; residual-limited rocket equation,Specified synthetic geometry; no slosh or cylinder exhaust flux; no separation state reset
    tests/test_launch_preflight.py,13,R1 R2 R4 C,Closed-form WGS84 pad position; independent erfa-based EOP rotation and SpacePy pad/speed; offline frame closure; schema/resource/EOP-coverage contracts,Initialization only; not ascent or telemetry validation
    tests/test_low_precision_moon.py,1,R2,Astropy lunar coordinates over 2000-2040,200 samples; 6/3.5 arcmin and 550 km budgets
    tests/test_lunar_rotating_frame.py,1,R1 R4,Earth at negative lunar X and constructed frame vectors,Paired exact circular-ephemeris kinematics in review regressions

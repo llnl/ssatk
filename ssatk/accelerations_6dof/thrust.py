@@ -136,7 +136,7 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
             selected = [tank for tank in tanks if tank.name == self.tank_name]
             if len(selected) != 1:
                 raise ValueError(f"expected exactly one tank named {self.tank_name!r}.")
-            if selected[0].propellant_mass <= 0.0:
+            if selected[0].usable_propellant_mass <= 0.0:
                 return _np.zeros(3)
         value = _call_optional(self.thrust, t, r, v, q, omega, spacecraft) if callable(self.thrust) else self.thrust
         value = _np.asarray(value, dtype=float)
@@ -160,7 +160,7 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
             selected = [tank for tank in tanks if tank.name == self.tank_name]
             if len(selected) != 1:
                 raise ValueError(f"expected exactly one tank named {self.tank_name!r}.")
-            if selected[0].propellant_mass <= 0.0:
+            if selected[0].usable_propellant_mass <= 0.0:
                 return 0.0
         return float(_np.linalg.norm(self.thrust_vector(t, r, v, q, omega, spacecraft)) / (self.isp * STANDARD_GRAVITY))
 

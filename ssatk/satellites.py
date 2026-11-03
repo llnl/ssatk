@@ -189,13 +189,25 @@ class Thruster:
 
 @dataclass(frozen=True)
 class Tank:
-    """Simple propellant tank mass component."""
+    """Tank shell and inventory, in kg and shared body coordinates.
+
+    Without geometry, propellant is a point mass at ``position_body`` and
+    ``inertia`` is the fixed shell inertia about that position. With geometry,
+    a uniform liquid cylinder fills from ``propellant_base_body`` along
+    ``propellant_axis_body``; its height is mass / (density * pi * radius**2).
+    This assumes a flat free surface, constant density and no slosh.
+    """
 
     propellant_mass: float
     dry_mass: float = 0.0
     position_body: ArrayLike = (0.0, 0.0, 0.0)
     inertia: ArrayLike | None = None
     name: str = ""
+    residual_mass: float = 0.0
+    cylinder_radius: float | None = None
+    propellant_density: float | None = None
+    propellant_base_body: ArrayLike | None = None
+    propellant_axis_body: ArrayLike = (0.0, 0.0, 1.0)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "propellant_mass", _nonnegative(self.propellant_mass, "propellant_mass"))
@@ -203,6 +215,44 @@ class Tank:
         object.__setattr__(self, "position_body", _vector3(self.position_body, "position_body"))
         if self.inertia is not None:
             object.__setattr__(self, "inertia", _inertia(self.inertia))
+        object.__setattr__(self, "residual_mass", _nonnegative(self.residual_mass, "residual_mass"))
+        if self.propellant_mass < self.residual_mass:
+            raise ValueError("propellant_mass is below unusable residual_mass.")
+        geometry = (self.cylinder_radius, self.propellant_density, self.propellant_base_body)
+        if any(value is not None for value in geometry):
+            if any(value is None for value in geometry):
+                raise ValueError("cylinder radius, density and base must be supplied together.")
+            for name in ("cylinder_radius", "propellant_density"):
+                object.__setattr__(self, name, _positive(getattr(self, name), name))
+            object.__setattr__(self, "propellant_base_body", _vector3(self.propellant_base_body, "propellant_base_body"))
+            object.__setattr__(self, "propellant_axis_body", _unit(self.propellant_axis_body, "propellant_axis_body"))
+        for vector in (self.position_body, self.propellant_base_body, self.propellant_axis_body):
+            if vector is not None and not np.all(np.isfinite(vector)):
+                raise ValueError("tank coordinates must be finite.")
+
+    @property
+    def usable_propellant_mass(self) -> float:
+        """Consumable inventory in kg, excluding the declared residual."""
+        return self.propellant_mass - self.residual_mass
+
+    @property
+    def liquid_height(self) -> float:
+        """Cylinder fill height in m; zero for the point-mass model."""
+        if self.cylinder_radius is None:
+            return 0.0
+        return self.propellant_mass / (self.propellant_density * np.pi * self.cylinder_radius**2)
+
+    @property
+    def propellant_center_body(self) -> np.ndarray:
+        """Current liquid center in body-frame metres."""
+        if self.cylinder_radius is None:
+            return self.position_body
+        return self.propellant_base_body + self.propellant_axis_body * self.liquid_height / 2.0
+
+    @property
+    def mass_first_moment(self) -> np.ndarray:
+        """Shell plus liquid first moment in kg m."""
+        return self.dry_mass * self.position_body + self.propellant_mass * self.propellant_center_body
 
     @property
     def mass(self) -> float:
@@ -214,7 +264,29 @@ class Tank:
         """Return tank inertia about ``origin`` using the parallel-axis theorem."""
 
         inertia = np.zeros((3, 3)) if self.inertia is None else self.inertia
-        return inertia + point_mass_inertia(self.mass, self.position_body - _vector3(origin, "origin"))
+        origin = _vector3(origin, "origin")
+        inertia = inertia + point_mass_inertia(self.dry_mass, self.position_body - origin)
+        inertia += point_mass_inertia(self.propellant_mass, self.propellant_center_body - origin)
+        if self.cylinder_radius is not None:
+            axial = self.propellant_mass * self.cylinder_radius**2 / 2.0
+            transverse = self.propellant_mass * (self.cylinder_radius**2 / 4.0 + self.liquid_height**2 / 12.0)
+            axis = self.propellant_axis_body
+            inertia += transverse * np.eye(3) + (axial - transverse) * np.outer(axis, axis)
+        return inertia
+
+    def inertia_mass_derivative(self, origin: ArrayLike = (0.0, 0.0, 0.0)) -> np.ndarray:
+        """dI/d(propellant mass) at fixed ``origin``, in m squared."""
+        offset = self.propellant_center_body - _vector3(origin, "origin")
+        derivative = point_mass_inertia(1.0, offset)
+        if self.cylinder_radius is not None:
+            axis = self.propellant_axis_body
+            transverse = self.cylinder_radius**2 / 4.0 + self.liquid_height**2 / 4.0
+            axial = self.cylinder_radius**2 / 2.0
+            derivative += transverse * np.eye(3) + (axial - transverse) * np.outer(axis, axis)
+            motion = axis / (2.0 * self.propellant_density * np.pi * self.cylinder_radius**2)
+            derivative += self.propellant_mass * (2.0 * np.dot(offset, motion) * np.eye(3)
+                                                  - np.outer(offset, motion) - np.outer(motion, offset))
+        return derivative
 
     def with_updates(self, **kwargs) -> Tank:
         """Return a modified copy."""
@@ -378,12 +450,17 @@ class SpacecraftBody:
         return sum(tank.propellant_mass for tank in self.tanks)
 
     @property
+    def residual_mass(self) -> float:
+        """Total unusable inventory in kg."""
+        return sum(tank.residual_mass for tank in self.tanks)
+
+    @property
     def current_center_of_mass(self) -> np.ndarray:
         """Mass-weighted body-frame center of mass."""
 
         weighted = self.mass * self.center_of_mass
         weighted += sum((component.mass * component.position_body for component in self.components), start=np.zeros(3))
-        weighted += sum((tank.mass * tank.position_body for tank in self.tanks), start=np.zeros(3))
+        weighted += sum((tank.mass_first_moment for tank in self.tanks), start=np.zeros(3))
         return weighted / self.current_mass
 
     @property
@@ -413,18 +490,20 @@ class SpacecraftBody:
         """Return a body with total tank propellant set proportionally."""
 
         propellant_mass = _nonnegative(propellant_mass, "propellant_mass")
-        current_propellant = self.propellant_mass
+        if propellant_mass < self.residual_mass:
+            raise ValueError("propellant mass is below unusable residual mass.")
+        current_propellant = self.propellant_mass - self.residual_mass
         if not self.tanks:
             if propellant_mass == 0.0:
                 return self
             raise ValueError("cannot assign propellant mass without tanks.")
         if current_propellant == 0.0:
-            if propellant_mass == 0.0:
+            if propellant_mass == self.residual_mass:
                 return self
             raise ValueError("cannot distribute propellant across empty tanks.")
-        scale = propellant_mass / current_propellant
+        scale = (propellant_mass - self.residual_mass) / current_propellant
         return self.with_tanks(
-            *(tank.with_propellant_mass(tank.propellant_mass * scale) for tank in self.tanks),
+            *(tank.with_propellant_mass(tank.residual_mass + tank.usable_propellant_mass * scale) for tank in self.tanks),
             append=False,
         )
 
@@ -445,11 +524,11 @@ class SpacecraftBody:
 
         mass = _positive(mass, "mass")
         propellant_mass = mass - self.dry_mass_total
-        if propellant_mass < -1e-9:
-            raise ValueError("mass is below dry mass.")
+        if propellant_mass < self.residual_mass - 1e-9:
+            raise ValueError("mass is below dry mass plus unusable residuals.")
         if propellant_mass > self.propellant_mass + 1e-9:
             raise ValueError("mass exceeds current tank propellant capacity.")
-        return self.with_propellant_mass(max(0.0, propellant_mass))
+        return self.with_propellant_mass(max(self.residual_mass, propellant_mass))
 
     def with_facets(self, *facets: Facet, append: bool = True) -> SpacecraftBody:
         """Return a copy with added or replaced facets."""
@@ -843,6 +922,8 @@ def _vector3(value: ArrayLike, name: str) -> np.ndarray:
     vector = np.asarray(value, dtype=float)
     if vector.shape != (3,):
         raise ValueError(f"{name} must be a 3-vector.")
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must be finite.")
     return vector
 
 
@@ -855,7 +936,7 @@ def _unit(value: ArrayLike, name: str) -> np.ndarray:
 
 
 def _positive(value: float, name: str) -> float:
-    value = float(value)
+    value = _finite(value, name)
     if value <= 0.0:
         raise ValueError(f"{name} must be positive.")
     return value
@@ -945,6 +1026,8 @@ def _inertia(value: ArrayLike) -> np.ndarray:
     matrix = np.asarray(value, dtype=float)
     if matrix.shape != (3, 3):
         raise ValueError("inertia must be a 3x3 matrix.")
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("inertia must be finite.")
     if not np.allclose(matrix, matrix.T):
         raise ValueError("inertia must be symmetric.")
     if np.min(np.linalg.eigvalsh(matrix)) <= 0.0:

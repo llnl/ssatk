@@ -197,8 +197,9 @@ def _cad(path, scale, linear_deflection, angular_deflection):
     vertices = []
     faces = []
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
+    cast_face = getattr(TopoDS, "Face_s", None) or TopoDS.Face
     while explorer.More():
-        face = TopoDS.Face_s(explorer.Current())
+        face = cast_face(explorer.Current())
         location = TopLoc_Location()
         triangulation = BRep_Tool.Triangulation_s(face, location)
         if triangulation is None:

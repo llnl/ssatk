@@ -377,7 +377,7 @@ class Spacecraft:
         else:
             trajectory = _propagate_spacecraft_once(spacecraft, times, inertia, kwargs)
         if not stop_at_dry_mass and _supports_body_mass_update(spacecraft.body):
-            trajectory = _clamp_dry_mass(trajectory, spacecraft.body.dry_mass_total)
+            trajectory = _clamp_dry_mass(trajectory, _propellant_mass_floor(spacecraft.body, tank_name))
         return trajectory
 
 
@@ -445,11 +445,11 @@ def propellant_empty_event(
 
 def _propellant_mass_floor(body, tank_name=None):
     if tank_name is None:
-        return float(body.dry_mass_total)
+        return float(body.dry_mass_total + body.residual_mass)
     matches = [tank for tank in body.tanks if tank.name == tank_name]
     if len(matches) != 1:
         raise ValueError(f"expected exactly one tank named {tank_name!r}.")
-    return float(body.current_mass - matches[0].propellant_mass)
+    return float(body.current_mass - matches[0].usable_propellant_mass)
 
 
 def _append_solve_ivp_event(events, event):
@@ -1660,15 +1660,15 @@ def _body_at_mass(body, mass, tank_name=None):
         # own check); treat that the same way propellant_empty_event's mass
         # floor does -- clamp to fully depleted -- instead of parsing its
         # exception text, which is fragile to message wording.
-        if float(mass) < body.dry_mass_total - 1e-9:
-            return body.with_propellant_mass(0.0)
+        if float(mass) < _propellant_mass_floor(body) - 1e-9:
+            return body.with_propellant_mass(body.residual_mass)
         return body.with_current_mass(float(mass))
     matches = [tank for tank in body.tanks if tank.name == tank_name]
     if len(matches) != 1:
         raise ValueError(f"expected exactly one tank named {tank_name!r}.")
     tank = matches[0]
     consumed = body.current_mass - float(mass)
-    return body.with_tank_propellant_mass(tank_name, max(0.0, tank.propellant_mass - consumed))
+    return body.with_tank_propellant_mass(tank_name, max(tank.residual_mass, tank.propellant_mass - consumed))
 
 
 def _supports_body_mass_update(body) -> bool:
@@ -1703,21 +1703,24 @@ def _body_inertia_model(spacecraft, *, tank_name=None):
         if mass_rate == 0.0:
             return rate
         original_tanks = tuple(spacecraft.body.tanks)
-        total = sum(tank.propellant_mass for tank in original_tanks)
+        total = sum(tank.usable_propellant_mass for tank in original_tanks)
         for original, tank in zip(original_tanks, state_body.tanks):
             fraction = (
                 float(tank.name == tank_name) if tank_name is not None else
-                original.propellant_mass / total if total else 0.0
+                original.usable_propellant_mass / total if total else 0.0
             )
-            if tank.propellant_mass <= 0.0 and mass_rate < 0.0:
+            if tank.usable_propellant_mass <= 0.0 and mass_rate < 0.0:
                 continue
-            offset = tank.position_body - state_body.current_center_of_mass
-            rate += mass_rate * fraction * (
-                np.dot(offset, offset) * np.eye(3) - np.outer(offset, offset)
-            )
+            rate += mass_rate * fraction * tank.inertia_mass_derivative(state_body.current_center_of_mass)
         return rate
 
     def flux(t, r, v, q, omega, *, mass=None, mass_rate=0.0):
+        if mass_rate != 0.0 and any(
+            tank.cylinder_radius is not None
+            and (tank.name == tank_name if tank_name is not None else tank.usable_propellant_mass > 0.0)
+            for tank in spacecraft.body.tanks
+        ):
+            raise ValueError("Draining-cylinder angular momentum flux requires the Step-5 dynamics model.")
         return inertia_rate(
             t, r, v, q, omega, mass=mass, mass_rate=mass_rate
         ) @ omega

@@ -115,4 +115,37 @@ launch_vehicles = {
     }
 }
 
-__all__ = ["launch_vehicles"]
+def assemble_stage_stack(payload, stages=(), *, structures=()):
+    """Assemble existing SpacecraftBody stages around a payload body.
+
+    All inputs use the same body axes and origin, metres and kg; each dry
+    body's inertia is about its own center_of_mass. Tank names must be unique
+    and nonempty so inventory remains unambiguous. Omit detached stages or
+    structures and rebuild to obtain the retained body's mass properties.
+    This is configuration accounting, not a separation event/state reset.
+    Catalog masses alone do not supply geometry or calibrated inertia.
+    """
+    from ssatk.satellites import Component, SpacecraftBody
+
+    stages = tuple(stages)
+    bodies = (payload,) + stages
+    if any(not isinstance(body, SpacecraftBody) for body in bodies):
+        raise TypeError("payload and stages must be SpacecraftBody objects.")
+    structures = tuple(structures)
+    if any(not isinstance(component, Component) for component in structures):
+        raise TypeError("structures must be Component objects.")
+    names = [tank.name for body in bodies for tank in body.tanks]
+    if any(not name for name in names) or len(names) != len(set(names)):
+        raise ValueError("stage-stack tank names must be unique and nonempty.")
+    return payload.with_updates(
+        components=payload.components + structures + tuple(
+            Component(name=stage.name, mass=stage.mass,
+                      position_body=stage.center_of_mass, inertia=stage.inertia)
+            for stage in stages
+        ) + tuple(component for stage in stages for component in stage.components),
+        **{field: tuple(item for body in bodies for item in getattr(body, field))
+           for field in ("tanks", "facets", "thrusters", "magnetic_dipoles", "reaction_wheels")},
+    )
+
+
+__all__ = ["launch_vehicles", "assemble_stage_stack"]
