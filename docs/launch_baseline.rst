@@ -288,8 +288,13 @@ combines them in one explicit body frame and origin; each dry body's inertia
 is about its declared center of mass. Coordinates are metres, masses kg and
 inertias kg m squared. Tank names must be unique and nonempty across the stack.
 Masses, coordinates and inertia inputs must be finite.
+The assembled body's ``reference_area`` is inherited from the payload unchanged;
+no composite projected area is inferred, so this helper is for mass-property
+accounting rather than a complete aerodynamic vehicle model.
 The representative vehicle catalog supplies no calibrated tank geometry or
 inertia; supply those from engineering sources for an actual mission.
+Multiple-shooting mass bounds and decoded node configurations use the same
+dry-plus-residual floor; materially infeasible nodes are rejected.
 
 ``Tank.residual_mass`` is unusable inventory, retained in mass and inertia.
 Named-tank updates consume only that tank; aggregate updates distribute depletion

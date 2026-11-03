@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from ssatk.launch.vehicles import assemble_stage_stack
-from ssatk.satellites import Component, SpacecraftBody, Tank
+from ssatk.satellites import Component, SpacecraftBody, Tank, point_mass_inertia
 
 GALLERY_INCLUDE = False
 
@@ -36,14 +36,35 @@ def main(argv=None):
                         "inertia_body_kg_m2": stack.current_inertia.tolist(),
                         "minimum_inertia_eigenvalue_kg_m2": float(np.linalg.eigvalsh(stack.current_inertia).min())})
     retained = assemble_stage_stack(payload, [upper])
-    residual = stack.current_mass-retained.current_mass-current_stage.current_mass-fairing.mass
-    assert abs(residual) < 1e-12, "detachment mass imbalance in kg"
+    detached = assemble_stage_stack(current_stage, structures=[fairing])
+    mass_residual = stack.current_mass - retained.current_mass - detached.current_mass
+    first_moment_residual = (
+        stack.current_mass * stack.current_center_of_mass
+        - retained.current_mass * retained.current_center_of_mass
+        - detached.current_mass * detached.current_center_of_mass
+    )
+
+    def inertia_about_origin(body):
+        center = body.current_center_of_mass
+        return body.current_inertia + point_mass_inertia(body.current_mass, center)
+
+    inertia_residual = (
+        inertia_about_origin(stack)
+        - inertia_about_origin(retained)
+        - inertia_about_origin(detached)
+    )
+    assert abs(mass_residual) < 1e-12, "detachment mass imbalance in kg"
+    assert np.allclose(first_moment_residual, 0.0, atol=1e-12, rtol=0.0), "detachment first-moment imbalance in kg m"
+    assert np.allclose(inertia_residual, 0.0, atol=1e-12, rtol=0.0), "detachment inertia imbalance in kg m^2"
     assert all(sample["minimum_inertia_eigenvalue_kg_m2"] > 0 for sample in samples)
     report = {"scope": "STEP 4 MASS ACCOUNTING ONLY", "qualification_status": "NOT RUN",
               "source": "Synthetic specified geometry, not engineering or flight data",
               "model": "Constant-density axial cylinder, flat free surface, no slosh",
-              "samples": samples, "detachment_mass_residual_kg": residual,
-              "retained_mass_kg": retained.current_mass}
+              "samples": samples, "detachment_mass_residual_kg": mass_residual,
+              "detachment_first_moment_residual_kg_m": first_moment_residual.tolist(),
+              "detachment_inertia_residual_kg_m2": inertia_residual.tolist(),
+              "retained_mass_kg": retained.current_mass,
+              "detached_mass_kg": detached.current_mass}
     encoded = json.dumps(report, indent=2, allow_nan=False) + "\n"
     if args.output is not None:
         with args.output.open("x", encoding="utf-8") as stream:

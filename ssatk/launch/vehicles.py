@@ -124,6 +124,8 @@ def assemble_stage_stack(payload, stages=(), *, structures=()):
     structures and rebuild to obtain the retained body's mass properties.
     This is configuration accounting, not a separation event/state reset.
     Catalog masses alone do not supply geometry or calibrated inertia.
+    The payload's ``reference_area`` is retained unchanged; no combined
+    aerodynamic reference area is inferred for the assembled stack.
     """
     from ssatk.satellites import Component, SpacecraftBody
 

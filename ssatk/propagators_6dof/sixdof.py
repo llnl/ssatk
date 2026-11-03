@@ -433,7 +433,7 @@ def propellant_empty_event(
     direction: float = -1.0,
     tank_name: str | None = None,
 ):
-    """Return an event that stops mass at body or selected-tank dry mass."""
+    """Stop at the usable-propellant floor, preserving declared residuals."""
 
     body = getattr(body_or_spacecraft, "body", body_or_spacecraft)
     if getattr(body, "dry_mass_total", None) is None:
@@ -445,7 +445,7 @@ def propellant_empty_event(
 
 def _propellant_mass_floor(body, tank_name=None):
     if tank_name is None:
-        return float(body.dry_mass_total + body.residual_mass)
+        return float(body.dry_mass_total + _body_residual_mass(body))
     matches = [tank for tank in body.tanks if tank.name == tank_name]
     if len(matches) != 1:
         raise ValueError(f"expected exactly one tank named {tank_name!r}.")
@@ -1661,7 +1661,7 @@ def _body_at_mass(body, mass, tank_name=None):
         # floor does -- clamp to fully depleted -- instead of parsing its
         # exception text, which is fragile to message wording.
         if float(mass) < _propellant_mass_floor(body) - 1e-9:
-            return body.with_propellant_mass(body.residual_mass)
+            return body.with_propellant_mass(_body_residual_mass(body))
         return body.with_current_mass(float(mass))
     matches = [tank for tank in body.tanks if tank.name == tank_name]
     if len(matches) != 1:
@@ -1669,6 +1669,11 @@ def _body_at_mass(body, mass, tank_name=None):
     tank = matches[0]
     consumed = body.current_mass - float(mass)
     return body.with_tank_propellant_mass(tank_name, max(tank.residual_mass, tank.propellant_mass - consumed))
+
+
+def _body_residual_mass(body):
+    """Return residual inventory, defaulting to zero for legacy body protocols."""
+    return float(getattr(body, "residual_mass", 0.0))
 
 
 def _supports_body_mass_update(body) -> bool:
