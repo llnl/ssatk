@@ -223,7 +223,7 @@ def _cad(path, scale, linear_deflection, angular_deflection):
 
 @dataclass
 class SpacecraftMesh:
-    """Body-frame vertices in metres and zero-based polygonal faces."""
+    """Body-frame vertices in metres and zero-based convex polygonal faces."""
 
     vertices: np.ndarray
     faces: object
@@ -252,6 +252,38 @@ class SpacecraftMesh:
             raise ValueError("RGB colors must lie in [0, 1]")
         triangles, triangle_colors, boundaries, triangle_faces = [], [], [], []
         for face_index, (face, color) in enumerate(zip(self.faces, self.colors)):
+            if len(face) > 3:
+                points = self.vertices[face] - self.vertices[face[0]]
+                normal = np.cross(points, np.roll(points, -1, axis=0)).sum(axis=0)
+                normal_norm = np.linalg.norm(normal)
+                if normal_norm == 0.0:
+                    raise ValueError("mesh contains a degenerate polygon face")
+                extent = np.max(np.linalg.norm(points, axis=1))
+                tolerance = 64.0 * np.finfo(float).eps * len(face) * extent
+                if np.max(np.abs(points @ (normal / normal_norm))) > tolerance:
+                    raise ValueError("Nonplanar mesh faces are unsupported; supply triangulated faces.")
+
+                projected = np.delete(points, np.argmax(np.abs(normal)), axis=1)
+                following = np.roll(projected, -1, axis=0)
+                twice_area = np.sum(
+                    projected[:, 0] * following[:, 1]
+                    - projected[:, 1] * following[:, 0]
+                )
+                if twice_area == 0.0:
+                    raise ValueError("mesh contains a degenerate polygon face")
+                orientation = np.sign(twice_area)
+                scale = np.max(np.ptp(projected, axis=0))
+                side_tolerance = (
+                    64.0 * np.finfo(float).eps * len(face) * scale**2
+                )
+                for point, next_point in zip(projected, following):
+                    edge = next_point - point
+                    offsets = projected - point
+                    sides = edge[0] * offsets[:, 1] - edge[1] * offsets[:, 0]
+                    if np.any(orientation * sides < -side_tolerance):
+                        raise ValueError(
+                            "Concave mesh faces are unsupported; supply triangulated faces."
+                        )
             for index in range(1, len(face) - 1):
                 triangle = [face[0], face[index], face[index + 1]]
                 first, second, third = self.vertices[triangle]

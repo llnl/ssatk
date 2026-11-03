@@ -1,5 +1,8 @@
 import inspect
+import os
 import pickle
+import stat
+import tempfile
 from datetime import datetime
 from pathlib import Path
 import types
@@ -134,14 +137,14 @@ def _write_value(h5group, key, value, *, compression="gzip", compression_opts=4)
     return
 
 
-def _read_node(node):
+def _read_node(node, *, allow_pickle=False):
     """
     Read from an h5py Group or Dataset and reconstruct the Python object.
     """
     if isinstance(node, h5py.Group):
         out = {}
         for name, child in node.items():
-            out[_dec_key(name)] = _read_node(child)
+            out[_dec_key(name)] = _read_node(child, allow_pickle=allow_pickle)
         return out
 
     # Dataset
@@ -171,6 +174,8 @@ def _read_node(node):
         return np.array(node[()])
 
     if kind == "pickle":
+        if not allow_pickle:
+            raise ValueError("Loading pickled cache objects requires allow_pickle=True for trusted files.")
         arr = np.array(node[()], dtype=np.uint8).ravel()
         payload = arr.tobytes()
         return pickle.loads(payload)
@@ -267,27 +272,33 @@ def h5cache(
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{filename}_{ts}"
 
-    out = datapath(f"{filename}.h5")
+    out = Path(datapath(f"{filename}.h5"))
 
-    # write
-    with h5py.File(out, "w") as f:
-        f.attrs["__ssatk_cache__"] = "1"
-        f.attrs["__key_encoding__"] = "percent(%25) and slash(%2F)"
-        root = f.require_group("vars")
-        root.attrs["__kind__"] = "dict"
-        for k, v in filtered.items():
-            _write_value(
-                root,
-                k,
-                v,
-                compression=compression,
-                compression_opts=compression_opts,
-            )
+    # Build beside the destination so readers never observe a partial cache.
+    old_mode = stat.S_IMODE(out.stat().st_mode) if out.exists() else None
+    with tempfile.TemporaryDirectory(dir=out.parent, prefix=f".{out.name}.") as staging:
+        temporary = Path(staging) / out.name
+        with h5py.File(temporary, "w") as f:
+            f.attrs["__ssatk_cache__"] = "1"
+            f.attrs["__key_encoding__"] = "percent(%25) and slash(%2F)"
+            root = f.require_group("vars")
+            root.attrs["__kind__"] = "dict"
+            for k, v in filtered.items():
+                _write_value(
+                    root,
+                    k,
+                    v,
+                    compression=compression,
+                    compression_opts=compression_opts,
+                )
+        if old_mode is not None:
+            temporary.chmod(old_mode)
+        os.replace(temporary, out)
 
     return out
 
 
-def h5load(name_or_path, *, summary=True, max_items=200):
+def h5load(name_or_path, *, summary=True, max_items=200, allow_pickle=False):
     """
     Load an h5cache() HDF5 cache and return the reconstructed dictionary.
 
@@ -295,6 +306,8 @@ def h5load(name_or_path, *, summary=True, max_items=200):
     - Otherwise treat it as a name under datapath(...).
 
     If summary=True, prints a path summary of the HDF5 contents.
+    Embedded pickles require allow_pickle=True; only enable for trusted files
+    because unpickling can execute arbitrary code.
     """
     if h5py is None:
         raise ImportError(f"h5py is required for h5load(): {_H5PY_IMPORT_ERROR}")
@@ -342,5 +355,5 @@ def h5load(name_or_path, *, summary=True, max_items=200):
             _print_summary(f)
 
         if "vars" in f:
-            return _read_node(f["vars"])
-        return _read_node(f)
+            return _read_node(f["vars"], allow_pickle=allow_pickle)
+        return _read_node(f, allow_pickle=allow_pickle)

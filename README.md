@@ -169,7 +169,7 @@ sensor coverage and spacecraft mesh views. Build the full gallery as an HTML rep
 ssatk-demo-gallery --open
 ```
 
-The report is written to `~/ssatk_output/documents/index.html`. Use
+The report is written to `~/ssatk_output/gallery/index.html`. Use
 `--output PATH` to choose another directory, or `--demos-dir PATH` to run the
 demos from a source checkout. The selected directory contains the report and
 all generated assets; the adjacent ZIP can be moved or shared on its own.

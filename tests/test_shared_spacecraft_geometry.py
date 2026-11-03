@@ -9,6 +9,31 @@ from ssatk.plots.spacecraft_view import SpacecraftMesh as PlotMesh
 from ssatk.satellites import SpacecraftBody
 
 
+def test_concave_face_requires_explicit_triangulation_with_correct_area():
+    """R1: U polygon is a 3x3 square minus a 1x2 notch: area 7 m²."""
+    vertices = [[0,0,0],[3,0,0],[3,3,0],[2,3,0],[2,1,0],[1,1,0],[1,3,0],[0,3,0]]
+    with pytest.raises(ValueError, match="Concave"):
+        SpacecraftMesh(vertices, [list(range(8))])
+    # Three disjoint rectangles explicitly represent that same U.
+    points = [[0,0,0],[3,0,0],[3,1,0],[0,1,0],
+              [0,1,0],[1,1,0],[1,3,0],[0,3,0],
+              [2,1,0],[3,1,0],[3,3,0],[2,3,0]]
+    mesh = SpacecraftMesh(points, [[0,1,2,3],[4,5,6,7],[8,9,10,11]])
+    triangles = mesh.vertices[mesh.triangles]
+    area = np.linalg.norm(np.cross(triangles[:,1]-triangles[:,0], triangles[:,2]-triangles[:,0]), axis=1).sum()/2
+    assert area == pytest.approx(7., abs=1e-12)  # m²
+
+
+def test_nonplanar_polygon_face_requires_explicit_triangulation():
+    """R1: two inclined unit triangles total sqrt(1.01) m², within 1e-12 m²."""
+    vertices = [[0, 0, 0], [1, 0, 0], [1, 1, 0.1], [0, 1, 0]]
+    with pytest.raises(ValueError, match="Nonplanar"):
+        SpacecraftMesh(vertices, [[0, 1, 2, 3]])
+    mesh = SpacecraftMesh(vertices, [[0, 1, 2], [0, 2, 3]])
+    body = SpacecraftBody.from_mesh(vertices=mesh.vertices, faces=mesh.faces, mass=1.0)
+    assert sum(facet.area for facet in body.facets) == pytest.approx(np.sqrt(1.01), abs=1e-12)
+
+
 def test_imported_box_facets_and_inertia_match_rectangular_prism(tmp_path):
     """R1: 2x3x4 m box, area 52 m² and I=mass/12*(side²+side²), 1e-12."""
     reference = SpacecraftBody.box(mass=12.0, size=[2, 3, 4])

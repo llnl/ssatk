@@ -1617,73 +1617,95 @@ function pairSeparationKm(instA, instB, t) {
 // Ternary search for the true time of closest approach in a coarse bracket.
 // Separation-vs-time near an approach is smooth and unimodal, so ternary
 // search converges to the minimum quickly. Also returns the relative speed at
-// TCA (finite difference of the separation vector over 1 s).
+// TCA from the interpolated state or SGP4 velocity at that same time.
 function refineConjunction(instA, instB, tCoarseMs, stepMs) {
   let lo = tCoarseMs - stepMs, hi = tCoarseMs + stepMs;
   for (let k = 0; k < 60 && (hi - lo) > 1; k++) {
     const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
     if (pairSeparationKm(instA, instB, m1) <= pairSeparationKm(instA, instB, m2)) hi = m2; else lo = m1;
   }
-  const tca = (lo + hi) / 2;
-  const missKm = pairSeparationKm(instA, instB, tca);
-  const a0 = eciAtMs(instA, tca - 500), b0 = eciAtMs(instB, tca - 500);
-  const a1 = eciAtMs(instA, tca + 500), b1 = eciAtMs(instB, tca + 500);
+  let tca = (lo + hi) / 2;
+  let missKm = pairSeparationKm(instA, instB, tca);
+  for (const t of [tCoarseMs - stepMs, tCoarseMs + stepMs]) {
+    const distance = pairSeparationKm(instA, instB, t);
+    if (distance < missKm) { tca = t; missKm = distance; }
+  }
+  const a = instA.entry.mode === 'state'
+    ? stateVectorStateAtMs(instA, tca) : tleStateAtMs(instA.satrec, tca);
+  const b = instB.entry.mode === 'state'
+    ? stateVectorStateAtMs(instB, tca) : tleStateAtMs(instB.satrec, tca);
   let relVelKmS = 0;
-  if (a0 && b0 && a1 && b1) {
-    relVelKmS = Math.hypot((a1.x - b1.x) - (a0.x - b0.x),
-                           (a1.y - b1.y) - (a0.y - b0.y),
-                           (a1.z - b1.z) - (a0.z - b0.z)); // over a 1.0 s span -> km/s
+  if (a && b && a.velocity && b.velocity) {
+    relVelKmS = Math.hypot(b.velocity.x - a.velocity.x,
+                          b.velocity.y - a.velocity.y,
+                          b.velocity.z - a.velocity.z);
   }
   return { tcaMs: tca, missKm, relVelKmS };
 }
 
-// Coarse pass caches each satellite's position once per timestep (N props/step,
-// not N^2), then all pairwise distances read from the cache -- so cost scales
-// with N x steps, not pairs x steps. Every pair whose coarse minimum is within
-// a widened gate is then refined to a true TCA; those under threshold are kept.
+// For state tracks each bracket is inside one cubic-Hermite interval. Its
+// Bezier control hull conservatively bounds separation. TLE propagation has no
+// declared interval bound, so every bracket is refined rather than rejected.
+function conjunctionIntervalLowerBound(A, B, start, end) {
+  if (A.entry.mode !== 'state' || B.entry.mode !== 'state') return 0;
+  const a = stateVectorStateAtMs(A, start), b = stateVectorStateAtMs(B, start);
+  const c = stateVectorStateAtMs(A, end), d = stateVectorStateAtMs(B, end);
+  if (!a || !b || !c || !d) return Infinity;
+  const dt = (end - start) / 3000;
+  let squared = 0;
+  for (const axis of ['x', 'y', 'z']) {
+    const p = b.position[axis] - a.position[axis], q = d.position[axis] - c.position[axis];
+    const controls = [p, p + dt * (b.velocity[axis] - a.velocity[axis]),
+                      q - dt * (d.velocity[axis] - c.velocity[axis]), q];
+    const nearest = Math.max(Math.min(...controls), 0) + Math.min(Math.max(...controls), 0);
+    squared += nearest * nearest;
+  }
+  return Math.sqrt(squared);
+}
+
 function screenConjunctions() {
   const entries = [...activeSatellites.entries()].filter(
     ([, i]) => i.entry.mode === 'tle' || i.entry.mode === 'state');
   const n = entries.length;
   conjunctionEvents = [];
   if (n < 2) return { status: 'need_more' };
-
-  const nowMs = getCurrentSimMs();
-  const windowMs = conjunctionWindowHours * 3600000;
-  const numSteps = Math.max(1, Math.round(windowMs / CONJ_COARSE_STEP_MS));
-  const gate = conjunctionThresholdKm * 4; // only refine pairs that got remotely close
-  const bestDist = new Float64Array(n * n).fill(Infinity);
-  const bestT = new Float64Array(n * n);
-  const pos = new Array(n);
-
-  for (let s = 0; s <= numSteps; s++) {
-    const t = nowMs + s * CONJ_COARSE_STEP_MS;
-    for (let i = 0; i < n; i++) { const e = eciAtMs(entries[i][1], t); pos[i] = e ? [e.x, e.y, e.z] : null; }
-    for (let i = 0; i < n; i++) {
-      if (!pos[i]) continue;
-      for (let j = i + 1; j < n; j++) {
-        if (!pos[j]) continue;
-        const dx = pos[i][0] - pos[j][0], dy = pos[i][1] - pos[j][1], dz = pos[i][2] - pos[j][2];
-        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        const idx = i * n + j;
-        if (d < bestDist[idx]) { bestDist[idx] = d; bestT[idx] = t; }
-      }
-    }
-  }
-
+  const nowMs = getCurrentSimMs(), endMs = nowMs + conjunctionWindowHours * 3600000;
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const idx = i * n + j;
-      if (bestDist[idx] > gate) continue;
       const A = entries[i][1], B = entries[j][1];
-      const r = refineConjunction(A, B, bestT[idx], CONJ_COARSE_STEP_MS);
-      if (r.missKm <= conjunctionThresholdKm) {
-        conjunctionEvents.push({
-          keyA: entries[i][0], keyB: entries[j][0],
-          nameA: A.entry.name, nameB: B.entry.name,
-          tcaMs: r.tcaMs, missKm: r.missKm, relVelKmS: r.relVelKmS,
-        });
+      let start = nowMs, end = endMs;
+      for (const instance of [A, B]) {
+        if (instance.entry.mode === 'state') {
+          start = Math.max(start, instance.stateTrack.t[0]);
+          end = Math.min(end, instance.stateTrack.t[instance.stateTrack.t.length - 1]);
+        }
       }
+      if (end <= start) continue;
+      const knots = [start, end];
+      for (let t = start + CONJ_COARSE_STEP_MS; t < end; t += CONJ_COARSE_STEP_MS) knots.push(t);
+      for (const instance of [A, B]) {
+        if (instance.entry.mode === 'state') {
+          for (const t of instance.stateTrack.t) if (t > start && t < end) knots.push(t);
+        }
+      }
+      const grid = [...new Set(knots)].sort((a, b) => a - b);
+      let best = null;
+      const search = (lo, hi) => {
+        const bound = conjunctionIntervalLowerBound(A, B, lo, hi);
+        if (bound > conjunctionThresholdKm || (best && bound >= best.missKm)) return;
+        const r = refineConjunction(A, B, (lo + hi) / 2, (hi - lo) / 2);
+        if (r.missKm <= conjunctionThresholdKm && (!best || r.missKm < best.missKm)) best = r;
+        if (best && bound >= best.missKm) return;
+        // Subdivide bounded polynomial intervals to avoid assuming a single minimum.
+        if (A.entry.mode === 'state' && B.entry.mode === 'state' && hi - lo > 1) {
+          const mid = (lo + hi) / 2;
+          search(lo, mid); search(mid, hi); return;
+        }
+
+      };
+      for (let k = 1; k < grid.length; k++) search(grid[k - 1], grid[k]);
+      if (best) conjunctionEvents.push({keyA: entries[i][0], keyB: entries[j][0],
+        nameA: A.entry.name, nameB: B.entry.name, ...best});
     }
   }
   conjunctionEvents.sort((a, b) => a.missKm - b.missKm);

@@ -97,6 +97,13 @@ class EarthOrientationTable:
     def end_gps(self) -> float:
         return self.records[-1].gps_seconds
 
+    @property
+    def coverage(self) -> dict:
+        """Coverage and provenance in GPS seconds; the EOP end is inclusive."""
+        observed = [record.gps_seconds for record in self.records if not record.predicted]
+        return {"source": self.source, "start_gps": self.start_gps, "end_gps": self.end_gps,
+                "observed_end_gps": max(observed) if observed else None}
+
     def at(self, time, *, allow_predicted: bool = False) -> EarthOrientationRecord:
         """Interpolate EOP at a GPS-second, ``astropy`` time, or UTC string.
 
@@ -188,7 +195,8 @@ def read_eop(path: str | Path) -> EarthOrientationTable:
     """Read an IERS ``finals2000A.all`` file from a filesystem path."""
 
     with Path(path).open("r", encoding="ascii") as handle:
-        return _parse_eop_lines(handle)
+        table = _parse_eop_lines(handle)
+    return EarthOrientationTable(table.records, source=str(Path(path)))
 
 
 @lru_cache(maxsize=1)
@@ -267,4 +275,6 @@ def _optional_lerp(left, right, fraction):
 
 
 def _combined_flag(left: str, right: str) -> str:
-    return "P" if "P" in {left, right} else left
+    if "P" in {left, right}:
+        return "P"
+    return "I" if left == right == "I" else ""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Mapping
 from dataclasses import asdict
 import json
 import math
@@ -140,6 +141,121 @@ def _metric_columns(metrics, row_count):
     return columns
 
 
+def read_event_summary(path):
+    """Reload window results for ``iter_event_metrics`` with fingerprint checks.
+
+    The source and observer are still required for replay. Loading a summary
+    does not authenticate its provenance; replay verifies the saved fingerprints.
+    """
+    from ssatk.ssa.event_windows import EventWindow
+    from ssatk.ssa.workflows import PairAnalysisConfig, PairAnalysisResult
+
+    payload = json.loads(_target_path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError("Event summary must contain a JSON object.")
+    if payload.get("schema") != "ssatk.ssa.event_summary.v1":
+        raise ValueError("Unsupported SSA event summary schema.")
+    if not isinstance(payload.get("object_ids"), list) or not isinstance(payload.get("windows"), list):
+        raise ValueError("Event summary object IDs and windows must be lists.")
+    ids = tuple(_json_ids(payload["object_ids"]))
+    if len(set(ids)) != len(ids):
+        raise ValueError("Event object IDs must be unique.")
+    indices = {value: index for index, value in enumerate(ids)}
+    windows = []
+    for item in payload["windows"]:
+        required_fields = {
+            "object_ids", "start", "end", "trigger_start", "trigger_end", "trigger_count"
+        }
+        if not isinstance(item, Mapping) or set(item) != required_fields:
+            raise ValueError("Event window has missing or unexpected fields.")
+        fields = dict(item)
+        pair = fields.pop("object_ids")
+        if not isinstance(pair, list) or len(pair) != 2 or any(value not in indices for value in pair):
+            raise ValueError("Event window references unknown object IDs.")
+        time_fields = ("start", "end", "trigger_start", "trigger_end")
+        if any(
+            isinstance(fields[name], bool) or not isinstance(fields[name], Real)
+            for name in time_fields
+        ) or type(fields["trigger_count"]) is not int:
+            raise ValueError("Event window times and trigger count have invalid types.")
+        try:
+            windows.append(EventWindow(pair=tuple(indices[value] for value in pair), **fields))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Event window contains invalid indices, times, or trigger count.") from exc
+    metadata = payload["metadata"]
+    if not isinstance(metadata, Mapping):
+        raise ValueError("Event summary metadata must be an object.")
+    start, end = metadata["start_time_gps_s"], metadata["end_time_gps_s"]
+    count = metadata["sample_count"]
+    if (
+        isinstance(start, bool) or isinstance(end, bool)
+        or not isinstance(start, Real) or not isinstance(end, Real)
+        or not np.all(np.isfinite([start, end])) or start > end
+    ):
+        raise ValueError("Summary times must be finite and ordered.")
+    if type(count) is not int or count < 0 or type(payload["completeness"]) is not bool:
+        raise ValueError("Summary sample count and completeness are invalid.")
+    if not isinstance(payload.get("diagnostics"), Mapping):
+        raise ValueError("Event summary diagnostics must be an object.")
+    if not isinstance(payload.get("config"), Mapping):
+        raise ValueError("Event summary configuration must be an object.")
+    if not isinstance(payload.get("provenance"), Mapping):
+        raise ValueError("Event summary provenance must be an object.")
+    provenance = payload["provenance"]
+    declared_count = provenance.get("declared_sample_count")
+    if (
+        type(declared_count) is not int or declared_count < count
+        or (payload["completeness"] and declared_count != count)
+        or (count == 0 and windows)
+    ):
+        raise ValueError("Summary completeness disagrees with its declared sample count.")
+    config = PairAnalysisConfig(**payload["config"])
+    for window in windows:
+        if not start <= window.start <= window.trigger_start <= window.trigger_end <= window.end <= end:
+            raise ValueError("Window times lie outside the summary or padding.")
+        if window.trigger_count > count:
+            raise ValueError("Window trigger count exceeds the processed sample count.")
+        expected_start = max(start, window.trigger_start - config.pre_padding_s)
+        expected_end = min(end, window.trigger_end + config.post_padding_s)
+        if not np.isclose(window.start, expected_start, rtol=0.0, atol=1e-9):
+            raise ValueError("Window start disagrees with the configured padding.")
+        if not np.isclose(window.end, expected_end, rtol=0.0, atol=1e-9):
+            raise ValueError("Window end disagrees with the configured padding.")
+    per_pair = {}
+    pair_trigger_counts = {}
+    for window in windows:
+        previous_end = per_pair.get(window.pair)
+        if previous_end is not None and window.start <= previous_end:
+            raise ValueError("Windows for the same pair overlap or are unordered.")
+        per_pair[window.pair] = window.end
+        pair_trigger_counts[window.pair] = (
+            pair_trigger_counts.get(window.pair, 0) + window.trigger_count
+        )
+    if any(pair_count > count for pair_count in pair_trigger_counts.values()):
+        raise ValueError("A pair's trigger count exceeds the processed sample count.")
+    counts = payload.get("counts")
+    expected_counts = {
+        "objects": len(ids),
+        "windows": len(windows),
+        "trigger_samples": sum(window.trigger_count for window in windows),
+    }
+    if (
+        not isinstance(counts, Mapping)
+        or set(counts) != set(expected_counts)
+        or any(type(counts[key]) is not int for key in expected_counts)
+        or dict(counts) != expected_counts
+    ):
+        raise ValueError("Summary counts disagree with its windows.")
+    for key in ("sample_fingerprint_sha256", "declared_times_sha256"):
+        value = provenance.get(key, "")
+        if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise ValueError(f"Summary lacks a valid {key} for replay.")
+    if provenance.get("config") != asdict(config):
+        raise ValueError("Summary configuration differs from its provenance.")
+    return PairAnalysisResult(ids, tuple(windows), config, start, end, count,
+                              payload["completeness"], payload["diagnostics"], provenance)
+
+
 def _csv_value(value):
     value = value.item() if isinstance(value, np.generic) else value
     if isinstance(value, Real) and not math.isfinite(value):
@@ -207,4 +323,4 @@ def write_event_metrics(batches, path):
     return target
 
 
-__all__ = ["write_event_summary", "write_event_metrics"]
+__all__ = ["write_event_summary", "read_event_summary", "write_event_metrics"]

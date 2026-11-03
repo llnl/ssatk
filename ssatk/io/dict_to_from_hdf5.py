@@ -8,8 +8,10 @@ Public API:
 
 import os
 import pickle
+import shutil
 import tempfile
 import datetime as _dt
+from pathlib import Path
 from typing import Any, Mapping, Optional, Set, Union
 
 import h5py
@@ -33,6 +35,54 @@ def save_dict_to_hdf5(
     pickle_objects: bool = True,
     compression: Union[str, None] = "gzip",
     compression_opts: Union[int, None] = 4,
+) -> None:
+    """Save a dictionary, staging append/update operations before replacement."""
+    if mode in {"a", "r+"}:
+        filename = os.fspath(filename)
+        parent = Path(filename).absolute().parent
+        parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=parent, suffix=".h5.tmp")
+        os.close(fd)
+        try:
+            if os.path.exists(filename):
+                shutil.copy2(filename, tmp_path)
+            elif mode == "a":
+                os.remove(tmp_path)
+            _save_dict_to_hdf5_direct(
+                tmp_path,
+                data,
+                mode=mode,
+                pickle_objects=pickle_objects,
+                compression=compression,
+                compression_opts=compression_opts,
+            )
+            os.replace(tmp_path, filename)
+        except BaseException:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return
+
+    _save_dict_to_hdf5_direct(
+        filename,
+        data,
+        mode=mode,
+        pickle_objects=pickle_objects,
+        compression=compression,
+        compression_opts=compression_opts,
+    )
+
+
+def _save_dict_to_hdf5_direct(
+    filename: str,
+    data: Mapping[str, Any],
+    mode: str,
+    *,
+    pickle_objects: bool,
+    compression: Union[str, None],
+    compression_opts: Union[int, None],
 ) -> None:
     """
     Save a (possibly nested) Python dictionary to an HDF5 file.
@@ -279,7 +329,7 @@ def save_dict_to_hdf5(
 # ---------- LOAD ----------
 
 
-def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
+def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None, *, allow_pickle: bool = False) -> dict:
     """
     Load a dictionary previously stored with save_dict_to_hdf5(filename, data, ...).
 
@@ -291,6 +341,9 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
         If provided, only the specified top-level keys are loaded from disk.
         All other keys are ignored, avoiding unnecessary decompression of
         large datasets. If None (default), all keys are loaded.
+    allow_pickle : bool, optional
+        Allow embedded Python pickles, including Time metadata. Only enable
+        for trusted files: unpickling can execute arbitrary code.
 
     Behavior:
         - Groups marked with __is_sequence__=True are reconstructed as lists,
@@ -319,9 +372,11 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
                 if "meta" in obj:
                     meta_ds = obj["meta"]
                     if meta_ds.attrs.get("pickled", False):
+                        if not allow_pickle:
+                            raise ValueError("Loading pickled Time metadata requires allow_pickle=True for trusted files.")
                         meta_bytes = bytes(meta_ds[...].tolist())
                         meta = pickle.loads(meta_bytes)
-                        t.meta.update(meta)
+                        t.meta = dict(meta)
                 return t
 
             # Explicit sequence or mapping marker
@@ -364,6 +419,8 @@ def load_dict_from_hdf5(filename: str, keys: Optional[Set[str]] = None) -> dict:
 
         # pickled object?
         if ds.attrs.get("__type__") == "pickle" or ds.attrs.get("pickled", False):
+            if not allow_pickle:
+                raise ValueError("Loading pickled HDF5 objects requires allow_pickle=True for trusted files.")
             arr = np.array(ds[...], dtype="uint8")
             return pickle.loads(arr.tobytes())
 

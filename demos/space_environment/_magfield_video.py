@@ -41,19 +41,20 @@ def save_field_videos(html_path, *, fast=False):
             document.body.style.margin = '0';
             window.fieldPlot = document.querySelector('.js-plotly-plot');
             window.fieldEye = {...fieldPlot.layout.scene.camera.eye};
+            window.fieldTitle = fieldPlot.layout.title.text.split('<br>')[0];
             window.beltIndices = fieldPlot.data.flatMap((trace, i) =>
-                /^(Inner|Outer) belt/.test(trace.name || '') ? [i] : []);
+                /^(?:(?:Inner|Outer) belt|(?:AE9|AP9|AE-8|AP-8) (?:electrons|protons))(?: |$)/.test(trace.name || '') ? [i] : []);
             Plotly.relayout(fieldPlot, {width: 1280, height: 960,
                 'scene.dragmode': false}).then(() => done());
         """)
         belt_count = driver.execute_script("return beltIndices.length")
-        if belt_count != 2:
-            raise RuntimeError(f"Expected two illustrative belt surfaces, found {belt_count}")
+        if belt_count == 0:
+            raise RuntimeError("Expected radiation belt surfaces, found none")
         for name, belts in (("lines", False), ("belts", True)):
             path = html_path.with_name(f"demo_magfield_{name}.mp4")
             driver.execute_async_script("""
                 const belts = arguments[0], done = arguments[1];
-                const subject = belts ? 'Internal field + illustrative L-shell belts' : 'Internal magnetic field lines';
+                const subject = belts ? fieldTitle : 'Internal magnetic field lines';
                 Plotly.restyle(fieldPlot, {visible: belts}, beltIndices)
                     .then(() => Plotly.relayout(fieldPlot, {
                         'title.text': subject + '<br><span style="font-size:14px">IGRF 2025 · camera tour · fixed field, no time evolution</span>'

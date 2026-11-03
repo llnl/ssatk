@@ -27,7 +27,7 @@ try:
 except ImportError:  # Python 3.10
     from importlib.abc import Traversable
 from os import PathLike
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterator
 
 DEFAULT_DATA_PACKAGES = (
@@ -261,8 +261,9 @@ def _safe_parts(path: str | PathLike[str]) -> tuple[str, ...]:
     if path_string in {"", "."}:
         return ()
 
-    pure_path = PurePosixPath(path_string)
-    if pure_path.is_absolute():
+    windows_path = PureWindowsPath(path_string)
+    pure_path = PurePosixPath(path_string.replace("\\", "/"))
+    if pure_path.is_absolute() or windows_path.drive or windows_path.root:
         raise ValueError(f"Packaged data paths must be relative, got '{path_string}'.")
 
     parts = tuple(part for part in pure_path.parts if part not in {"", "."})
