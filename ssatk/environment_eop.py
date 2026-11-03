@@ -275,4 +275,6 @@ def _optional_lerp(left, right, fraction):
 
 
 def _combined_flag(left: str, right: str) -> str:
-    return "P" if "P" in {left, right} else left
+    if "P" in {left, right}:
+        return "P"
+    return "I" if left == right == "I" else ""

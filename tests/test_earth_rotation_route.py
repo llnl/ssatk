@@ -112,12 +112,8 @@ def test_stationary_wgs84_surface_point_speed_matches_omega_times_rho(lat_deg):
     """R1: a WGS84 surface point's GCRF speed is omega_E * rho, rho the
     distance from the spin axis (not the full radius, off the equator).
 
-    The ~1e-4 m/s tolerance is the measured accuracy of the central-difference
-    dR/dt in ssatk.coordinates._earth_rotation.gcrs_to_itrs_matrix_and_rate
-    (see its module-level comment on ``_RATE_STEP_S``), not the originally
-    targeted 1e-6 m/s: that finite difference is limited by float64
-    precision in erfa.era00's own Julian-date arguments, measured to bottom
-    out at a few 1e-5 to 1e-4 m/s at Earth's surface regardless of step size.
+    The 5e-4 m/s budget accommodates instantaneous Earth orientation versus
+    the nominal mean spin constant, and numerical rotation differencing.
     """
     lon_deg = 10.0
     r_gcrf, v_gcrf = llh_to_gcrf(lon_deg, lat_deg, _EPOCHS[0], height=0.0, allow_predicted=False)
