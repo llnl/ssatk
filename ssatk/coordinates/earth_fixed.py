@@ -59,8 +59,8 @@ def gcrf_to_itrf(r_gcrf, t, v=None, *, step_s=None, allow_predicted=True):
     step_s : float, optional
         Half-width in seconds of the central difference used to differentiate
         the GCRS->ITRS rotation when ``v`` is an array. ``None`` (default)
-        uses the step :mod:`ssatk.coordinates._earth_rotation` measured as
-        most accurate; shorter steps lose float64 precision.
+        uses the shared route's five-second default; shorter steps lose
+        float64 precision.
     allow_predicted : bool, optional
         Forwarded to the packaged EOP table; default ``True`` (see the
         module docstring).
@@ -134,7 +134,7 @@ def gcrf_to_itrf_astropy(state_vectors, t, *, allow_predicted: bool = True):
     return np.einsum("nij,nj->ni", rotation, state_vectors)
 
 
-def gcrf_to_itrf_eop(state_vectors, t, *, eop=None, allow_predicted=False):
+def gcrf_to_itrf_eop(state_vectors, t, *, v=None, eop=None, allow_predicted=False):
     """Convert GCRF positions to ITRF using an explicit EOP data source.
 
     The rotation is IAU 2006/2000A (:mod:`ssatk.coordinates._earth_rotation`):
@@ -143,29 +143,51 @@ def gcrf_to_itrf_eop(state_vectors, t, *, eop=None, allow_predicted=False):
     ``EarthOrientationTable`` or any object with the same
     ``at(time, allow_predicted=...)`` interface; it defaults to SSATK's
     packaged snapshot.
+
+    With matching ``v`` in m/s, return ``(position, velocity)`` including
+    the rotation derivative: ``v_itrf = R @ v_gcrf + dR/dt @ r_gcrf``.
     """
     state_vectors = _state_matrix(state_vectors, "state_vectors")
     gps = _time_array(t, len(state_vectors))
-    rotation = gcrs_to_itrs_matrix(gps, eop=eop, allow_predicted=allow_predicted)
-    return np.einsum("nij,nj->ni", rotation, state_vectors)
+    if v is None:
+        rotation = gcrs_to_itrs_matrix(gps, eop=eop, allow_predicted=allow_predicted)
+        return np.einsum("nij,nj->ni", rotation, state_vectors)
+    velocity = _state_matrix(v, "v")
+    if velocity.shape != state_vectors.shape:
+        raise ValueError("v must have the same shape as state_vectors.")
+    rotation, rate = gcrs_to_itrs_matrix_and_rate(gps, eop=eop, allow_predicted=allow_predicted)
+    position = np.einsum("nij,nj->ni", rotation, state_vectors)
+    velocity = np.einsum("nij,nj->ni", rotation, velocity) + np.einsum("nij,nj->ni", rate, state_vectors)
+    return position, velocity
 
 
-def itrf_to_gcrf_eop(state_vectors, t, *, eop=None, allow_predicted=False):
+def itrf_to_gcrf_eop(state_vectors, t, *, v=None, eop=None, allow_predicted=False):
     """Convert ITRF positions to GCRF using an explicit EOP data source.
 
     See :func:`gcrf_to_itrf_eop` for the model and the ``eop``/
-    ``allow_predicted`` arguments.
+    ``allow_predicted`` arguments. With matching ``v`` in m/s, return
+    ``(position, velocity)`` using the inverse moving-point transform.
     """
     state_vectors = _state_matrix(state_vectors, "state_vectors")
     gps = _time_array(t, len(state_vectors))
-    rotation = gcrs_to_itrs_matrix(gps, eop=eop, allow_predicted=allow_predicted)
-    return np.einsum("nji,nj->ni", rotation, state_vectors)
+    if v is None:
+        rotation = gcrs_to_itrs_matrix(gps, eop=eop, allow_predicted=allow_predicted)
+        return np.einsum("nji,nj->ni", rotation, state_vectors)
+    velocity = _state_matrix(v, "v")
+    if velocity.shape != state_vectors.shape:
+        raise ValueError("v must have the same shape as state_vectors.")
+    rotation, rate = gcrs_to_itrs_matrix_and_rate(gps, eop=eop, allow_predicted=allow_predicted)
+    position = np.einsum("nji,nj->ni", rotation, state_vectors)
+    velocity = np.einsum("nji,nj->ni", rotation, velocity - np.einsum("nij,nj->ni", rate, position))
+    return position, velocity
 
 
 def _state_matrix(values, name):
     values = np.asarray(values, dtype=float)
     if values.ndim != 2 or values.shape[1] != 3:
         raise ValueError(f"{name} must have shape (N, 3).")
+    if not np.isfinite(values).all():
+        raise ValueError(f"{name} must be finite.")
     return values
 
 
@@ -183,4 +205,6 @@ def _time_array(values, count):
         gps = np.repeat(gps, count)
     if gps.ndim != 1 or gps.size != count:
         raise ValueError("t must be scalar or contain one time per state vector.")
+    if not np.isfinite(gps).all():
+        raise ValueError("t must be finite.")
     return gps
