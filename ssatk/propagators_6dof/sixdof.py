@@ -291,6 +291,9 @@ class Spacecraft:
         passed through ``models=[...]`` or directly as ``acceleration=...``.
         Tanked bodies coast at dry mass by default; set ``stop_at_dry_mass=True``
         to terminate when propellant is exhausted.
+        Default tank flux assumes point propellant leaves locally while
+        co-rotating. A draining cylinder requires explicit
+        ``angular_momentum_flux``; its geometry alone does not specify exhaust.
         """
 
         spacecraft = self.with_body(body) if body is not None else self
@@ -1725,7 +1728,7 @@ def _body_inertia_model(spacecraft, *, tank_name=None):
             and (tank.name == tank_name if tank_name is not None else tank.usable_propellant_mass > 0.0)
             for tank in spacecraft.body.tanks
         ):
-            raise ValueError("Draining-cylinder angular momentum flux requires the Step-5 dynamics model.")
+            raise ValueError("Draining-cylinder dynamics require explicit angular_momentum_flux consistent with the exhaust model.")
         return inertia_rate(
             t, r, v, q, omega, mass=mass, mass_rate=mass_rate
         ) @ omega
