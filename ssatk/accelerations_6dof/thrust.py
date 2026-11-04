@@ -60,9 +60,11 @@ class ThrustCurve:
     Curves are evaluated with linear interpolation and return ``fill_value``
     outside the tabulated time span. Store real engine data in ``ssa-data-propulsion`` or a
     user path, then load it with :func:`load_thrust_curve_csv`.
+    ``bounds_error=True`` rejects extrapolation instead of using ``fill_value``.
     """
 
-    def __init__(self, times: ArrayLike, thrusts: ArrayLike, *, fill_value: float = 0.0):
+    def __init__(self, times: ArrayLike, thrusts: ArrayLike, *, fill_value: float = 0.0,
+                 bounds_error: bool = False):
         self.times = _as_1d(times, "times")
         self.thrusts = _as_1d(thrusts, "thrusts")
         if self.times.size != self.thrusts.size or self.times.size < 2:
@@ -73,8 +75,13 @@ class ThrustCurve:
             raise ValueError("thrusts must be non-negative.")
         self.fill_value = _validate_nonnegative(fill_value, "fill_value")
         self.time_breakpoints = self.times.copy()
+        self.bounds_error = bool(bounds_error)
 
     def __call__(self, t, *args) -> float:
+        if not _np.isfinite(float(t)):
+            raise ValueError("curve time must be finite.")
+        if self.bounds_error and not self.times[0] <= float(t) <= self.times[-1]:
+            raise ValueError("curve time is outside the documented interpolation span.")
         return float(_np.interp(float(t), self.times, self.thrusts, left=self.fill_value, right=self.fill_value))
 
     @property
@@ -94,6 +101,17 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
     The default ``frame="rtn", direction=[0, 1, 0]`` is transverse/prograde in
     the common RTN/RIC/LVLH operations convention. Use ``frame="ntw"`` for
     exact SSAPy-style ``[N, T, W]`` inputs.
+
+    ``throttle`` (scalar or state callable) declares linear scaling of reference
+    thrust and flow; zero is shutdown, otherwise ``throttle_range`` bounds it.
+    Only use this law when justified by the engine data. For measured commanded
+    histories, leave throttle at one so it is not applied twice.
+
+    Optional fixed-nozzle correction is ``F = F_ref + (p_ref-p_ambient)*A_exit``.
+    All pressure inputs and the validity ``pressure_range`` in Pa are required.
+    Flow and Isp refer to the reference-pressure thrust, not corrected thrust.
+    Do not correct an already ambient-adjusted history. No chamber dynamics,
+    nozzle separation, mixture-ratio law or thrust moment is inferred.
     """
 
     def __init__(
@@ -104,6 +122,13 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
         frame: str = "rtn",
         mass: float | None = None,
         isp: float | None = None,
+        propellant_flow_rate=None,
+        throttle=1.0,
+        throttle_range=(0.0, 1.0),
+        reference_pressure: float | None = None,
+        ambient_pressure=None,
+        nozzle_exit_area: float | None = None,
+        pressure_range=None,
         tank_name: str | None = None,
         start: float = -_np.inf,
         stop: float = _np.inf,
@@ -113,11 +138,33 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
         self.direction = _default_maneuver_direction(frame) if direction is None else _unit_vector(direction, "direction")
         self.mass = None if mass is None else _validate_positive(mass, "mass")
         self.isp = None if isp is None else _validate_positive(isp, "isp")
+        if self.isp is not None and not _np.isfinite(self.isp):
+            raise ValueError("isp must be finite.")
+        if isp is not None and propellant_flow_rate is not None:
+            raise ValueError("Supply either isp or independently documented propellant_flow_rate, not both.")
+        self.propellant_flow_rate = propellant_flow_rate
+        self.throttle = throttle
+        self.throttle_range = _operating_range(throttle_range, "throttle_range")
+        pressure_inputs = (reference_pressure, ambient_pressure, nozzle_exit_area, pressure_range)
+        if any(value is not None for value in pressure_inputs) and not all(value is not None for value in pressure_inputs):
+            raise ValueError("Pressure correction requires reference_pressure, ambient_pressure, nozzle_exit_area and pressure_range.")
+        self.reference_pressure = reference_pressure
+        self.ambient_pressure = ambient_pressure
+        self.nozzle_exit_area = nozzle_exit_area
+        self.pressure_range = None
+        if reference_pressure is not None:
+            self.reference_pressure = _validate_nonnegative(reference_pressure, "reference_pressure")
+            self.nozzle_exit_area = _validate_positive(nozzle_exit_area, "nozzle_exit_area")
+            if not _np.isfinite(self.nozzle_exit_area):
+                raise ValueError("nozzle_exit_area must be finite.")
+            self.pressure_range = _operating_range(pressure_range, "pressure_range")
+            if not self.pressure_range[0] <= self.reference_pressure <= self.pressure_range[1]:
+                raise ValueError("reference_pressure is outside pressure_range.")
         self.tank_name = None if tank_name is None else str(tank_name)
         self.start = float(start)
         self.stop = float(stop)
         self.time_breakpoints = _np.array([self.start, self.stop])
-        if self.stop < self.start:
+        if _np.isnan(self.start) or _np.isnan(self.stop) or self.stop < self.start:
             raise ValueError("stop must be greater than or equal to start.")
 
     def acceleration(self, *, t, r, v, q, omega, spacecraft=None) -> _np.ndarray:
@@ -129,6 +176,20 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
     def thrust_vector(self, t, r, v, q, omega, spacecraft=None) -> _np.ndarray:
         """Return thrust vector in the selected maneuver frame in newtons."""
 
+        value = self._reference_thrust_vector(t, r, v, q, omega, spacecraft)
+        magnitude = float(_np.linalg.norm(value))
+        if magnitude == 0.0 or self.reference_pressure is None:
+            return value
+        pressure = float(_call_optional(self.ambient_pressure, t, r, v, q, omega, spacecraft))
+        if not _np.isfinite(pressure) or not self.pressure_range[0] <= pressure <= self.pressure_range[1]:
+            raise ValueError("ambient_pressure is outside the documented pressure_range in Pa.")
+        corrected = magnitude + (self.reference_pressure - pressure) * self.nozzle_exit_area
+        if corrected < 0.0:
+            raise ValueError("Pressure correction produces negative thrust; the nozzle model is invalid here.")
+        return value * (corrected / magnitude)
+
+    def _reference_thrust_vector(self, t, r, v, q, omega, spacecraft=None):
+
         if not (self.start <= float(t) <= self.stop):
             return _np.zeros(3)
         if self.tank_name is not None and spacecraft is not None:
@@ -138,23 +199,38 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
                 raise ValueError(f"expected exactly one tank named {self.tank_name!r}.")
             if selected[0].usable_propellant_mass <= 0.0:
                 return _np.zeros(3)
+        throttle = self._throttle_value(t, r, v, q, omega, spacecraft)
+        if throttle == 0.0:
+            return _np.zeros(3)
         value = _call_optional(self.thrust, t, r, v, q, omega, spacecraft) if callable(self.thrust) else self.thrust
         value = _np.asarray(value, dtype=float)
         if value.shape == ():
             thrust = _validate_nonnegative(float(value), "thrust")
-            return self.direction * thrust
+            return self.direction * thrust * throttle
         if value.shape == (3,):
             if _np.any(~_np.isfinite(value)):
                 raise ValueError("thrust vector must be finite.")
-            return value
+            return value * throttle
         raise ValueError("thrust must be a scalar profile or 3-vector.")
 
-    def mass_flow_rate(self, *args, **kwargs) -> float:
-        """Return positive propellant mass flow in kg/s if ``isp`` is set."""
+    def _throttle_value(self, t, r, v, q, omega, spacecraft):
+        throttle = float(_call_optional(self.throttle, t, r, v, q, omega, spacecraft))
+        if not _np.isfinite(throttle) or (throttle != 0.0 and not self.throttle_range[0] <= throttle <= self.throttle_range[1]):
+            raise ValueError("throttle is outside the documented throttle_range (zero is shutdown).")
+        return throttle
 
-        if self.isp is None:
+    def mass_flow_rate(self, *args, **kwargs) -> float:
+        """Return positive kg/s from documented flow, or infer it from Isp.
+
+        ``propellant_flow_rate`` is a scalar or state callable, independent of
+        thrust (including startup flow). It shares the burn window and tank.
+        """
+
+        if self.isp is None and self.propellant_flow_rate is None:
             return 0.0
         spacecraft, t, r, v, q, omega = _parse_state_args(args, kwargs)
+        if not (self.start <= t <= self.stop):
+            return 0.0
         if self.tank_name is not None and spacecraft is not None:
             tanks = tuple(getattr(getattr(spacecraft, "body", None), "tanks", ()))
             selected = [tank for tank in tanks if tank.name == self.tank_name]
@@ -162,7 +238,15 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
                 raise ValueError(f"expected exactly one tank named {self.tank_name!r}.")
             if selected[0].usable_propellant_mass <= 0.0:
                 return 0.0
-        return float(_np.linalg.norm(self.thrust_vector(t, r, v, q, omega, spacecraft)) / (self.isp * STANDARD_GRAVITY))
+        if self.propellant_flow_rate is not None:
+            throttle = self._throttle_value(t, r, v, q, omega, spacecraft)
+            if throttle == 0.0:
+                return 0.0
+            flow = float(_call_optional(self.propellant_flow_rate, t, r, v, q, omega, spacecraft))
+            if not _np.isfinite(flow) or flow < 0.0:
+                raise ValueError("propellant_flow_rate must be finite and non-negative in kg/s.")
+            return flow * throttle
+        return float(_np.linalg.norm(self._reference_thrust_vector(t, r, v, q, omega, spacecraft)) / (self.isp * STANDARD_GRAVITY))
 
 
 def thrust_profile_constant(thrust: float, *, start: float = -_np.inf, stop: float = _np.inf):
@@ -301,6 +385,7 @@ def load_thrust_curve_csv(
     time_scale: float = 1.0,
     thrust_scale: float = 1.0,
     fill_value: float = 0.0,
+    bounds_error: bool = False,
 ) -> ThrustCurve:
     """Load a scalar thrust curve from a CSV file with time and thrust columns."""
 
@@ -312,7 +397,7 @@ def load_thrust_curve_csv(
         raise ValueError(f"CSV must contain {time_column!r} and {thrust_column!r} columns.")
     times = [float(row[time_column]) * time_scale for row in rows]
     thrusts = [float(row[thrust_column]) * thrust_scale for row in rows]
-    return ThrustCurve(times, thrusts, fill_value=fill_value)
+    return ThrustCurve(times, thrusts, fill_value=fill_value, bounds_error=bounds_error)
 
 
 def load_thrust_curve_data(relative_path, **kwargs) -> ThrustCurve:
@@ -359,6 +444,7 @@ def load_packaged_thrust_curve(
     normalized_column: str = "filtered_fraction_steady_state",
     clamp_normalized: bool = True,
     fill_value: float = 0.0,
+    bounds_error: bool = False,
 ) -> ThrustCurve:
     """Load a named thrust curve packaged in ``ssa-data-propulsion``.
 
@@ -376,7 +462,7 @@ def load_packaged_thrust_curve(
     rows = _read_packaged_csv(resource_path)
     columns = set(rows[0])
     if "thrust_n" in columns:
-        return load_thrust_curve_data(resource_path, fill_value=fill_value)
+        return load_thrust_curve_data(resource_path, fill_value=fill_value, bounds_error=bounds_error)
     if normalized_column not in columns:
         raise ValueError(
             f"Packaged curve {identifier!r} lacks {normalized_column!r}; "
@@ -392,7 +478,7 @@ def load_packaged_thrust_curve(
     thrusts = [float(row[normalized_column]) * scale for row in rows]
     if clamp_normalized:
         thrusts = [max(0.0, thrust) for thrust in thrusts]
-    return ThrustCurve(times, thrusts, fill_value=fill_value)
+    return ThrustCurve(times, thrusts, fill_value=fill_value, bounds_error=bounds_error)
 
 
 def load_digitized_thrust_curve(identifier: str, **kwargs) -> ThrustCurve:
@@ -430,9 +516,16 @@ def _as_1d(value: ArrayLike, name: str) -> _np.ndarray:
 
 def _validate_nonnegative(value: float, name: str) -> float:
     value = float(value)
-    if value < 0.0:
-        raise ValueError(f"{name} must be non-negative.")
+    if not _np.isfinite(value) or value < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative.")
     return value
+
+
+def _operating_range(value, name):
+    limits = _as_1d(value, name)
+    if limits.shape != (2,) or limits[0] < 0.0 or limits[1] < limits[0]:
+        raise ValueError(f"{name} must contain ordered non-negative lower and upper limits.")
+    return tuple(limits)
 
 
 def _read_packaged_csv(relative_path: str) -> list[dict[str, str]]:

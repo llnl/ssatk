@@ -492,3 +492,77 @@ exhaust velocity and retained momentum. It never overwrites an existing record.
 ``NOT RUN``. Transverse fluid dynamics, finite-area nozzle transport, swirl,
 slosh, propulsion operating maps, atmosphere, staging and mission qualification
 require their own models and evidence.
+
+Step 6: propulsion operating conditions
+---------------------------------------
+
+``SpacecraftManeuverAccel`` accepts an independent ``propellant_flow_rate`` in
+kg/s (scalar or state callable), as an alternative to constant ``isp``. Both
+share the maneuver's ``start``/``stop`` window and ``tank_name`` ownership.
+Independent flow may continue when thrust is zero, for example during startup;
+zero throttle shuts off both. A burn cannot specify both flow and Isp.
+
+Reuse ``load_thrust_curve_csv`` for paired documented histories::
+
+   from ssatk.accelerations_6dof.thrust import load_thrust_curve_csv
+
+   thrust = load_thrust_curve_csv("motor.csv", bounds_error=True)
+   flow = load_thrust_curve_csv(
+       "motor.csv", thrust_column="mass_flow_kg_s", bounds_error=True)
+
+The default columns are ``time_s`` and ``thrust_n``; choose the flow column
+explicitly. The resulting scalar callable supplies kg/s when loaded from a
+flow column; its ``total_impulse`` property then integrates kg, not N s.
+Interpolation is piecewise linear. ``bounds_error=True`` is also supported by
+``ThrustCurve`` and the packaged/digitized curve loaders, and rejects times
+outside the table. Without it, the existing ``fill_value`` behavior remains.
+Retain the input hash, source, units, test conditions and uncertainty with the
+mission evidence. The CSV alone does not establish provenance or reconcile an
+inconsistent thrust/flow pair. Use ``verify_data_resources`` and packaged
+sidecar metadata for installed data, as in ``demo_packaged_motor_burn``.
+
+``throttle`` is a scalar or state callable. It explicitly selects a linear
+scaling law for reference thrust and flow, bounded by ``throttle_range``;
+zero always means shutdown. This law requires justification by engine data.
+For histories already measured under the commanded throttle, leave throttle
+at one to avoid applying the command twice. No operating map or transient
+response is inferred from an engine catalog name.
+
+An optional fixed-nozzle correction requires ``reference_pressure`` and
+``ambient_pressure`` in Pa, ``nozzle_exit_area`` in square metres, and an
+explicit ``pressure_range`` in Pa. The reference pressure must lie in that
+range; ambient pressure outside it, or a negative corrected thrust, raises an
+error. For an operating engine,
+
+.. math::
+
+   F = F_{\mathrm{ref}} + (p_{\mathrm{ref}}-p_{\mathrm{ambient}}) A_e.
+
+The reference thrust already includes nozzle momentum and the pressure term
+at the reference pressure. Apply this correction once only; omit it for an
+already ambient-adjusted curve. Flow is unchanged by this pressure correction.
+When Isp is used, it refers to the reference-pressure thrust, so pressure
+changes do not inadvertently alter tank depletion. Fixed nozzle geometry and
+flow are assumptions, not a chamber-pressure or nozzle-separation model.
+The maneuver applies force through the instantaneous center of mass; use the
+existing body-mounted thruster model for a calibrated thrust moment.
+
+Ignition, cutoff and restart epochs must be integration segment boundaries.
+``propagate_spacecraft_segments`` already carries mass and state across those
+boundaries. The maneuver's time window alone does not force an adaptive solver
+to resolve a short burn. These prescribed boundaries do not implement the
+event/reset maps or ignition/shutdown transport consequences of Step 8.
+
+Run the documented synthetic nozzle reference::
+
+   python3 -m demos.launch.demo_launch_propulsion --output path/to/new-evidence.json
+   python3 -m pytest -q tests/test_launch_propulsion.py tests/test_thrust_profiles.py tests/test_launch_mass_accounting.py
+
+The demo retains histories, pressure/throttle limits, tank inventory, solver
+settings, software versions, impulse and rocket-equation residuals. It never
+overwrites an evidence record. Tests independently check constant-flow motion,
+the nozzle pressure formula, unchanged flow under pressure changes, triangular
+CSV interpolation/integrals, and coast/burn/restart mass balance. These verify
+the declared mathematical models; measured-engine calibration, mixture ratios,
+pressure-dependent flow maps, ignition delays and mission qualification remain
+outside this reference. ``qualification_status`` stays ``NOT RUN``.
