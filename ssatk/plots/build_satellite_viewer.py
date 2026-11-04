@@ -572,6 +572,7 @@ html = """<!DOCTYPE html>
     position: absolute; top: 14px; right: 18px; color: #e8edf4; font: 13px/1.5 -apple-system, sans-serif;
     background: rgba(10,14,22,0.72); padding: 12px 14px; border-radius: 10px; width: 280px;
     border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; display: flex; flex-direction: column;
+    overflow-y: auto;
   }
 
   #time-section {
@@ -705,10 +706,11 @@ html = """<!DOCTYPE html>
   .lg-swatch { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
   .legend-note { font-size: 10px; opacity: 0.55; margin-top: 8px; line-height: 1.4; }
 
-  #sat-info { font-size: 12px; line-height: 1.5; overflow-y: auto; flex: 1 1 auto; border-top: 1px solid #333c4a; padding-top: 8px; }
+  #sat-info { font-size: 12px; line-height: 1.5; overflow-y: auto; max-height: 260px; flex: 0 0 auto; border-top: 1px solid #333c4a; padding-top: 8px; margin-bottom: 10px; }
   #sat-info b { color: #ffe066; }
-  .sat-info-block { padding: 2px 0; }
-  .sat-info-line { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sat-info-block { padding: 2px 0; display: flow-root; }
+  .sat-info-line { padding: 1px 0; display: flow-root; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sat-remove-btn { float: right; margin: 0 0 0 8px; padding: 2px 7px; font: inherit; }
   .sat-info-sep { border: none; border-top: 1px solid #333c4a; opacity: 0.6; margin: 8px 0; }
 </style>
 </head>
@@ -750,6 +752,7 @@ html = """<!DOCTYPE html>
     <input type="text" id="db-search-input" placeholder="Load a database first..." disabled>
     <div id="db-search-results"></div>
   </div>
+  <div id="sat-info"></div>
   <div id="analysis-section">
     <label class="analysis-toggle">
       <input type="checkbox" id="ground-track-toggle">
@@ -809,7 +812,6 @@ html = """<!DOCTYPE html>
       <div class="legend-note">Motion is real propagation at the selected time (use the speed control to see it). Positions are TLE-accuracy; conjunctions are geometric miss distance, not collision probability.</div>
     </details>
   </div>
-  <div id="sat-info"></div>
 </div>
 <!-- Viewer libraries are inlined for full offline operation -- no CDN or
      network dependency. See NOTICE. -->
