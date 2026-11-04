@@ -148,14 +148,16 @@ def test_reference_point_motion_and_moment_shift_follow_retained_tanks():
         np.testing.assert_allclose(result["acceleration_gcrf_m_s2"], rotation @ expected_force/(10+propellant),
                                    atol=1e-12, rtol=0)
     # R1: no relative flow is a known zero-load limit, even below a table's minimum Mach.
-    stationary = Spacecraft(r=[7e6, 0, 0], v=[2, 3, 4], mass=100, inertia=np.eye(3))
-    zero = LaunchAerodynamics(_uniform_air(), table, reference_area=2, reference_lengths=[1, 1, 1],
-                              reynolds_length=1, reference_position_body=[0, 0, 0])
-    np.testing.assert_allclose(zero(stationary), np.zeros(3), atol=0, rtol=0)
+    state = Spacecraft(r=[7e6, 0, 0], v=[12, 3, 4], mass=100, inertia=np.eye(3))
     fixed_mass = LaunchAerodynamics(_uniform_air(), table, reference_area=2, reference_lengths=[1, 1, 1],
                                     reynolds_length=1, reference_position_body=[0, 0, 0], mass=100)
-    np.testing.assert_allclose(fixed_mass(stationary.r, stationary.v, stationary.t),
-                               fixed_mass(stationary), atol=0, rtol=0)
+    spacecraft_mass = LaunchAerodynamics(_uniform_air(), table, reference_area=2, reference_lengths=[1, 1, 1],
+                                         reynolds_length=1, reference_position_body=[0, 0, 0])
+    # q=1/2*rho*V^2=50 Pa; q*area*C_F / mass=(-.4,.2,-.1) m/s^2.
+    expected_acceleration = np.array([-.4, .2, -.1])
+    np.testing.assert_allclose(fixed_mass(state.r, state.v, state.t), expected_acceleration, atol=1e-15, rtol=0)
+    np.testing.assert_allclose(fixed_mass(state), expected_acceleration, atol=1e-15, rtol=0)
+    np.testing.assert_allclose(spacecraft_mass(state), expected_acceleration, atol=1e-15, rtol=0)
 
 
 def test_coupled_drag_propagation_matches_quadratic_closed_form():
