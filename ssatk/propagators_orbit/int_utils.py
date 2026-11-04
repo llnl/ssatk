@@ -20,7 +20,7 @@ def model_time_breakpoints(models, start, end):
         values = getattr(model, "time_breakpoints", ())
         values = values(start, end) if callable(values) else values
         points.extend(np.asarray(values, dtype=float).reshape(-1))
-        for name in ("_source_model", "thrust", "throttle"):
+        for name in ("_source_model", "thrust", "throttle", "propellant_flow_rate", "ambient_pressure"):
             pending.append(getattr(model, name, None))
         for name in ("_models", "accels", "torques"):
             pending.extend(getattr(model, name, ()))
