@@ -278,3 +278,64 @@ Missing or unobserved EOP is ``BLOCKED``, a resource mismatch is ``FAIL``, and
 invalid input is ``ERROR``. ``PASS`` is initialization-scoped;
 ``qualification_status`` remains ``NOT RUN``. Mission inputs, clean-install
 qualification, ascent and Step-4 stage/tank accounting are not waived.
+
+Step 4: stage and tank mass accounting
+----------------------------------------------
+
+Use existing ``SpacecraftBody``, ``Component`` and ``Tank`` objects for payload,
+stages and detachable structures. :func:`~ssatk.launch.vehicles.assemble_stage_stack`
+combines them in one explicit body frame and origin; each dry body's inertia
+is about its declared center of mass. Coordinates are metres, masses kg and
+inertias kg m squared. Tank names must be unique and nonempty across the stack.
+Masses, coordinates and inertia inputs must be finite.
+The assembled body's ``reference_area`` is inherited from the payload unchanged;
+no composite projected area is inferred, so this helper is for mass-property
+accounting rather than a complete aerodynamic vehicle model.
+The representative vehicle catalog supplies no calibrated tank geometry or
+inertia; supply those from engineering sources for an actual mission.
+Multiple-shooting mass bounds and decoded node configurations use the same
+dry-plus-residual floor; materially infeasible nodes are rejected.
+
+``Tank.residual_mass`` is unusable inventory, retained in mass and inertia.
+Named-tank updates consume only that tank; aggregate updates distribute depletion
+in proportion to each tank's usable inventory. Both preserve declared residuals.
+The existing thrust adapters and depletion events stop at the usable-inventory
+floor, including when another stage still holds fuel. Updates construct new
+objects, so rejected trial-state evaluations leave source inventories intact.
+
+Without geometry, the existing tank model has fixed shell inertia and point
+propellant at ``position_body``. For a constant-density cylindrical liquid,
+supply ``cylinder_radius`` (m), ``propellant_density`` (kg/m cubed), and
+``propellant_base_body`` (m), with ``propellant_axis_body`` pointing along the
+fill direction. The liquid occupies a cylinder from the base to its current
+height, with a flat free surface perpendicular to the axis. Its center moves
+as it drains; its full inertia follows the cylinder volume, not an arbitrary
+linear interpolation. Shell mass and inertia stay at ``position_body``.
+This model excludes slosh, changing density and noncylindrical tanks.
+
+Total mass, first moment and inertia use the existing body properties and the
+parallel-axis theorem. ``Tank.inertia_mass_derivative(origin)`` gives the
+analytic derivative at a fixed reference point; the shared body inertia-rate
+adapter combines it with each tank's consumption rate. Moving-system angular
+momentum flux is Step 5: the existing point-propellant flux model rejects
+draining-cylinder variable-mass dynamics rather than silently claiming to
+represent that physics. Cylinders in unselected tanks, or tanks holding only
+unusable residuals during aggregate depletion, do not block point-tank burns.
+
+To account for detachment, retain the current stage inventories, omit the
+detached stage/structure from the configuration and rebuild. Compare retained
+and detached mass, first moments and inertias about a common origin. Position,
+velocity, impulses and event resets belong to Step 8; changing a configuration
+does not perform those operations.
+
+Run the independent volume-quadrature, finite-difference, continuity,
+positive-inertia, detachment-conservation and residual-burn references::
+
+   python3 -m pytest -q tests/test_launch_mass_accounting.py tests/test_propagators_6dof.py tests/test_integration_inertia_regressions.py tests/test_6dof_elapsed_time_integration.py
+
+Retain a synthetic two-stage depletion and detachment record::
+
+   python3 -m demos.launch.demo_launch_mass_accounting --output ../SSAPy-Data/.cache/launch_validation/step4-mass-accounting.json
+
+The demo never overwrites evidence. Its geometry and inventories are explicitly
+synthetic; they establish no engineering-data or mission qualification.

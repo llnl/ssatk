@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -15,7 +15,14 @@ from .high_accuracy import (
     _propagate_spacecraft_segment,
     propagate_spacecraft_segments,
 )
-from .sixdof import SixDOFState, SixDOFTrajectory, Spacecraft, _body_at_state, _epochs_close
+from .sixdof import (
+    SixDOFState,
+    SixDOFTrajectory,
+    Spacecraft,
+    _body_at_state,
+    _epochs_close,
+    _supports_body_mass_update,
+)
 
 __all__ = [
     "SixDOFMultiSegmentTargetResult",
@@ -392,14 +399,17 @@ def solve_6dof_multiple_shooting_target(
         value = np.asarray(value, dtype=float)
         scaled_controls = value[: 3 * len(specs)].reshape(len(specs), 3)
         controls = scaled_controls * control_scales
-        nodes = [seed_nodes[0]]
+        nodes = [_normalize_node_mass(seed_nodes[0], spacecraft.body)]
         offset = 3 * len(specs)
         for seed in seed_nodes[1:]:
             nodes.append(
-                _decode_node(
-                    seed, value[offset:offset + node_size], has_mass, wheel_size,
-                    position_scale, velocity_scale, attitude_scale, angular_rate_scale,
-                    mass_scale, wheel_momentum_scale,
+                _normalize_node_mass(
+                    _decode_node(
+                        seed, value[offset:offset + node_size], has_mass, wheel_size,
+                        position_scale, velocity_scale, attitude_scale, angular_rate_scale,
+                        mass_scale, wheel_momentum_scale,
+                    ),
+                    spacecraft.body,
                 )
             )
             offset += node_size
@@ -520,12 +530,18 @@ def _node_bounds(node, has_mass, wheel_size, mass_scale, wheel_momentum_scale, b
     upper = np.full(size, np.inf)
     index = 12
     if has_mass:
-        floor = float(getattr(body, "dry_mass_total", 0.0))
+        try:
+            node_mass = float(node.mass)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("target node mass must be finite and positive.") from exc
+        if not np.isfinite(node_mass) or node_mass <= 0.0:
+            raise ValueError("target node mass must be finite and positive.")
+        floor = _body_mass_floor(body)
         minimum = floor if floor > 0.0 else np.nextafter(0.0, np.inf)
-        lower[index] = (minimum - float(node.mass)) / mass_scale
+        lower[index] = (minimum - node_mass) / mass_scale
         maximum = getattr(body, "current_mass", None)
         if maximum is not None:
-            upper[index] = (float(maximum) - float(node.mass)) / mass_scale
+            upper[index] = (float(maximum) - node_mass) / mass_scale
         index += 1
     if wheel_size:
         capacity = _wheel_capacity(body, wheel_size)
@@ -577,7 +593,19 @@ def _quaternion_from_rotation_vector(vector):
 
 
 def _spacecraft_from_state(template, state):
+    state = _normalize_node_mass(state, template.body)
     body = _body_at_state(template.body, state.mass, state.wheel_momentum)
+    if state.mass is not None and _supports_body_mass_update(template.body):
+        try:
+            body_mass = float(body.current_mass)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("decoded body mass must be finite and positive.") from exc
+        if not np.isfinite(body_mass) or body_mass <= 0.0:
+            raise ValueError("decoded body mass must be finite and positive.")
+        if abs(body_mass - state.mass) > _mass_roundoff_tolerance(body_mass, state.mass):
+            raise ValueError(
+                f"target node mass {state.mass} kg disagrees with body mass {body_mass} kg."
+            )
     inertia = getattr(
         body,
         "current_inertia",
@@ -591,6 +619,48 @@ def _spacecraft_from_state(template, state):
         area=template.area, cd=template.cd, cr=template.cr,
         center_of_pressure=template.center_of_pressure, body=body, orbit=template.orbit,
     )
+
+
+def _body_mass_floor(body):
+    """Return dry mass plus residual inventory, preserving legacy zero residual."""
+    try:
+        dry_mass = float(getattr(body, "dry_mass_total", 0.0))
+        residual_mass = float(getattr(body, "residual_mass", 0.0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("body dry and residual masses must be finite and non-negative.") from exc
+    if (not np.isfinite(dry_mass) or dry_mass < 0.0
+            or not np.isfinite(residual_mass) or residual_mass < 0.0):
+        raise ValueError("body dry and residual masses must be finite and non-negative.")
+    floor = dry_mass + residual_mass
+    if not np.isfinite(floor):
+        raise ValueError("body dry-plus-residual mass floor must be finite.")
+    return floor
+
+
+def _mass_roundoff_tolerance(first, second):
+    scale = max(1.0, abs(float(first)), abs(float(second)))
+    return 8.0 * np.spacing(scale)
+
+
+def _normalize_node_mass(state, body):
+    if state.mass is None:
+        return state
+    try:
+        mass = float(state.mass)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("target node mass must be finite and positive.") from exc
+    if not np.isfinite(mass) or mass <= 0.0:
+        raise ValueError("target node mass must be finite and positive.")
+    if not _supports_body_mass_update(body):
+        return state if mass == state.mass else replace(state, mass=mass)
+    floor = _body_mass_floor(body)
+    if mass >= floor:
+        return state if mass == state.mass else replace(state, mass=mass)
+    if floor - mass > _mass_roundoff_tolerance(floor, mass):
+        raise ValueError(
+            f"target node mass {mass} kg is below the dry-plus-residual floor {floor} kg."
+        )
+    return replace(state, mass=floor)
 
 
 def _trajectory_state(trajectory):
