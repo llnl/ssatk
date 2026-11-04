@@ -879,8 +879,13 @@ def propagate_6dof(
     first_step: float | None = None,
     events=None,
     dense_output: bool = False,
+    constraint=None,
 ) -> SixDOFTrajectory:
     """Propagate a coupled translational and rigid-body attitude state.
+
+    An optional ``constraint`` supplies ``project(t, y)`` for accepted/dense
+    states and ``derivative(t, y, free_rhs)`` for ideal support reactions.
+    Both callbacks use absolute GPS epochs and must be free of side effects.
 
     ``acceleration`` returns inertial/GCRF m/s². ``ntw_acceleration`` returns
     SSAPy-style ``[N, T, W]`` m/s², where ``T`` follows velocity and ``W``
@@ -952,15 +957,28 @@ def propagate_6dof(
     t_ref = float(state.t)
     times_elapsed = times - t_ref
     events = _event_tuple(events) if events is not None else None
+    project = None
     if wheel_capacity is not None and np.any(np.isfinite(wheel_capacity)):
         project = _wheel_state_projector(
             inertia_arg, wheel_axes, wheel_capacity, state.mass is not None,
             t_ref=t_ref, mass_floor=getattr(mass_flow_rate, "mass_floor", None),
         )
+    if constraint is not None:
+        wheel_project = project
+
+        def project(t, y):
+            if wheel_project is not None:
+                y = wheel_project(t, y)
+            return constraint.project(t_ref + t, y)
+
+        y0 = project(0.0, y0)
+    if project is not None:
         method = projected_solver(method, project)
 
-    sol = solve_ivp_at_breakpoints(
-        lambda t, y: sixdof_rhs(
+    def rhs(t, y):
+        if constraint is not None:
+            y = constraint.project(t_ref + t, y)
+        derivative = sixdof_rhs(
             t_ref + t,
             y,
             inertia=inertia_arg,
@@ -978,7 +996,11 @@ def propagate_6dof(
             wheel_momentum_capacity=wheel_capacity,
             inv_inertia=inv_inertia,
             mass_state=state.mass is not None,
-        ),
+        )
+        return derivative if constraint is None else constraint.derivative(t_ref + t, y, derivative)
+
+    sol = solve_ivp_at_breakpoints(
+        rhs,
         (0.0, float(times_elapsed[-1])),
         y0,
         time_origin=t_ref,

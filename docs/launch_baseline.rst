@@ -691,5 +691,129 @@ the declared mathematical models. The demo's states are prescribed, not an
 ascent integration or measured launch weather. ``qualification_status`` stays
 ``NOT RUN``. Rate damping, Reynolds-dependent coefficients, plume corrections,
 rarefaction (including mean-free-path inputs), changing gas composition, slosh,
-event resets, measured vehicle calibration and mission qualification require
+measured vehicle calibration and mission qualification require
 their own evidenced models and domains.
+
+Step 8: mission phases and event resets
+---------------------------------------
+
+``ssatk.launch.events`` runs a finite graph of :class:`~ssatk.launch.events.LaunchPhase`
+modes through the existing ``Spacecraft.propagate`` solver. Each mode supplies
+its force models, optional ideal pad/rail constraint and outgoing
+:class:`~ssatk.launch.events.LaunchEvent` roots. Conditions use absolute GPS
+seconds and the existing state layout: GCRF position and velocity, body-to-GCRF
+quaternion, body angular rate, optional total mass and optional wheel momentum.
+Targets must name declared phases; a ``None`` target terminates. Configure
+distinct phases and globally unique event names for each ignition or restart.
+This finite graph deliberately has no recurring controller updates; those need
+the separate sensor/control scheduling work.
+
+Roots carry direction, priority and an absolute tolerance in the condition's
+units. Initial zero conditions fire immediately, once. During propagation,
+direction selects crossings. All roots stop integration; reset callbacks run
+only on copied accepted states, preserving the pre-state even if a callback
+updates its arrays in place. Simultaneous old-mode roots fire in increasing priority,
+then name order, before the new mode's immediate roots. Their conditions and
+``trigger_phase`` retain the common pre-root state; each reset receives the
+previous reset's post-state. Ground contact has priority -200, rail bottom
+contact -190, tank depletion
+-100, user events greater than -100, and duration termination 10000. User
+terminal events end the run immediately. Output sampling does not select roots
+or solver step size; set ``max_step`` small enough to resolve the declared
+event functions, since a solver cannot discover multiple unresolved crossings
+inside one step.
+
+Mass-flow models require explicit tank inventories. The runner uses existing
+named-tank or proportional depletion and residual-aware event helpers.
+Depletion is recorded as ``__depletion:<phase>`` and enters the declared
+``depletion_phase`` or terminates; it never silently treats unusable fuel as
+available. Coast and restart modes replace force configurations and carry
+current inventories. The final requested epoch is a recorded duration event.
+
+Each phase declares ``momentum_transport``: a GCRF vector in kg m/s or a
+side-effect-free ``callable(state)`` returning B from Step 5. Zero selects
+the rigid/no-transport model; it must not be assumed for a draining moving
+centroid. Supply the phase's one-sided boundary value, including the incoming
+value at depletion, rather than an engine callback that has already switched
+off at the residual floor. Continuous acceleration must satisfy the same
+material balance; changing B only in the ledger does not correct a force model.
+
+At an instantaneous same-mass transition without a custom reset,
+``v_post = v_pre + (B_post-B_pre)/M`` preserves material momentum. Ignition,
+cutoff and restart therefore reset geometric centroid velocity even without
+a physical external impulse. A custom reset supplies its own consistent
+velocity map and physical impulses. A terminal event keeps the current
+transport convention; stopping integration alone does not model shutdown.
+Fluid relative angular momentum is assumed zero, as in the Step 5 reference.
+
+:class:`~ssatk.launch.events.LaunchGuide` models ideal hold-down (zero length)
+or a frictionless straight rail (positive length), with body +Z along the rail.
+Its caller-supplied frame includes origin position, velocity and acceleration,
+rotation, angular rate and angular acceleration. It may rotate, and includes
+centripetal and Coriolis terms. The existing accepted-state projector enforces
+rail position, velocity and attitude; the constrained derivative computes
+support reactions from the free force/torque equations. ``reactions`` reports
+GCRF force in N and body torque in N m. Returning to the rail bottom is a
+terminal ``__rail_bottom`` root that records the incoming state, without an
+unmodeled velocity reset; contact restitution would need an explicit model.
+At rest on the base, ideal support prevents downward acceleration. The
+``exit_condition`` is the geometric distance-minus-length root in metres.
+Declare an explicit release root for hold-down. Initial states must agree with
+their constraints. Contact compliance, friction and calibrated release loads
+are outside this ideal model.
+
+``propagate_launch`` requires explicit signed terrain clearance, positive above
+ground. :func:`~ssatk.launch.events.launch_ground_clearance` reuses the strict
+packaged-EOP rotation and WGS84 conversion; supply ellipsoidal terrain height
+in metres or a latitude/longitude terrain callable. No datum is inferred.
+Airborne descending contact stops at zero clearance. Constrained terrain contact uses
+half the declared clearance tolerance as a guard band to avoid repeated zero
+roots while resting on the pad; penetration is bounded by that tolerance.
+Initial and reset states below the tolerance or outside terrain coverage fail.
+This launch policy is independent of SSAPy's orbital burnup policy: the
+6-DoF launch path remains active through 100 km.
+
+:func:`~ssatk.launch.events.separate_launch_body` receives current child bodies
+in the common pre-separation body axes and origin. Their masses, first moments,
+full inertias and named tank inventories must partition the parent. The first
+child is retained; other child states remain in the event ledger. Child COM
+positions shift by the rotated parent-to-child COM offset. Velocities include
+the common rigid motion, ``omega cross offset``, and explicitly supplied child
+minus parent centroid rates. Internal impulses at declared body-frame points
+change child translation and spin and must sum to zero force impulse and
+moment. Supply zero centroid rates after cutoff, or physically consistent
+rates for a moving reference. During flow, also supply
+``momentum_transport_body`` and ``child_momentum_transports_body`` in the
+common body axes; the rate map must conserve M*v-B, not M*v. Retained-child B
+comes from the target phase; detached-child B is carried by
+``LaunchReset.child_momentum_transports`` in GCRF. A custom :class:`~ssatk.launch.events.LaunchReset`
+may also declare external GCRF linear and angular impulses. Nonzero stored
+wheel momentum needs an explicit child wheel reset.
+
+Every accepted reset checks mass (kg), material linear momentum M*v-B (kg m/s) and angular
+momentum (kg m squared/s) about the common pre-event COM, after accounting for
+external impulses. User-supplied tolerances carry those explicit units. Failed
+resets raise rather than continue. The ordered ledger retains condition, epoch,
+pre/post modes, full states, B, material momentum, child states, tank accounting and conservation
+residuals. Detached states are initial conditions, not propagated child flights.
+
+Run the independent references and retain a synthetic evidence record::
+
+   python3 -m pytest -q tests/test_launch_events.py
+   python3 -m demos.launch.demo_launch_events --output ../SSAPy-Data/.cache/launch_validation/step8-events.json
+
+The demo models two synthetic burns with ideal pad/rail constraints, burnout,
+conservative staging, coast, restart, cutoff and a 100 km insertion boundary.
+It compares velocity with the rocket equation and event times across two output
+grids, retaining per-mode truth and the ledger. It reuses the Step 5 axial
+acceleration correction for its offset point inventories and declares transport
+on both sides of ignition and cutoff. Additional cylindrical references check
+ignition, cutoff, restart and depletion against closed-form centroid velocities,
+dry-body/plug-flow material momentum, independent exhaust quadrature and axial
+spin conservation. Ongoing-flow separation checks centroid rates and material
+momentum with nonzero parent and child B. The boundary is not an achieved
+orbit. Gravity, atmosphere and Earth rotation are excluded from this closed-form
+demo; the separate rotating-rail and independent Astropy/WGS84 references check
+those kinematics and ground conversion. ``qualification_status`` stays
+``NOT RUN``. Mission acceptance, measured vehicle calibration, solver convergence
+qualification and ascent-to-orbit overlap verification remain separate work.
