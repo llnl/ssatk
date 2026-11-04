@@ -566,3 +566,130 @@ CSV interpolation/integrals, and coast/burn/restart mass balance. These verify
 the declared mathematical models; measured-engine calibration, mixture ratios,
 pressure-dependent flow maps, ignition delays and mission qualification remain
 outside this reference. ``qualification_status`` stays ``NOT RUN``.
+
+Step 7: launch weather and aerodynamic loads
+------------------------------------------------
+
+``LaunchWeatherProfile`` accepts bounded arrays of WGS84 ellipsoidal height
+(m), pressure (Pa), temperature (K), and ENU wind velocity (m/s). Wind components
+are velocities toward east, north and up, not meteorological directions from
+which the wind blows. Supply a source, GPS validity interval and latitude and
+longitude coverage in degrees. Each profile is horizontally homogeneous only
+inside that box; longitude bounds cannot wrap across the date line. Coverage
+and increasing finite sample grids are checked before use. Unsupported heights,
+times or locations raise an error; there is no endpoint hold or extrapolation.
+
+The declared ideal gas uses specific gas constant R (J/kg/K), heat capacity
+ratio gamma, and Sutherland parameters (mu_ref, T_ref, S), in Pa s, K and K:
+
+.. math::
+
+   \rho = \frac{p}{R T}, \qquad a = \sqrt{\gamma R T}, \qquad
+   \mu = \mu_{\rm ref}\left(\frac{T}{T_{\rm ref}}\right)^{3/2}
+         \frac{T_{\rm ref}+S}{T+S}.
+
+Pressure, temperature and wind interpolate linearly; derived quantities are
+computed afterward. The synthetic example declares dry air with R=287.05,
+gamma=1.4 and Sutherland parameters (1.716e-5, 273.15, 110.4), using the
+Sutherland relation described in the
+`NASA Wind-US Sutherland law description
+<https://www.grc.nasa.gov/www/winddocs/user/files.html>`_. Those constants are
+explicit example inputs, not a globally calibrated composition model. Measured
+density must be reconciled with the chosen p/T/composition model before creating
+the profile; it is not silently interpolated as an incompatible fourth variable.
+
+``LaunchAtmosphere(lower, upper=upper, transition=(h0, h1))`` provides an explicit
+handoff to a profile sampled from the selected upper-atmosphere model. Both
+profiles must cover the whole transition interval and use identical gas
+parameters. With w=(h-h0)/(h1-h0), the overlap blends p, T and ENU wind as
+(1-w)*lower+w*upper; density, sound speed and viscosity are then derived from
+those primitives. This ensures value continuity at both endpoints, although
+slopes need not be continuous. Unsupported composition changes require another
+derived model. Without ``upper``, the lower profile's height limit stays strict.
+The existing ``SpaceEnvironment.nrlmsise00_density`` remains available for upper
+atmosphere density; that density alone is insufficient to define this handoff's
+temperature, pressure, wind and composition.
+
+``atmosphere.sample(time, r_gcrf)`` accepts absolute GPS seconds or Astropy Time.
+It reuses the strict packaged-EOP IAU 2006/2000A rotation and its derivative,
+plus the existing WGS84 and ENU helpers. If Q maps GCRF to ITRF, the total air
+velocity in GCRF is Q.T*(wind_itrf-dot(Q)*r_gcrf). This includes Earth rotation
+once; do not add an additional omega_Earth cross r. Predicted EOP needs explicit
+``allow_predicted=True``; missing EOP or weather stays an error. Results include
+pressure, temperature, density, sound speed, viscosity, wind, source identifiers
+and transition weight. There are no weather downloads or catalog defaults.
+
+``AerodynamicCoefficientTable`` reuses SciPy's multilinear regular-grid
+interpolation with strict bounds. ``axes`` declares the evidenced dimensions
+among ``mach``, ``alpha``, ``beta`` and ``deflection``; angles are radians.
+Force and moment arrays have shape ``(*axis_sizes, 3)``, in that axis order,
+in the table's aerodynamic axes (+X forward).
+Singleton axes enforce their sole value. An omitted axis explicitly declares
+independence of that variable for this model, so only omit it when justified
+by the selected reference. Provide the dataset's source and body-axis/sign
+conventions; no engine or vehicle catalog name establishes an aerodynamic map.
+Read packaged inputs through ``ssatk.data`` and retain manifest checks, file
+hashes, epoch, spatial coverage, units, conditions and uncertainties alongside
+mission evidence, as in the existing preflight/data workflows.
+
+``LaunchAerodynamics`` implements the shared ``SpacecraftAccel`` force/torque
+interface, so pass it once in ``Spacecraft.propagate(models=[aero], ...)``.
+It expects whole-vehicle aerodynamic-axis coefficients, not separate facet
+coefficients or wind-axis drag/lift coefficients. Table +X is forward, and air-relative
+velocity components define alpha=atan2(V_z,V_x) and beta=atan2(V_y,hypot(V_x,V_z)).
+``coefficient_to_body`` is a fixed proper rotation mapping these table axes
+to vehicle body axes, identity by default. For the earlier launch examples with
+their rocket axis along body +Z, use ``[[0,0,-1],[0,1,0],[1,0,0]]``: table X
+maps to body Z, table Y to body Y, and table Z to negative body X. This preserves
+the existing geometry, thrust and pad attitude conventions. Angle queries use
+velocity in the table frame, and force and dimensioned right-hand moment are
+rotated into body before the reference-point shift.
+At exactly zero airspeed, force/moment are zero without a coefficient query;
+the otherwise undefined angles are reported as zero by convention.
+
+Let n be the fixed coefficient/flow reference point, c the current retained
+center of mass, R the body-to-GCRF quaternion rotation, and omega the body rate.
+The adapter samples weather at r_C+R*(n-c), and uses point velocity
+v_C+R*(omega cross (n-c)-dot(c)). ``center_of_mass_rate`` supplies dot(c) in
+body m/s, either directly or through a state callable. Its default is an
+explicit stationary-centroid assumption; draining tanks need their derived
+rate (for one selected tank, signed mass rate times
+``SpacecraftBody.center_of_mass_mass_derivative(tank_name)``). The adapter cannot
+infer individual feed rates from aggregate mass alone.
+
+For dynamic pressure q_dyn=rho*speed**2/2, area A, force coefficients C_F,
+and three table-axis roll/pitch/yaw reference lengths L, let H map table to body.
+Loads are
+
+.. math::
+
+   F_b = H\,(q_{\rm dyn} A C_F), \qquad
+   M_n = H\,[q_{\rm dyn} A\,(L \mathbin{\odot} C_M)], \qquad
+   \tau_C = M_n + (n-c)\times F_b.
+
+The returned force and acceleration are in GCRF (N and m/s squared), and
+torque is about the instantaneous C in body axes (N m). ``loads`` additionally
+returns body force, reference-point moment, center position, air velocity,
+Mach, alpha, beta, commanded deflection, dynamic pressure and Reynolds number
+rho*speed*reynolds_length/mu. A separately declared ``reynolds_length`` is metres.
+The three moment lengths and aerodynamic area remain explicit; assembled stage
+geometry does not infer them. ``deflection`` is a prescribed radian scalar or
+state callable; actuator dynamics belong to Step 9.
+
+Run the synthetic evidence workflow and independent references::
+
+   python3 -m demos.launch.demo_launch_aerodynamics --output path/to/new-evidence.json
+   python3 -m pytest -q tests/test_launch_aerodynamics.py tests/test_launch_initialization.py tests/test_launch_mass_accounting.py tests/test_launch_changing_mass.py tests/test_launch_propulsion.py
+
+The demo retains all weather/coefficient inputs, gas assumptions, reference
+geometry, installed software, prescribed states, forces, moments and residuals;
+it never overwrites an evidence file. Tests compare ideal-gas/Sutherland sample
+calculations, overlap endpoint continuity, four-axis multiaffine polynomials,
+symmetry limits, independent Astropy corotation/wind, retained-tank reference
+point shifts, table-to-body axes, quadratic-drag motion and isotropic torque motion. These verify
+the declared mathematical models. The demo's states are prescribed, not an
+ascent integration or measured launch weather. ``qualification_status`` stays
+``NOT RUN``. Rate damping, Reynolds-dependent coefficients, plume corrections,
+rarefaction (including mean-free-path inputs), changing gas composition, slosh,
+event resets, measured vehicle calibration and mission qualification require
+their own evidenced models and domains.
