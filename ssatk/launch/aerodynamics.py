@@ -65,6 +65,8 @@ class LaunchAerodynamics(SpacecraftAccel):
     These velocity components are in the table frame, not necessarily body.
     ``reference_area`` is m squared; the three ``reference_lengths`` (m)
     dimensionalize roll, pitch, yaw moments; ``reynolds_length`` is metres.
+    ``mass`` may supply a fixed vehicle mass for state-only
+    ``SpacecraftAccel`` calls; otherwise mass is read from the Spacecraft.
     Coefficients multiply dynamic pressure, area and those moment lengths.
     This is a whole-vehicle table; no facet projection is applied again.
 
@@ -80,11 +82,12 @@ class LaunchAerodynamics(SpacecraftAccel):
     _combined_force_torque_safe = True
 
     def __init__(self, atmosphere, coefficients, *, reference_area, reference_lengths,
-                 reynolds_length, reference_position_body, deflection=0.0,
+                 reynolds_length, reference_position_body, mass=None, deflection=0.0,
                  center_of_mass_rate=(0.0, 0.0, 0.0), coefficient_to_body=None):
         self.atmosphere, self.coefficients = atmosphere, coefficients
         self.reference_area = _validate_positive(_validate_finite(reference_area, "reference_area"), "reference_area")
         self.reynolds_length = _validate_positive(_validate_finite(reynolds_length, "reynolds_length"), "reynolds_length")
+        self.mass = None if mass is None else _validate_positive(_validate_finite(mass, "mass"), "mass")
         lengths = np.array(reference_lengths, dtype=float, copy=True)
         position = np.array(reference_position_body, dtype=float, copy=True)
         if lengths.shape != (3,) or not np.isfinite(lengths).all() or np.any(lengths <= 0):
@@ -102,7 +105,7 @@ class LaunchAerodynamics(SpacecraftAccel):
         At exactly zero airspeed loads are zero and alpha/beta are reported
         as zero by convention; the coefficient table is not queried.
         """
-        mass = _validate_finite(_value_or_spacecraft(None, spacecraft, "mass"), "mass")
+        mass = _validate_finite(_value_or_spacecraft(self.mass, spacecraft, "mass"), "mass")
         body = getattr(spacecraft, "body", None)
         center = np.zeros(3) if body is None else np.asarray(body.current_center_of_mass, dtype=float)
         center_rate = np.asarray(_call_optional(self.center_of_mass_rate, t, r, v, q, omega, spacecraft), dtype=float)

@@ -152,6 +152,10 @@ def test_reference_point_motion_and_moment_shift_follow_retained_tanks():
     zero = LaunchAerodynamics(_uniform_air(), table, reference_area=2, reference_lengths=[1, 1, 1],
                               reynolds_length=1, reference_position_body=[0, 0, 0])
     np.testing.assert_allclose(zero(stationary), np.zeros(3), atol=0, rtol=0)
+    fixed_mass = LaunchAerodynamics(_uniform_air(), table, reference_area=2, reference_lengths=[1, 1, 1],
+                                    reynolds_length=1, reference_position_body=[0, 0, 0], mass=100)
+    np.testing.assert_allclose(fixed_mass(stationary.r, stationary.v, stationary.t),
+                               fixed_mass(stationary), atol=0, rtol=0)
 
 
 def test_coupled_drag_propagation_matches_quadratic_closed_form():
