@@ -255,6 +255,13 @@ class Tank:
         return self.dry_mass * self.position_body + self.propellant_mass * self.propellant_center_body
 
     @property
+    def mass_first_moment_derivative(self) -> np.ndarray:
+        """d(first moment)/d(propellant mass) in m, for the declared tank model."""
+        if self.cylinder_radius is None:
+            return self.position_body
+        return self.propellant_base_body + self.propellant_axis_body * self.liquid_height
+
+    @property
     def mass(self) -> float:
         """Current tank mass in kg."""
 
@@ -472,6 +479,27 @@ class SpacecraftBody:
         inertia += sum((component.inertia_about(center) for component in self.components), start=np.zeros((3, 3)))
         inertia += sum((tank.inertia_about(center) for tank in self.tanks), start=np.zeros((3, 3)))
         return inertia
+
+    def center_of_mass_mass_derivative(self, tank_name: str | None = None) -> np.ndarray:
+        """d(center)/d(total mass) in m/kg along the usable-inventory depletion path.
+
+        Select one named tank or proportionally drain usable inventories, as
+        in ``with_current_mass``. At the residual floor the derivative is zero.
+        Multiply by signed mass rate (negative for depletion) for body-frame m/s.
+        """
+        tanks = self.tanks
+        if tank_name is not None:
+            tanks = tuple(tank for tank in tanks if tank.name == tank_name)
+            if len(tanks) != 1:
+                raise ValueError(f"expected exactly one tank named {tank_name!r}.")
+        usable = sum(tank.usable_propellant_mass for tank in tanks)
+        if usable == 0.0:
+            return np.zeros(3)
+        first_moment_derivative = sum(
+            (tank.usable_propellant_mass / usable * tank.mass_first_moment_derivative
+             for tank in tanks), start=np.zeros(3),
+        )
+        return (first_moment_derivative - self.current_center_of_mass) / self.current_mass
 
     @property
     def area(self) -> float:

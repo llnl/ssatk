@@ -339,3 +339,156 @@ Retain a synthetic two-stage depletion and detachment record::
 
 The demo never overwrites evidence. Its geometry and inventories are explicitly
 synthetic; they establish no engineering-data or mission qualification.
+
+Step 5: changing-mass dynamics
+------------------------------
+
+The selected continuous control volume is the retained vehicle, with moments
+about its instantaneous center of mass C. ``Spacecraft.r`` is C in GCRF and
+``Spacecraft.v`` is its geometric time derivative; it is not automatically
+total material momentum divided by mass. Body coordinates retain the fixed
+origin used by the tank, component and nozzle geometry. Let R map body to GCRF,
+c be C in body coordinates, omega be the body angular rate, and s be signed
+mass rate (negative for exhaust). The existing thrust adapters return positive
+outflow, and ``sixdof_rhs`` converts it to signed mass rate exactly once.
+
+For a nozzle at body position n, its arm is rho = n - c. If u is exhaust
+velocity relative to that body-fixed nozzle, its inertial velocity is
+
+.. math::
+
+   v_e = v_C + R(\omega \times \rho + u - \dot c).
+
+For several ports, sum their signed mass rates s_i. Continuity of the first
+mass moment gives the material momentum P, with transport B:
+
+.. math::
+
+   B = R\sum_i s_i\rho_i, \qquad P = M v_C - B,
+   \qquad \dot P = F_{\rm external} + \sum_i s_i v_{e,i}.
+
+Consequently, the general centroid acceleration is
+
+.. math::
+
+   M\dot v_C = F_{\rm external} + \sum_i s_i(v_{e,i}-v_C) + \dot B.
+
+It is incorrect to equate M v_C with P when B is nonzero. Nozzle momentum
+and pressure must each be counted once: the example's pressure-matched thrust
+T already equals s u, so adding another s u would double the same force.
+Pressure mismatch, when present, belongs in the declared net thrust convention.
+
+About the moving C, substituting P = M v_C - B into the angular-momentum
+transport theorem cancels the origin-velocity term. Net inward angular flux,
+expressed in body coordinates, is
+
+.. math::
+
+   J = \sum_i s_i\rho_i \times (\omega\times\rho_i + u_i - \dot c).
+
+If pressure and relative-exhaust thrust moments are already in ``torque``,
+their contributions must be removed from J. A specified point nozzle does not
+include the additional exit-area spin moment or swirl of a finite nozzle.
+Geometry and tank consumption alone do not determine J.
+
+For the chosen no-relative-angular-momentum fluid model, the existing shared
+right-hand side integrates
+
+.. math::
+
+   \dot q = \tfrac12 q\otimes[0,\omega], \qquad \dot M = \sum_i s_i,
+
+   I\dot\omega = \tau + J - \dot I\omega
+                 - \omega\times(I\omega+h_w).
+
+The reaction-wheel torque adapter includes the reaction to the wheel momentum
+rate. If internal fluid motion has relative angular momentum h_f, the full
+balance additionally needs -dot(h_f) - omega cross h_f; that physics is not
+inferred by the tank model and is outside the example's validity. The documented
+RocketPy equations-of-motion v1 are comparison material for these terms, not a
+drop-in formula: they use their own reference-point and thrust conventions.
+See `RocketPy equations of motion v1
+<https://docs.rocketpy.org/en/latest/technical/equations_of_motion.html>`_.
+
+``Tank.mass_first_moment_derivative`` returns d(first moment)/d(propellant mass)
+in metres. For the constant-density cylinder this is the current free-surface
+position, because removing an infinitesimal layer changes the first moment at
+that position. ``SpacecraftBody.center_of_mass_mass_derivative(tank_name)``
+computes
+
+.. math::
+
+   \frac{dc}{dM} = \frac{\sum_j f_j\,dQ_j/dm_j-c}{M},
+
+where f_j is one for a selected tank or its fraction of aggregate usable
+inventory. Multiplying by signed mass rate supplies dot(c), in body-frame m/s.
+It returns zero when the selected usable inventory is exhausted. The existing
+body inertia-rate adapter similarly differentiates the full inertia about C.
+The moving-C contribution to dI cancels by the zero first moment about C;
+holding C fixed while taking each tank derivative is therefore consistent.
+
+The default point-tank adapter models inventory leaving at its local position
+while co-rotating: J = dot(I) omega. This cancels the depletion term for that
+specific local-shedding assumption, not for general rocket exhaust.
+Cylindrical depletion still rejects unspecified exhaust flux. Supply explicit
+``angular_momentum_flux`` only after deriving it for the chosen model.
+
+Runnable axial reference
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``demos/launch/demo_launch_changing_mass.py`` reuses ``Tank``, ``SpacecraftBody``,
+``SpacecraftManeuverAccel`` and ``Spacecraft.propagate`` for a synthetic steady
+burn segment. Its one cylindrical tank and dry-body center lie on body +Z;
+rotation is purely about +Z. The liquid has axial plug flow with a flat surface,
+constant density and no relative angular momentum. A pressure-matched point
+nozzle sits at the tank base on the same axis and has no swirl. The retained
+liquid's axial velocity relative to the dry body is s/(density*pi*radius^2),
+which supplies an independent mass-weighted material-momentum reference.
+Its exhaust angular flux and
+thrust moment about C are both zero. Thus I_z omega_z is conserved while I_z
+decreases and spin increases; the adapter's local point-shedding cancellation
+would give the wrong answer for this nozzle.
+
+With constant s and nozzle position, B = s(n-c) along the unchanged inertial
+axis, so dot(B) = -s dot(c). The centroid acceleration is therefore
+
+.. math::
+
+   \dot v_C = \frac{T}{M} - \frac{2s\dot c}{M}.
+
+The demo adds this correction in an acceleration subclass of the existing
+maneuver, with explicit zero ``angular_momentum_flux``. Initial centroid
+velocity is B(0)/M(0), which initializes zero material momentum even though
+the steadily draining geometric centroid moves. All output states are within
+the continuous burn, above the unusable residual. Ignition, shutdown and their
+velocity/reset consequences are Step 8; this example does not cross them.
+
+For dry mass d, dry axial center z_d, tank base b and k = density*pi*radius^2,
+the independent reference is
+
+.. math::
+
+   c(M) = \frac{M}{2k} + b-\frac{d}{k} + \frac{A}{M},
+   \qquad A=d(z_d-b)+\frac{d^2}{2k}.
+
+Integrating the rational centroid derivative gives closed-form logarithmic
+position and velocity histories; I_z is linear in propellant mass, giving
+closed-form spin and quaternion histories. ``tests/test_launch_changing_mass.py``
+checks those histories, a sum of dry-body and plug-flow material momentum,
+an independent quadrature of expelled linear momentum,
+mass/impulse balance, finite-difference first moments and center rates, the
+moving thrust lever arm, fixed-mass Euler motion and a nonzero point-nozzle
+angular-flux solution. These constrain the stated mathematical models, not
+flight accuracy or an unrestricted draining-tank launch model.
+
+Run the reference checks and retain a new evidence record::
+
+   python3 -m pytest -q tests/test_launch_changing_mass.py tests/test_launch_mass_accounting.py tests/test_integration_inertia_regressions.py tests/test_integration_wheel_regressions.py
+   python3 -m demos.launch.demo_launch_changing_mass --output ../SSAPy-Data/.cache/launch_validation/step5-changing-mass.json
+
+The JSON retains inputs, installed software, states, center rates, inertia,
+exhaust velocity and retained momentum. It never overwrites an existing record.
+``PASS`` is scoped to the axial reference; ``qualification_status`` stays
+``NOT RUN``. Transverse fluid dynamics, finite-area nozzle transport, swirl,
+slosh, propulsion operating maps, atmosphere, staging and mission qualification
+require their own models and evidence.
