@@ -1,6 +1,7 @@
 """Retain the launch verification ladder, including unavailable evidence."""
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import importlib
 import json
@@ -146,13 +147,53 @@ def _handoff(perturbed):
             "limits": ["Native SSAPy shares force implementations with the launch wrapper; this is integration/handoff evidence"]}
 
 
+@contextmanager
+def _packaged_earth_orientation():
+    from astropy import units as u
+    from astropy.time import Time
+    from astropy.utils import iers
+    from scipy.interpolate import interp1d
+    from ssapy.utils import iers_interp
+    from ssatk.data import data_path
+
+    with data_path("environment/eop/finals2000A.all") as path:
+        table = iers.IERS_A.open(str(path))
+    # SSAPy caches its first IERS interpolation independently of Astropy's
+    # active table. Isolate both so prior calls cannot change these references.
+    missing = object()
+    previous = getattr(iers_interp, "_interp", missing)
+    try:
+        with iers.conf.set_temp("auto_download", False), iers.earth_orientation_table.set(table):
+            nodes = Time(table["MJD"], format="mjd", scale="utc")
+            # These are supplied samples, not interpolated queries at the table
+            # endpoints (which Astropy's strict IERS_A interpolation rejects).
+            nodes.delta_ut1_utc = table["UT1_UTC"].to_value(u.s)
+            values = np.array([nodes.ut1.mjd - nodes.tt.mjd,
+                               table["PM_x"].to_value(u.rad), table["PM_y"].to_value(u.rad)])
+            iers_interp._interp = interp1d(nodes.gps, values, bounds_error=True)
+            yield
+    finally:
+        if previous is missing:
+            if hasattr(iers_interp, "_interp"):
+                del iers_interp._interp
+        else:
+            iers_interp._interp = previous
+
+
 def run_verification(output_dir, *, external=True):
     """Write fresh evidence per case and a complete ladder, never hiding unavailable rows.
 
     This is a source-checkout verification command. The optional external
     checks reuse scripts.external_validation_report without installing tools.
     Set ``external=False`` to retain them as NOT RUN without loading any bridge.
+    Astropy and native SSAPy use the recorded packaged Earth-orientation table
+    during the run; their previous table/cache configuration is restored after it.
     """
+    with _packaged_earth_orientation():
+        return _run_verification(output_dir, external=external)
+
+
+def _run_verification(output_dir, *, external):
     from ssapy.ephemeris import get_planetary_ephemeris
 
     if sys.flags.optimize:

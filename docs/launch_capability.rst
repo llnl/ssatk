@@ -29,6 +29,12 @@ datasets. Cislunar and interplanetary missions are outside this statement.
 The verification references use packaged Earth orientation, gravity and
 ephemerides. Synthetic inputs, frame conventions, solver settings, state units,
 sample times, seed and model limits are retained in each case's JSON output.
+During verification, Astropy and native SSAPy use the recorded packaged
+``finals2000A.all`` table with automatic Earth-orientation downloads disabled.
+The runner isolates SSAPy's cached interpolation and restores the caller's
+table/cache configuration afterward, so earlier process state cannot select
+a different Earth-orientation input for the retained gravity/drag references.
+Queries outside that snapshot's coverage fail instead of extrapolating it.
 Integration settings are distinct from requested output spacing. Numerical
 refinement does not bound model discrepancy or measurement uncertainty.
 Constant-mass slosh does not establish coupled draining-tank dynamics; the
