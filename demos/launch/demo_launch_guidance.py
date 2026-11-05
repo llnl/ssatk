@@ -18,12 +18,13 @@ from ssatk.satellites import SpacecraftBody, Tank
 GALLERY_INCLUDE = False
 
 
-def run_reference():
+def run_reference(*, solver=None):
     """Pitch tracking with synthetic direction/gyro measurements, not telemetry."""
     duration, force, arm, target_angle = 15., 100., 2., .12
     target_q = np.array([np.cos(target_angle/2), 0., np.sin(target_angle/2), 0.])
     covariance = np.diag([1e-10]*12)
     bias = np.r_[np.zeros(9), 0., .001, 0.]
+    solver = {**dict(mu=0., max_step=.1, rtol=1e-9, atol=1e-11), **(solver or {})}
     results = []
     for times in ([0., duration], np.linspace(0., duration, 151)):
         sensor = CartesianSensor(covariance, bias=bias, rng=np.random.default_rng(9))
@@ -69,7 +70,6 @@ def run_reference():
                               tanks=(Tank(name="feed", propellant_mass=5., position_body=[0.,0.,0.]),))
         craft = Spacecraft(r=[7e6,0.,0.], v=[0.,0.,0.], q=initial_q, body=body)
         burn = SpacecraftManeuverAccel(thrust, frame="body", position_body=[0.,0.,-arm], isp=300., tank_name="feed")
-        solver = dict(mu=0., max_step=.1, rtol=1e-9, atol=1e-11)
         result = propagate_launch(craft, times, [LaunchPhase("powered", (burn,))], initial_phase="powered",
             ground_condition=lambda t,y:y[0]-6e6, control=control, **solver)
         error = abs(2*np.arctan2(result.state.q[2], result.state.q[0])-target_angle)
@@ -106,7 +106,9 @@ def run_reference():
             "control": results[1][1].history, "events": result.events,
             "truth": [{"phase": phase, "time_gps_s": arc.t, "position_gcrf_m": arc.r,
                        "velocity_gcrf_m_s": arc.v, "q_body_to_gcrf": arc.q,
-                       "omega_body_rad_s": arc.omega, "mass_kg": arc.mass} for phase,arc in result.arcs]}
+                       "omega_body_rad_s": arc.omega, "mass_kg": arc.mass,
+                       "nfev": arc.nfev, "integration_diagnostics": arc.integration_diagnostics}
+                      for phase,arc in result.arcs]}
 
 
 def main(argv=None):

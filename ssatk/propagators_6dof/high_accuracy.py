@@ -303,6 +303,7 @@ def _combine_trajectories(trajectories, preserve_boundaries=None) -> SixDOFTraje
         t_events=t_events or None,
         y_events=y_events or None,
         event_functions=event_functions,
+        integration_diagnostics=tuple(d for trajectory in trajectories for d in trajectory.integration_diagnostics),
     )
 
 
