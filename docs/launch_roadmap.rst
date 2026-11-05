@@ -24,17 +24,24 @@ Status
        and tank mass accounting, changing-mass dynamics, propulsion operating
        conditions, launch weather and aerodynamic loads.
    * - Step 7 follow-up
-     - Branch ``feature/launch-atmosphere-aerodynamics``
-     - State-only aerodynamic acceleration calls and their force/mass check;
-       not yet on ``main``.
+     - On ``main``
+     - State-only aerodynamic acceleration calls and their force/mass check.
    * - Step 8: mission phases and event resets
-     - Pull request #88
+     - On ``main``
      - Phase graph, roots, staging and separation with conservation ledger,
        pad/rail constraints, terrain clearance.
    * - Step 9: sampled guidance, sensors and actuators
-     - Pull request #91
-     - Sensor/estimator/guidance/controller loop and bounded actuators. Carries
-       a different copy of the Step 8 commit; update it after #88 merges.
+     - On ``main``
+     - Sensor/estimator/guidance/controller loop and bounded actuators.
+   * - Integration qualification
+     - On ``main``
+     - State-component tolerances, raw quaternion diagnostics and synthetic
+       event/control convergence references; see :doc:`launch_baseline`.
+   * - Insertion and orbit-handoff mechanism
+     - On ``main``
+     - ``Spacecraft.to_orbit`` retains the current mass, area and force
+       coefficients. A synthetic ascent/cutoff/coast example checks overlap
+       against native SSAPy propagation; mission-level insertion remains open.
    * - Minor Planet Center small-body orbits
      - On ``main``
      - :mod:`ssatk.io.mpc`: catalogs, parsing, heliocentric two-body states.
@@ -43,11 +50,12 @@ Status
      - ``propagate_orbit_state`` (with STM), Hohmann/bi-elliptic/optimal
        transfers, zero-revolution Lambert in ``transfer_ssapy``.
 
-After Steps 8 and 9 merge, the documented limits remain: the demo insertion
-boundary is not an achieved orbit; there is no three-axis launch guidance or
-attitude estimator; the integrated demos exclude gravity, weather and Earth
-rotation; dispersions, slosh, flexibility and an acceptance mission are
-separate work.
+The documented limits remain: the event/control examples use synthetic phase
+boundaries, and the orbit-handoff reference starts above the atmosphere. The
+handoff example includes native SSAPy gravity and optional perturbations, but
+does not establish a pad-to-orbit mission. Three-axis launch guidance, an
+attitude estimator, a combined rotating-Earth/weather ascent, dispersions,
+slosh, flexibility and an acceptance mission remain separate work.
 
 Remaining launch steps
 ----------------------
@@ -75,9 +83,11 @@ Step 12: ascent guidance to a target orbit
     steering cases and published ascent profiles.
 
 Step 13: insertion and orbit handoff
-    End the 6-DoF ascent at insertion and continue with
-    ``propagate_orbit_state``, with an overlap check that both models agree
-    on a shared arc.
+    Apply the existing six-degree-of-freedom (6-DoF) ascent-to-SSAPy handoff
+    to a complete launch mission with target-orbit acceptance criteria.
+    ``Spacecraft.to_orbit`` and the synthetic shared-arc overlap reference
+    already exist; achieving the requested insertion orbit from the pad
+    still depends on the integrated ascent and guidance work above.
 
 Step 14: Earth departure
     Parking-orbit coast, launch window and azimuth from the site and the
