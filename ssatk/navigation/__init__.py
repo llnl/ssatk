@@ -16,7 +16,7 @@ from .ekf import (
     ExtendedKalmanFilter,
     wrap_angle_residual,
 )
-from .measurements import GroundStation, GroundStationMeasurement, StationPrediction
+from .measurements import GroundStation, GroundStationMeasurement, RadioTrackingConfig, StationPrediction
 from .sensors import (
     CartesianSensor,
     GroundStationSensor,
@@ -37,6 +37,7 @@ __all__ = [
     "GroundStation",
     "GroundStationMeasurement",
     "GroundStationSensor",
+    "RadioTrackingConfig",
     "SensorMeasurement",
     "StationObservation",
     "StationPrediction",

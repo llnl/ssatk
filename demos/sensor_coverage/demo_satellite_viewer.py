@@ -6,6 +6,7 @@ Run scripts.prepare_gallery_data first for the 8192 x 4096 day texture;
 otherwise the installed 2K texture is used. The page accepts satellite
 catalogs from JSON, CSV, or HDF5, and starts with three synthetic low-Earth
 orbits propagated with SSATK. These are examples, not a live satellite catalog.
+Use each satellite's Remove button in the panel to clear it from the scene.
 Its PNG is a capture of the actual viewer,
 requiring the browser extra and Chrome; set SSATK_CHROME_BINARY to point at a
 specific browser, or the capture is skipped and only the HTML viewer is written.

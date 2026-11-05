@@ -2633,6 +2633,7 @@ function escapeHtml(s) {
 function updateInfoPanel() {
   const panel = document.getElementById('sat-info');
   if (!panel) return;
+  refreshPassTargetOptions();
   if (activeSatellites.size === 0) {
     panel.innerHTML = `<span style="opacity:0.7">No satellites selected -- pick one or more above.</span>`;
     return;
@@ -2683,7 +2684,22 @@ function updateInfoPanel() {
     }
   }
   panel.innerHTML = compact ? blocks.join('') : blocks.join('<hr class="sat-info-sep">');
-  refreshPassTargetOptions(); // keep the pass-prediction target list in sync with the active set
+  const keys = [...activeSatellites.keys()];
+  panel.querySelectorAll('.sat-info-block, .sat-info-line').forEach((block, index) => {
+    const key = keys[index];
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'csv-btn sat-remove-btn';
+    button.textContent = 'Remove';
+    button.setAttribute('aria-label', `Remove ${activeSatellites.get(key).entry.name}`);
+    button.addEventListener('click', () => {
+      removeSatellite(key);
+      updateInfoPanel();
+      const searchInput = document.getElementById('db-search-input');
+      if (searchInput) renderSearchResults(searchInput.value);
+    });
+    block.prepend(button);
+  });
 }
 
 // SSA analysis toggles (ground tracks now; conjunction/pass-prediction later
