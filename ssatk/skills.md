@@ -190,6 +190,13 @@ Native SSAPy coast needs one central-gravity term; the 6-DoF runner already
 includes that term through `mu`. See `docs/launch_baseline.rst` and
 `demos/launch/demo_launch_orbit_handoff.py` for the overlap reference.
 
+For optional constant-mass slosh, reuse `SloshMode` and
+`propagate_6dof_extended(coupled_slosh=True)`. Supply a displacement limit,
+clamped-bus frequency/damping and bus mass/inertia excluding modal masses.
+The returned r/v are the bus COM; reconstruct total COM before an orbital
+handoff. The default prescribed modes do not provide reciprocal coupling.
+See `docs/launch_baseline.rst` for validity and evidence requirements.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the

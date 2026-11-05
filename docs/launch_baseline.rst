@@ -1052,3 +1052,113 @@ These cases verify terminal-ascent handoff, not a surface-to-orbit guidance
 solution, mission acceptance or measured vehicle/flight qualification.
 ``qualification_status`` stays ``NOT RUN``. Generated evidence remains outside
 version control; persistent reference data belongs in SSAPy-Data.
+
+Step 12: optional coupled slosh increment
+-----------------------------------------
+
+The optional-model step in the launch literature-review sequence calls for
+one evidenced increment at a time. This increment adds reciprocal slosh
+coupling to the existing ``propagate_6dof_extended`` and its variational
+wrapper. The rigid launch baseline remains the default. Flexibility and
+recovery are not enabled by adding a slosh mode: recovery deployment,
+separated-body loads, and structural modes need their own evidence.
+
+Select ``coupled_slosh=True`` with one or more ``SloshMode`` objects. Each is a
+point mass on a straight body-fixed guide, with a linear spring and damper.
+``natural_frequency`` (rad/s) and ``damping_ratio`` describe a **clamped bus**;
+they are not the frequency and damping measured with a freely moving bus.
+For modal mass m, stiffness is k=m*w**2 in N/m and damping is c=2*zeta*w*m in
+N s/m. Modal displacement/rate are relative metres and metres per second.
+``axis_body`` is normalized and ``lever_arm_body`` is the equilibrium point
+relative to the rigid bus COM, in body metres.
+
+``bus_mass`` and the constant positive-definite ``inertia`` describe the bus
+**excluding** every participating modal mass. Nonparticipating liquid may
+remain in the bus properties. Do not put the whole liquid mass in the bus
+and then add it again as a slosh mass. Optional ``mass0`` must equal bus plus
+modal masses. There is no mass flow in this model. Hinge/flexible modes,
+state-dependent inertia and gravity-gradient torque are rejected for this
+increment. Acceleration callbacks supply external force on the bus divided
+by bus mass; torque is the external body torque about the bus COM. Central
+gravity is sampled at the bus and applied uniformly to the assembly, so
+common free fall does not excite the relative coordinates. Tidal effects
+across the vehicle are excluded.
+
+For body-axis guide direction e_i, equilibrium arm l_i, relative displacement
+x_i and body rate omega, define
+
+.. math::
+
+   a_i = l_i + e_i x_i, \qquad
+   J_i = [\mathbf{1}, -[a_i]_\times, 0, \ldots, e_i, \ldots],
+
+   b_i = \omega\times(\omega\times a_i)
+         + 2\omega\times e_i\dot{x}_i.
+
+The generalized acceleration consists of bus translational acceleration
+relative to common free fall (expressed in body axes), body angular
+acceleration, and relative modal accelerations. Its symmetric mass matrix is
+
+.. math::
+
+   H = \operatorname{diag}(M\mathbf{1}, I, 0, \ldots)
+       + \sum_i m_i J_i^T J_i.
+
+The right-hand side contains external bus force, external bus torque minus
+omega cross I*omega, and modal forces -k_i*x_i-c_i*xdot_i, minus
+sum(m_i*J_i.T*b_i). Solving this system accounts for axial and transverse
+guide reactions on both bus and masses. With no external force/torque and
+mu=0, total linear/angular momentum are conserved. Mechanical energy decreases
+at sum(c_i*xdot_i**2); energy plus that integrated heat is conserved. These
+properties apply to the specified mechanical analogue, not arbitrary fluid
+motion.
+
+Every mode must supply a positive ``displacement_limit`` in metres from its
+evidenced domain. Initial values and RHS evaluations outside that limit are
+rejected; solver trial stages can also trigger this rejection. It is not a
+localized impact/deployment event or a proof of continuous-time clearance.
+Use the model only while fill level, acceleration regime, viscosity and
+geometry support the fitted constant coefficients. A linear guide cannot
+predict breaking waves, impacts, arbitrary free-surface geometry, large-angle
+pendulum behavior, draining tanks or changing modes. Restarting a segmented
+run requires carrying all modal coordinates/rates as well as the bus state;
+the rigid launch phase runner does not do that automatically.
+
+The returned ``trajectory.r/v`` describe the **bus COM**, not the whole
+vehicle COM. For body-to-inertial rotation R and total mass Mt, recover
+
+.. math::
+
+   r_C = r_b + R\frac{\sum_i m_i a_i}{M_t}, \qquad
+   v_C = v_b + R\frac{\sum_i m_i(\omega\times a_i+e_i\dot{x}_i)}{M_t}.
+
+Do not pass the bus state straight to Step 11's orbital handoff. Retain the
+extended propagation when internal motion affects the observables or loads;
+an Orbit discards these internal states. The old default
+``coupled_slosh=False`` keeps the prescribed-oscillator disturbance model for
+existing callers. Its modes load the bus without responding to it and must
+not be used as evidence of reciprocal slosh mechanics or conservation.
+
+Run the reference and save a fresh evidence record::
+
+   python3 -m demos.launch.demo_launch_slosh --output path/to/new-evidence.json
+   python3 -m pytest -q tests/test_launch_slosh.py tests/test_6dof_extended.py
+
+The reference generates synthetic observations from the independent
+closed-form two-mass spring/damper solution. It fits modal mass, clamped
+frequency and damping to **both bus and relative displacement**, then predicts
+a separate initial displacement with a constant external force. Relative
+motion alone determines only effective frequency and damping, leaving modal
+mass ambiguous; the reference records this deficient sensitivity alongside
+the full-observable singular values. This is local identifiability in a
+specified synthetic experiment, not global uniqueness or an instrument
+uncertainty assessment.
+
+The report includes parameters, observations, held-out predictions, SI
+budgets, rigid/coupled residuals, solver refinement, software versions and
+domain limits. Numerical tests also compare independent Cartesian momentum
+and energy accounting for rotating offset modes, a closed-form circular
+free-fall case, and the analytic two-mass sensitivity. Calibration and
+held-out flight measurements are **UNAVAILABLE** and ``qualification_status``
+remains ``NOT RUN``. Keep the simpler rigid model for a flight application
+until measured observables and its error budget justify the extra parameters.
