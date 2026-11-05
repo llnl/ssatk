@@ -197,6 +197,15 @@ The returned r/v are the bus COM; reconstruct total COM before an orbital
 handoff. The default prescribed modes do not provide reciprocal coupling.
 See `docs/launch_baseline.rst` for validity and evidence requirements.
 
+For joint station orbit determination, extend `navigation.solve_batch_orbit`
+with `parameters0`, ordered `parameter_scale`/`parameter_bounds`, a
+`propagation_kwargs(parameters)` factory using existing force models, and an
+optional `measurement_bias(station, observation, parameters)` callback. The
+result's `joint_covariance` and `correlation` follow `estimate_names`; the
+existing `covariance` remains the six-state block. Known observation biases
+are subtracted before the additional fitted bias. Check `success`, rank and
+`active_mask` before using formal uncertainties. See `docs/ssa_workflows.rst`.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the
