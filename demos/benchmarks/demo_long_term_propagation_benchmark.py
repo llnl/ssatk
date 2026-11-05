@@ -128,7 +128,7 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
         allow_install = not UNDER_PYTEST
 
     gmat = demo_gmat_benchmark._find_gmat()
-    gmat_ready = gmat is not None and demo_gmat_benchmark._ensure_container_image(allow_install=allow_install)
+    gmat_ready = gmat is not None and demo_gmat_benchmark._runtime_available(gmat[1], allow_install=allow_install)
     figure_dir = Path(figpath("benchmarks"))
     results = []
     for case_template in CASES:

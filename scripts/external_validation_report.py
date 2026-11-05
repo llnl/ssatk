@@ -46,6 +46,21 @@ _CASES: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "id": "gmat_finite_burn",
+        "tool": "GMAT R2026a ChemicalThruster + RungeKutta89",
+        "model": "Earth point mass with constant inertial thrust and constant Isp",
+        "runner": "demos.benchmarks.demo_gmat_benchmark.run_finite_burn",
+        "constants": {"gmat_jgm2_mu_m3_s2": 3.986004415e14, "g0_m_s2": 9.80665},
+        "settings": {"duration_s": 60., "step_s": 5., "solver": "SSATK DOP853"},
+        "metrics": (
+            ("max_position_error_m", "m", 2e-2),
+            ("max_velocity_error_m_s", "m/s", 2e-5),
+            ("max_mass_error_kg", "kg", 1e-8),
+            ("rocket_equation_mass_error_kg", "kg", 1e-8),
+            ("event_time_error_s", "s", 1e-6),
+        ),
+    },
+    {
         "id": "basilisk_6dof",
         "tool": "Basilisk Spacecraft + ExtForceTorque",
         "model": "six-DoF zero-gravity constant body force and torque",
@@ -72,6 +87,8 @@ def _call(case: dict[str, Any], *, fast: bool, output_dir: Path) -> dict[str, An
     runner = _runner(case)
     if case["id"] == "basilisk_6dof":
         return runner(output_dir=output_dir, fast=fast)
+    if case["id"] == "gmat_finite_burn":
+        return runner(output_dir=output_dir)
     return runner(make_figures=False, fast=fast, verbose=False, allow_install=False)
 
 
@@ -94,7 +111,7 @@ def _acceptance(result: dict[str, Any], metrics: tuple[Metric, ...]) -> list[dic
 
 
 def _metadata(case: dict[str, Any], *, fast: bool) -> dict[str, Any]:
-    durations = {"orekit_two_body": 3_600.0, "gmat_two_body": 600.0, "basilisk_6dof": 20.0}
+    durations = {"orekit_two_body": 3_600.0, "gmat_two_body": 600.0, "gmat_finite_burn": 60., "basilisk_6dof": 20.0}
     if not fast:
         durations.update({"orekit_two_body": 43_200.0, "gmat_two_body": 14_400.0, "basilisk_6dof": 120.0})
     return {

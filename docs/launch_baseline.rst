@@ -1162,3 +1162,67 @@ free-fall case, and the analytic two-mass sensitivity. Calibration and
 held-out flight measurements are **UNAVAILABLE** and ``qualification_status``
 remains ``NOT RUN``. Keep the simpler rigid model for a flight application
 until measured observables and its error budget justify the extra parameters.
+
+Step 13: verification and independent comparisons
+--------------------------------------------------------
+
+Run the launch literature-review benchmark ladder from a source checkout::
+
+   python3 -m demos.launch.demo_launch_verification --output ../SSAPy-Data/.cache/launch-verification/new-run
+
+The output directory must be new. Each executed case retains its inputs,
+solver settings, residuals and evidence in a separate JSON file. ``report.json``
+records the software baseline, Python source hashes, packaged-resource checks,
+evidence hashes and one status per case. Every evaluated metric has a value,
+unit, tolerance and reference. Budgets belong to the named synthetic reference;
+they do not supply missing mission requirements or measured uncertainties.
+
+The ladder reuses the existing propulsion, changing-mass, atmosphere/load,
+staging/control refinement, coupled-slosh and orbital-handoff references.
+Basic mechanics adds constant inertial acceleration and spherical torque-free
+spin, including tighter integration against the same analytic solution.
+The pad frame comparison uses independent Astropy transforms with packaged
+EOP. Mission-sequence refinement retains event topology, reset mass/material
+momentum accounting and event-time errors separately from state errors.
+Attitude errors include relative rotation angles in radians and treat opposite
+quaternion signs as the same orientation. Handoff evidence retains GCRF and
+radial/transverse/normal residual histories at the common coast epochs;
+velocity residuals are vector components, not derivatives in a rotating frame.
+The insertion record uses Cartesian and nonsingular/osculating elements.
+
+The optional tool comparisons reuse ``scripts.external_validation_report``:
+Orekit and GMAT for point-mass coast, GMAT for a constant inertial finite burn
+with chemical propellant depletion, and Basilisk for a rigid body with a
+specified wrench. The burn retains state, mass and cutoff-time residuals,
+the generated GMAT script, and an independent constant-flow mass reference.
+GMAT samples at absolute epoch endpoints to avoid accumulation of rounded
+relative stops. No tool is installed automatically. A native Windows GMAT
+installation can be selected with ``GMAT_ROOT`` pointing to the directory
+containing ``bin/GmatConsole.exe``. Other platforms retain the existing
+Podman route. ``GMAT_DE430_BSP`` explicitly selects a kernel when a matched
+planetary comparison needs it; there is no machine-specific default. Temporary
+Windows startup/output files preserve the installed GMAT configuration.
+Orekit needs Java, ``javac``, Maven and its existing jar cache or ``OREKIT_JAR``.
+
+``PASS`` means that case's available numerical criteria passed. ``FAIL`` means
+an evaluated criterion failed; ``ERROR`` retains an execution failure and its
+traceback. ``UNAVAILABLE`` names missing reference inputs or runtimes. Missing
+NASA dropped/tumbling-body and corrected Atmospheric Case 17 histories,
+matched atmospheric launch-package cases, external slosh histories,
+and independent telemetry are explicit rows. They are never converted into
+passes by successful internal tests. An unavailable external case has no
+computed residual; its unit/tolerance cannot be inferred from another case.
+The command exits with code 2 unless the entire reported ladder is ``PASS``;
+the report remains available for review when evidence is missing.
+
+The identical-physics cases isolate implementation/integration differences.
+Native SSAPy handoff shares the force implementations with the launch wrapper,
+so it does not independently validate those force laws. A **best-supported
+model comparison** needs a preregistered common vehicle/case, independently
+configured comparator, supported environmental inputs and practical output
+budgets. That comparison is recorded separately as unavailable until those
+inputs exist; turning on perturbations in the handoff is not a substitute.
+Numerical refinement, physical model discrepancy and observational uncertainty
+remain distinct. Step 14 measured calibration/held-out validation and flight
+qualification remain unclaimed. This report does not establish a complete
+pad-to-orbit guidance solution or rank simulation packages.

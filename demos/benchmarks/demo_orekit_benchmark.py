@@ -46,7 +46,7 @@ def _orekit_jar(*, allow_install: bool) -> Path | None:
     if jar.is_file() or not allow_install or shutil.which("mvn") is None:
         return jar if jar.is_file() else None
     subprocess.run(
-        ["mvn", "-q", "dependency:get", f"-Dartifact=org.orekit:orekit:{OREKIT_VERSION}"],
+        [shutil.which("mvn"), "-q", "dependency:get", f"-Dartifact=org.orekit:orekit:{OREKIT_VERSION}"],
         cwd=OREKIT_DIR,
         check=True,
     )
@@ -66,7 +66,7 @@ def _run_orekit(*, radius: float, duration: float, step: float, allow_install: b
         temp = Path(temp)
         classpath_file = temp / "classpath.txt"
         subprocess.run(
-            ["mvn", "-q", "dependency:build-classpath", f"-Dmdep.outputFile={classpath_file}"],
+            [shutil.which("mvn"), "-q", "dependency:build-classpath", f"-Dmdep.outputFile={classpath_file}"],
             cwd=OREKIT_DIR,
             check=True,
         )
@@ -101,7 +101,7 @@ def _run_orekit_j2(*, coefficient_file: Path, duration: float, step: float, allo
         temp = Path(temp)
         classpath_file = temp / "classpath.txt"
         subprocess.run(
-            ["mvn", "-q", "dependency:build-classpath", f"-Dmdep.outputFile={classpath_file}"],
+            [shutil.which("mvn"), "-q", "dependency:build-classpath", f"-Dmdep.outputFile={classpath_file}"],
             cwd=OREKIT_DIR,
             check=True,
         )

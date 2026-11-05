@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,11 +25,11 @@ GALLERY_INCLUDE = False  # Standalone comparison requiring a local GMAT installa
 GMAT_IMAGE = "ubuntu:24.04"
 # POTFIELD value in GMAT's data/gravity/earth/JGM2.cof.
 GMAT_JGM2_MU_M3_S2 = 3.986004415e14
-GMAT_DE430_BSP = Path(os.environ.get("GMAT_DE430_BSP", "/p/lustre1/yeager7/gmat-data-de430/de430.bsp"))
+GMAT_DE430_BSP = Path(os.environ["GMAT_DE430_BSP"]) if os.environ.get("GMAT_DE430_BSP") else None
 
 
 def _de430_available() -> bool:
-    return GMAT_DE430_BSP.is_file()
+    return GMAT_DE430_BSP is not None and GMAT_DE430_BSP.is_file()
 
 
 def _find_gmat() -> tuple[Path, str] | None:
@@ -41,13 +42,16 @@ def _find_gmat() -> tuple[Path, str] | None:
         ]
     )
     for root in candidates:
-        for executable in ("GmatConsole-R2026a", "GmatConsole"):
+        executables = ("GmatConsole.exe",) if os.name == "nt" else ("GmatConsole-R2026a", "GmatConsole")
+        for executable in executables:
             if (root / "bin" / executable).is_file():
                 return root, executable
     return None
 
 
-def _ensure_container_image(*, allow_install: bool) -> bool:
+def _runtime_available(executable: str, *, allow_install: bool) -> bool:
+    if executable.endswith(".exe"):
+        return os.name == "nt"
     if shutil.which("podman") is None:
         return False
     exists = subprocess.run(
@@ -77,10 +81,11 @@ def _script(*, radius_m: float, velocity_m_s: float, duration_s: float, step_s: 
     reports = [
         "Report StateReport Sat.ElapsedSecs Sat.X Sat.Y Sat.Z Sat.VX Sat.VY Sat.VZ;"
     ]
-    for _ in range(steps):
+    for index in range(1, steps+1):
         reports.extend(
             (
-                f"Propagate TwoBodyProp(Sat) {{Sat.ElapsedSecs = {float(step_s):.17g}}};",
+                # Absolute endpoints prevent cumulative rounding of repeated elapsed-time stops.
+                f"Propagate TwoBodyProp(Sat) {{Sat.A1ModJulian = {21545.+index*step_s/86400.:.17g}}};",
                 "Report StateReport Sat.ElapsedSecs Sat.X Sat.Y Sat.Z Sat.VX Sat.VY Sat.VZ;",
             )
         )
@@ -156,10 +161,13 @@ def _run_gmat_script(
     state_path: Path,
     script: str,
     expected_samples: int,
+    columns: int = 7,
 ) -> np.ndarray:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="gmat-benchmark-", dir=state_path.parent) as temp_name:
         temp = Path(temp_name)
+        if executable.endswith(".exe"):
+            script = script.replace("/benchmark/", temp.resolve().as_posix()+"/")
         (temp / "case.script").write_text(script, encoding="utf-8")
         command = [
             "podman",
@@ -168,8 +176,8 @@ def _run_gmat_script(
             "--userns=keep-id",
             "--volume",
             f"{root}:/GMAT:rw",
-            "--volume",
-            f"{GMAT_DE430_BSP}:/GMAT/data/planetary_ephem/spk/DE421AllPlanets.bsp:ro",
+            *(["--volume", f"{GMAT_DE430_BSP}:/GMAT/data/planetary_ephem/spk/DE421AllPlanets.bsp:ro"]
+              if _de430_available() else []),
             "--volume",
             f"{temp}:/benchmark:rw",
             GMAT_IMAGE,
@@ -181,6 +189,15 @@ def _run_gmat_script(
                 "--logfile /benchmark/gmat_console.log"
             ),
         ]
+        if executable.endswith(".exe"):
+            startup = (root/"bin"/"gmat_startup_file.txt").read_text(encoding="utf-8")
+            startup = re.sub(r"(?m)^OUTPUT_PATH\s*=.*$", f"OUTPUT_PATH = {temp.resolve().as_posix()}/", startup)
+            if _de430_available():
+                startup += f"\nPLANETARY_SPK_FILE = {GMAT_DE430_BSP.resolve().as_posix()}\n"
+            (temp/"startup.txt").write_text(startup, encoding="utf-8")
+            command = [str((root/"bin"/executable).resolve()), "--run", str((temp/"case.script").resolve()),
+                       "--logfile", str((temp/"gmat_console.log").resolve()),
+                       "--startup_file", str((temp/"startup.txt").resolve())]
         try:
             completed = subprocess.run(
                 command,
@@ -188,6 +205,7 @@ def _run_gmat_script(
                 text=True,
                 timeout=180,
                 check=False,
+                cwd=root/"bin" if executable.endswith(".exe") else None,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("GMAT benchmark exceeded 180 seconds") from exc
@@ -200,7 +218,7 @@ def _run_gmat_script(
             raise RuntimeError("GMAT completed without producing states.csv")
         shutil.copyfile(generated, state_path)
         rows = np.loadtxt(generated, delimiter=",")
-    rows = np.asarray(rows, dtype=float).reshape((-1, 7))
+    rows = np.asarray(rows, dtype=float).reshape((-1, columns))
     if rows.shape[0] < 2 or not np.all(np.diff(rows[:, 0]) > 0.0):
         raise RuntimeError(f"GMAT state report is invalid: shape={rows.shape}")
     if rows.shape[0] != expected_samples:
@@ -208,6 +226,74 @@ def _run_gmat_script(
             f"GMAT state report has {rows.shape[0]} samples; expected {expected_samples}"
         )
     return rows
+
+
+def run_finite_burn(*, output_dir: Path):
+    """Matched inertial constant-thrust burn with GMAT chemical mass depletion."""
+    from ssatk.accelerations_6dof import SpacecraftManeuverAccel
+    from ssatk.propagators_6dof import Spacecraft
+    from ssatk.satellites import SpacecraftBody, Tank
+
+    gmat = _find_gmat()
+    if gmat is None or not _runtime_available(gmat[1], allow_install=False):
+        return {"skipped": True, "reason": "GMAT runtime unavailable"}
+    radius, duration, step, thrust, isp = 7e6, 60., 5., 10., 300.
+    speed = float(np.sqrt(GMAT_JGM2_MU_M3_S2/radius))
+    script = _script(radius_m=radius, velocity_m_s=speed, duration_s=duration, step_s=step)
+    hardware = """
+Create ChemicalTank Feed;
+Feed.FuelMass = 20;
+Feed.PressureModel = PressureRegulated;
+Create ChemicalThruster Engine;
+Engine.CoordinateSystem = EarthMJ2000Eq;
+Engine.ThrustDirection1 = 0;
+Engine.ThrustDirection2 = 1;
+Engine.ThrustDirection3 = 0;
+Engine.DecrementMass = true;
+Engine.Tank = {Feed};
+Engine.DutyCycle = 1;
+Engine.ThrustScaleFactor = 1;
+Engine.GravitationalAccel = 9.80665;
+Engine.C1 = 10;
+Engine.K1 = 300;
+Sat.DryMass = 100;
+Sat.Tanks = {Feed};
+Sat.Thrusters = {Engine};
+Create FiniteBurn Burn;
+Burn.Thrusters = {Engine};
+"""
+    hardware += "".join(f"Engine.{kind}{index} = 0;\n" for kind in ("C", "K") for index in range(2, 17))
+    script = script.replace("BeginMissionSequence;", hardware+"\nBeginMissionSequence;\nBeginFiniteBurn Burn(Sat);")
+    script = script.replace("Sat.VZ;", "Sat.VZ Sat.TotalMass;") + "\nEndFiniteBurn Burn(Sat);\n"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir/"gmat_finite_burn.script").write_text(script, encoding="utf-8")
+    rows = _run_gmat_script(root=gmat[0], executable=gmat[1], state_path=output_dir/"gmat_finite_burn.csv",
+                            script=script, expected_samples=13, columns=8)
+    body = SpacecraftBody(name="constant-thrust reference", mass=100., inertia=np.eye(3),
+                          tanks=(Tank(name="feed", propellant_mass=20.),))
+    craft = Spacecraft(r=rows[0, 1:4]*1000, v=rows[0, 4:7]*1000, body=body)
+    model = SpacecraftManeuverAccel(thrust, isp=isp, frame="inertial", direction=[0., 1., 0.], tank_name="feed")
+    trajectory = craft.propagate(times=rows[:, 0], models=[model], mu=GMAT_JGM2_MU_M3_S2,
+                                 rtol=1e-12, atol=1e-10, max_step=.5)
+    dr, dv = trajectory.r-rows[:, 1:4]*1000, trajectory.v-rows[:, 4:7]*1000
+    return {"skipped": False, "max_position_error_m": float(np.max(np.linalg.norm(dr, axis=1))),
+            "max_velocity_error_m_s": float(np.max(np.linalg.norm(dv, axis=1))),
+            "max_mass_error_kg": float(np.max(np.abs(trajectory.mass-rows[:, 7]))),
+            "rocket_equation_mass_error_kg": float(np.max(np.abs(rows[:, 7]-(120.-thrust*rows[:, 0]/(isp*9.80665))))),
+            "event_time_error_s": float(abs(rows[-1, 0]-duration)),
+            "inputs": {"radius_m": radius, "speed_m_s": speed, "mu_m3_s2": GMAT_JGM2_MU_M3_S2,
+                       "thrust_n": thrust, "isp_s": isp, "mass_kg": 120., "dry_mass_kg": 100.,
+                       "direction_inertial": [0., 1., 0.], "epoch_gmat_a1mjd": 21545.,
+                       "frame": "EarthMJ2000Eq; same nonrotating Cartesian axes for this point-mass case",
+                       "solver": {"method": "DOP853", "rtol": 1e-12, "atol": 1e-10, "max_step_s": .5}},
+            "history": {"time_s": rows[:, 0].tolist(), "position_residual_m": dr.tolist(),
+                        "velocity_residual_m_s": dv.tolist(), "gmat_mass_kg": rows[:, 7].tolist(),
+                        "ssatk_mass_kg": trajectory.mass.tolist(),
+                        "gmat_position_m": (rows[:, 1:4]*1000).tolist(), "gmat_velocity_m_s": (rows[:, 4:7]*1000).tolist(),
+                        "ssatk_position_m": trajectory.r.tolist(), "ssatk_velocity_m_s": trajectory.v.tolist()},
+            "reference_script": script,
+            "limits": ["Constant inertial force and Isp; fixed-COM point inventory; no atmosphere or external torque",
+                       "No ignition transient or measured thruster qualification"]}
 
 
 def main(make_figures=None, fast=None, verbose=None, allow_install=None):
@@ -223,7 +309,7 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
     gmat = _find_gmat()
     if gmat is None:
         return {"skipped": True, "reason": "GMAT R2026a installation unavailable"}
-    if not _ensure_container_image(allow_install=allow_install):
+    if not _runtime_available(gmat[1], allow_install=allow_install):
         return {"skipped": True, "reason": "Podman or Ubuntu 24.04 image unavailable"}
 
     radius_m = 7_000_000.0
@@ -256,7 +342,7 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
     result = {
         "skipped": False,
         "tool": "GMAT R2026a RungeKutta89",
-        "container": GMAT_IMAGE,
+        "container": None if gmat[1].endswith(".exe") else GMAT_IMAGE,
         "force_model": "Earth degree/order 0 JGM2 point mass",
         "duration_s": float(times[-1]),
         "sample_count": int(times.size),

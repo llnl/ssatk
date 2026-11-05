@@ -197,6 +197,13 @@ The returned r/v are the bus COM; reconstruct total COM before an orbital
 handoff. The default prescribed modes do not provide reciprocal coupling.
 See `docs/launch_baseline.rst` for validity and evidence requirements.
 
+For launch verification, reuse the source-checkout command
+`python3 -m demos.launch.demo_launch_verification --output <new-directory>`.
+Its report keeps missing external/observed references as `UNAVAILABLE` and
+exits nonzero for an incomplete ladder; a passed internal case is not a
+substitute for an independent or measured comparison. Keep generated evidence
+outside version control and retain its configuration and source hashes.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the
