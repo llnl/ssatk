@@ -190,13 +190,6 @@ Native SSAPy coast needs one central-gravity term; the 6-DoF runner already
 includes that term through `mu`. See `docs/launch_baseline.rst` and
 `demos/launch/demo_launch_orbit_handoff.py` for the overlap reference.
 
-For optional constant-mass slosh, reuse `SloshMode` and
-`propagate_6dof_extended(coupled_slosh=True)`. Supply a displacement limit,
-clamped-bus frequency/damping and bus mass/inertia excluding modal masses.
-The returned r/v are the bus COM; reconstruct total COM before an orbital
-handoff. The default prescribed modes do not provide reciprocal coupling.
-See `docs/launch_baseline.rst` for validity and evidence requirements.
-
 For launch verification, reuse the source-checkout command
 `python3 -m demos.launch.demo_launch_verification --output <new-directory>`.
 Its report keeps missing external/observed references as `UNAVAILABLE` and
@@ -215,6 +208,13 @@ Use that demo's `--write-sample <new.json>` to create an editable synthetic
 dataset and `--dataset <edited.json> --output <new-report.json>` to run it.
 Keep sample evidence labeled synthetic; JSON sensor/model settings change
 predictions without silently regenerating the stored observations.
+
+For optional constant-mass slosh, reuse `SloshMode` and
+`propagate_6dof_extended(coupled_slosh=True)`. Supply a displacement limit,
+clamped-bus frequency/damping and bus mass/inertia excluding modal masses.
+The returned r/v are the bus COM; reconstruct total COM before an orbital
+handoff. The default prescribed modes do not provide reciprocal coupling.
+See `docs/launch_baseline.rst` for validity and evidence requirements.
 
 For joint station orbit determination, extend `navigation.solve_batch_orbit`
 with `parameters0`, ordered `parameter_scale`/`parameter_bounds`, a
