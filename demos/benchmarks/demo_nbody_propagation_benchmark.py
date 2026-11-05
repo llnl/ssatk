@@ -145,7 +145,7 @@ def _run_orekit(*, mode: str, radius: float, duration: float, step: float, allow
         temp = Path(temp_name)
         classpath_file = temp / "classpath.txt"
         subprocess.run(
-            ["mvn", "-q", "dependency:build-classpath", f"-Dmdep.outputFile={classpath_file}"],
+            [shutil.which("mvn"), "-q", "dependency:build-classpath", f"-Dmdep.outputFile={classpath_file}"],
             cwd=demo_orekit_benchmark.OREKIT_DIR,
             check=True,
         )
@@ -295,7 +295,7 @@ def main(make_figures=None, fast=None, verbose=None, allow_install=None):
     gmat = demo_gmat_benchmark._find_gmat()
     gmat_ready = (
         gmat is not None
-        and demo_gmat_benchmark._ensure_container_image(allow_install=allow_install)
+        and demo_gmat_benchmark._runtime_available(gmat[1], allow_install=allow_install)
         and demo_gmat_benchmark._de430_available()
     )
     figure_dir = Path(figpath("benchmarks"))

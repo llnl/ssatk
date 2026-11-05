@@ -43,6 +43,7 @@ def _compare(first, second):
             "position_m": float(np.max(np.linalg.norm(a[:, :3]-b[:, :3], axis=1))),
             "velocity_m_s": float(np.max(np.linalg.norm(a[:, 3:6]-b[:, 3:6], axis=1))),
             "quaternion": float(np.max(q_error)),
+            "attitude_rad": float(np.max(4*np.arcsin(np.clip(q_error/2, 0, 1)))),
             "body_rate_rad_s": float(np.max(np.linalg.norm(a[:, 10:13]-b[:, 10:13], axis=1))),
             "mass_kg": float(np.max(np.abs(a[:, 13]-b[:, 13]))),
             "event_time_s": float(max(abs(a["time_gps_s"]-b["time_gps_s"])
@@ -58,6 +59,7 @@ def run_reference():
     atol = np.array([1e-6]*3 + [1e-9]*3 + [1e-11]*4 + [1e-10]*3 + [1e-10])
     budgets = {"position_m": 1e-4, "velocity_m_s": 1e-6, "quaternion": 1e-7,
                "body_rate_rad_s": 1e-7, "mass_kg": 1e-8, "event_time_s": 1e-7}
+    budgets["attitude_rad"] = float(4*np.arcsin(budgets["quaternion"]/2))
     cases = []
     for name, reference, base_step, output_samples in (
             ("staging", staging_reference, .25, 141), ("pitch", pitch_reference, .1, 151)):
