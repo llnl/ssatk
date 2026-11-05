@@ -39,7 +39,7 @@ The `demos/` package is organized by workflow area:
 | `six_dof/` | rigid-body attitude, gravity-gradient torque, facet solar-radiation pressure, and finite-burn coupling |
 | `orbit_visualization/` | orbit, cislunar, globe, Moon, and ground-track visualization workflows |
 | `sensor_coverage/` | satellite viewer and sensor field-of-view coverage demos |
-| `navigation/` | star-catalogue attitude and landmark-bearing position estimation |
+| `navigation/` | star-catalogue attitude, landmark-bearing position, and synthetic geometric/radio orbit estimation with TDM ingestion |
 | `space_environment/` | Sun/Earth/Moon scenes, solar-system views, magnetic fields, and Van Allen belts |
 | `eclipse/` | solar and lunar eclipse geometry and animation demos |
 | `analysis_dashboards/` | dashboards, divergence plots, and population summary visualizations |
