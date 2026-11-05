@@ -1,4 +1,4 @@
-"""Calibrate a synthetic motor/sensor and retain a deliberately failed holdout."""
+"""Export or customize synthetic motor/sensor data and calibrate held-out cases."""
 
 import argparse
 import hashlib
@@ -42,6 +42,7 @@ def reference_case(name, *, epoch=1.4e9, mass=17., offset=0.):
         "sensor": {"position_body_m": arm.tolist(), "frame": "GCRF x velocity",
                    "filter": "Two-sample arithmetic mean; first support sample 0.25 s before first tag",
                    "time_alignment": "Physical sample GPS time = telemetry tag + 0.02 s",
+                   "clock_offset_s": .02, "first_sample_lead_s": .25, "filter_weights": [.5, .5],
                    "support_gps_s": [epoch, float(sample[-1])]},
         "requirements": {"max_abs_residual": .05, "max_abs_bias": .02, "min_coverage": .9,
                          "source": "Declared synthetic demonstration budgets; not mission acceptance limits"},
@@ -51,44 +52,89 @@ def reference_case(name, *, epoch=1.4e9, mass=17., offset=0.):
 def predict(parameters, case):
     """Reuse 6-DoF propagation, then apply the specified sensor position and filter."""
     model = case["model"]
+    sensor = case["sensor"]
+    if (case["observable"], case["unit"], sensor["frame"]) != ("sensor_velocity_x", "m/s", "GCRF x velocity"):
+        raise ValueError("this sample predictor supports sensor_velocity_x in GCRF x velocity, m/s")
+    weights = np.asarray(sensor["filter_weights"], dtype=float)
+    offset, lead = float(sensor["clock_offset_s"]), float(sensor["first_sample_lead_s"])
+    if (weights.shape != (2,) or not np.isfinite(weights).all() or np.any(weights < 0)
+            or not np.isclose(weights.sum(), 1., rtol=0, atol=1e-12)
+            or not np.isfinite([offset, lead]).all() or lead <= 0):
+        raise ValueError("sensor needs two nonnegative filter weights summing to one, a finite clock offset and positive lead")
     epoch = model["epoch_gps_s"]
     time = np.asarray(case["time_gps_s"])
-    samples = np.r_[time[0]-.25, time]+.02
+    samples = np.r_[time[0]-lead, time]+offset
+    if (samples[0] <= epoch or np.any(np.diff(samples) <= 0)
+            or samples[0] < sensor["support_gps_s"][0] or samples[-1] > sensor["support_gps_s"][1]):
+        raise ValueError("corrected sensor samples must increase after the model epoch and lie inside support_gps_s")
     craft = Spacecraft(r=[7e6, 0., 0.], v=[0., 0., 0.], t=epoch,
                        mass=model["initial_mass_kg"], inertia=np.eye(3), omega=[0., 0., model["spin_rad_s"]])
     burn = SpacecraftManeuverAccel(parameters["thrust_n"], frame="gcrf", direction=[1., 0., 0.],
                                   propellant_flow_rate=model["flow_kg_s"], start=epoch, stop=samples[-1])
     trajectory = craft.propagate(times=np.r_[epoch, samples], models=[burn], mu=0.,
                                  rtol=model["rtol"], atol=model["atol"])
-    arm = np.asarray(case["sensor"]["position_body_m"])
+    arm = np.asarray(sensor["position_body_m"])
     velocity = np.array([v[0]+rotate_vector(q, np.cross(omega, arm))[0]
                          for v, q, omega in zip(trajectory.v[1:], trajectory.q[1:], trajectory.omega[1:])])
-    return (velocity[1:]+velocity[:-1])/2+parameters["velocity_bias_m_s"]
+    return weights[0]*velocity[:-1]+weights[1]*velocity[1:]+parameters["velocity_bias_m_s"]
 
 
-def run_reference(*, epoch=1.4e9):
-    """Fit only the first flight; evaluate nominal and biased flights unchanged."""
-    return calibrate_launch_measurements(
-        [reference_case("calibration", epoch=epoch)],
-        [reference_case("held_out", epoch=epoch+10, mass=19.),
-         reference_case("failed_sensor", epoch=epoch+20, mass=23., offset=.3)],
-        predict, {"thrust_n": 9., "velocity_bias_m_s": 0.},
-        parameter_units=["N", "m/s"], parameter_scale=[10., .1],
-        parameter_bounds=([1., -.5], [20., .5]), coverage_probability=.95,
-    )
+def sample_dataset(*, epoch=1.4e9):
+    """Editable, deterministic synthetic observations and fit settings; no measurements."""
+    return {
+        "schema": "ssatk.launch_calibration_dataset.v1",
+        "description": "SYNTHETIC: 10 N thrust and 0.04 m/s sensor bias; failed_sensor has an additional 0.3 m/s fault. Not flight measurements.",
+        "calibration_cases": [reference_case("calibration", epoch=epoch)],
+        "validation_cases": [reference_case("held_out", epoch=epoch+10, mass=19.),
+                             reference_case("failed_sensor", epoch=epoch+20, mass=23., offset=.3)],
+        "parameters0": {"thrust_n": 9., "velocity_bias_m_s": 0.},
+        "parameter_units": ["N", "m/s"], "parameter_scale": [10., .1],
+        "parameter_bounds": [[1., -.5], [20., .5]], "coverage_probability": .95,
+    }
+
+
+def run_reference(*, epoch=1.4e9, dataset=None):
+    """Fit the designated calibration cases, then evaluate frozen holdouts."""
+    options = dict(sample_dataset(epoch=epoch) if dataset is None else dataset)
+    if options.pop("schema", None) != "ssatk.launch_calibration_dataset.v1":
+        raise ValueError("expected schema ssatk.launch_calibration_dataset.v1")
+    options.pop("description", None)
+    units = {"thrust_n": "N", "velocity_bias_m_s": "m/s"}
+    if (set(options["parameters0"]) != set(units)
+            or options["parameter_units"] != [units[name] for name in options["parameters0"]]):
+        raise ValueError("the sample predictor requires thrust_n in N and velocity_bias_m_s in m/s")
+    return calibrate_launch_measurements(predict=predict, **options)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    inputs = parser.add_mutually_exclusive_group()
+    inputs.add_argument("--write-sample", type=Path, help="Write a new editable synthetic dataset JSON without fitting")
+    inputs.add_argument("--dataset", type=Path, help="Read edited dataset JSON; defaults to the built-in synthetic sample")
     parser.add_argument("--output", type=Path, help="New JSON evidence file; never overwritten")
     args = parser.parse_args(argv)
-    report = run_reference()
+    if args.write_sample is not None and args.output is not None:
+        parser.error("--write-sample cannot be combined with --output")
+    destination = args.write_sample if args.write_sample is not None else args.output
+    if destination is not None and destination.exists():
+        parser.error(f"refusing to overwrite {destination}")
+    dataset = None
+    if args.dataset is not None:
+        try:
+            dataset = json.loads(args.dataset.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+    report = sample_dataset() if args.write_sample is not None else run_reference(dataset=dataset)
     encoded = json.dumps(report, indent=2, allow_nan=False)+"\n"
-    if args.output is None:
+    if destination is None:
         print(encoded, end="")
     else:
-        with args.output.open("x", encoding="utf-8") as stream:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("x", encoding="utf-8") as stream:
             stream.write(encoded)
+    if args.write_sample is not None:
+        print(f"Wrote synthetic dataset to {destination}")
+        return 0
     return 0 if report["status"] == "PASS" else 2
 
 

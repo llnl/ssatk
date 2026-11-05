@@ -211,6 +211,10 @@ alignment, source hashes and acceptance budgets explicit. Only identifiable,
 converged interior fits supply formal covariance; synthetic/missing measured
 evidence cannot establish a validation pass. See `docs/launch_baseline.rst`
 and `demos/launch/demo_launch_calibration.py` for the case contract.
+Use that demo's `--write-sample <new.json>` to create an editable synthetic
+dataset and `--dataset <edited.json> --output <new-report.json>` to run it.
+Keep sample evidence labeled synthetic; JSON sensor/model settings change
+predictions without silently regenerating the stored observations.
 
 ## Data
 

@@ -1347,3 +1347,71 @@ and expose an unidentifiable pair of multiplicative thrust coefficients.
 This is software verification; measured thrust, mass-property, weather and
 synchronized telemetry inputs plus independent flight cases are still required
 to complete measurement validation.
+
+Create and customize a sample dataset
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Export the complete synthetic observations and fit settings to an editable JSON
+file, then run the edited file through the same workflow::
+
+   python3 -m demos.launch.demo_launch_calibration --write-sample my-calibration.json
+   python3 -m demos.launch.demo_launch_calibration --dataset my-calibration.json --output my-report.json
+
+The exporter creates parent directories as needed and refuses to overwrite a
+file. Exporting returns code 0. The fit command also refuses to overwrite its
+report or input dataset. Its exit code remains 2 for failed or unavailable
+validation: the default sample deliberately includes a faulty holdout, and all
+sample cases are synthetic. Removing that fault can make the numerical checks
+pass; it cannot establish measured-flight validation.
+
+The JSON uses ``schema: ssatk.launch_calibration_dataset.v1`` and contains:
+
+* ``calibration_cases`` and ``validation_cases`` with the complete case fields
+  described above. Each default case has six time tags, scalar observations,
+  a full covariance matrix, sensor/model settings and input provenance. The
+  nominal sample has 10 N thrust and 0.04 m/s velocity bias; ``failed_sensor``
+  has an additional 0.3 m/s fault. The histories are deterministic closed-form
+  values without random noise; the covariance is a specified uncertainty model.
+* ``parameters0``, ``parameter_units``, ``parameter_scale``,
+  ``parameter_bounds`` and ``coverage_probability``. Optional ``rank_rtol``
+  and ``max_nfev`` go directly to the existing fitter. The sample predictor
+  estimates ``thrust_n`` and ``velocity_bias_m_s``; preserve those names and
+  their N/m/s units when using this predictor.
+* A descriptive ``description`` string. This and source/filter descriptions
+  record meaning; they do not execute model changes.
+
+Edit ``observed`` to replace measurements and edit ``covariance`` in squared
+observable units to describe their uncertainty and correlation. If time tags
+or sample counts change, update the observation/covariance dimensions and
+``sensor.support_gps_s`` together. Times are absolute GPS seconds. Duplicate
+case IDs or overlapping calibration/validation support from the same flight
+are rejected. Duplicate an existing case to add another independent run,
+giving it appropriate IDs, inputs and provenance.
+
+The sample's ``model`` settings control initial mass, constant propellant flow,
+constant initial spin, epoch and integration tolerances. Its sensor settings
+control the body-frame lever arm, ``clock_offset_s``,
+``first_sample_lead_s`` and ``filter_weights``. Physical sample time is tag
+time plus the clock offset. The first extra filter sample is one lead interval
+before the first tag; subsequent outputs pair each tag with its predecessor.
+The two nonnegative weights sum to one and apply to the previous/current
+sample, in that order. Corrected samples must lie after the initial model
+epoch and inside the declared support. For example, ``[0.25, 0.75]`` weights
+the current sample more strongly than the previous one.
+
+Changing these settings changes predictions; it does not regenerate or replace
+the stored observations. This preserves the calibration/held-out split while
+trying a different physical or sensor model. Keep the description fields
+consistent with the numeric settings. The supplied predictor supports only
+``sensor_velocity_x`` in ``m/s`` with frame ``GCRF x velocity``. Different
+observables, force laws or instrument filters require a corresponding Python
+``predict`` callback passed to ``calibrate_launch_measurements``; JSON labels
+alone cannot supply those physics.
+
+Keep ``evidence: synthetic`` and the synthetic source labels for generated or
+edited sample histories. When actual data becomes available, replace those
+histories, source hashes, uncertainty descriptions and sensor/model metadata
+with the measured case information before marking a case ``measured``.
+Choose acceptance requirements before fitting and retain failed heldouts.
+Generated datasets and reports belong in user-selected data/output locations;
+the Toolkit stores the generator and workflow, not generated datasets.

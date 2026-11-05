@@ -1,8 +1,10 @@
 """Step-14 calibration against rocket motion and closed-form Gaussian regression."""
 
+import json
+
 import numpy as np
 
-from demos.launch.demo_launch_calibration import predict, reference_case, run_reference
+from demos.launch.demo_launch_calibration import main, predict, reference_case, run_reference
 from ssatk.launch import calibrate_launch_measurements
 
 
@@ -61,3 +63,34 @@ def test_unidentifiable_motor_scale_has_zero_fisher_information():
     np.testing.assert_allclose(information[1]/information[0], 0., atol=1e-8, rtol=0)
     assert report["rank"] == 1 and report["parameter_covariance"] is None
     assert report["calibration_status"] == "FAIL" and report["validation_status"] == "UNAVAILABLE"
+
+
+def test_custom_dataset_recovers_rocket_thrust_and_sensor_bias(tmp_path):
+    """R1: edited JSON recovers 7.5 N / -0.03 m/s within 2e-6 N / 2e-7 m/s.
+
+    Observations independently use the rocket equation and circular lever-arm
+    motion with changed mass, flow, spin, timing and unequal filter weights.
+    """
+    dataset_path, report_path = tmp_path/"sample.json", tmp_path/"report.json"
+    main(["--write-sample", str(dataset_path)])
+    dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
+    dataset["validation_cases"] = dataset["validation_cases"][:1]
+    dataset["parameters0"] = {"thrust_n": 6., "velocity_bias_m_s": .01}
+    for case in dataset["calibration_cases"]+dataset["validation_cases"]:
+        model, sensor = case["model"], case["sensor"]
+        model.update(initial_mass_kg=20., flow_kg_s=.2, spin_rad_s=.15)
+        sensor.update(position_body_m=[.2, -.1, 0.], clock_offset_s=-.01,
+                      first_sample_lead_s=.1, filter_weights=[.25, .75])
+        tags = np.asarray(case["time_gps_s"])
+        elapsed = np.r_[tags[0]-.1, tags]-.01-model["epoch_gps_s"]
+        velocity = 7.5/.2*np.log(20./(20.-.2*elapsed))
+        velocity -= .15*(.2*np.sin(.15*elapsed)-.1*np.cos(.15*elapsed))
+        case["observed"] = (.25*velocity[:-1]+.75*velocity[1:]-.03).tolist()
+    dataset_path.write_text(json.dumps(dataset), encoding="utf-8")
+    main(["--dataset", str(dataset_path), "--output", str(report_path)])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    np.testing.assert_allclose(report["parameters"]["thrust_n"], 7.5, atol=2e-6, rtol=0)
+    np.testing.assert_allclose(report["parameters"]["velocity_bias_m_s"], -.03, atol=2e-7, rtol=0)
+    for case in report["cases"]:
+        np.testing.assert_allclose(case["residual"], 0., atol=2e-7, rtol=0)
+    assert report["validation_status"] == "PASS" and report["status"] == "UNAVAILABLE"

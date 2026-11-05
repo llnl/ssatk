@@ -166,7 +166,7 @@ def calibrate_launch_measurements(
                    "Marginal coverage is descriptive; temporal correlation is included in the joint check",
                    "Synthetic cases cannot establish measured flight validation"],
     }
-    quantile = norm.ppf((1+coverage_probability)/2)
+    quantile = norm.isf((1-coverage_probability)/2)
     for split, group in (("calibration", calibration), ("validation", validation)):
         for case in group:
             specification, observed, noise, whitener, missing = case
