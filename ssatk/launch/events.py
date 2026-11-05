@@ -339,7 +339,7 @@ class LaunchGuide:
 
 
 def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
-                     condition_tolerance=1e-7, conservation_tolerances=None, **solver):
+                     condition_tolerance=1e-7, conservation_tolerances=None, control=None, **solver):
     """Propagate a finite event graph using Spacecraft.propagate.
 
     times are output GPS seconds, independent of solver steps. ground_condition
@@ -354,6 +354,9 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
     (B_post-B_pre)/M, preserving material momentum. Custom maps must supply
     that physics themselves; the ledger checks it. Relative fluid angular
     momentum is assumed zero, as in the Step 5 axial reference.
+    Optional LaunchControl inserts recurring accepted scheduling boundaries.
+    Physical events (including immediate new-mode roots) precede updates;
+    terminal events prevent further updates at their epoch.
     """
     _check_state(state)
     times = np.asarray(times, dtype=float)
@@ -387,6 +390,11 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
     if any(not np.isfinite(x) or x < 0 for x in tolerances.values()):
         raise ValueError("conservation tolerances must be finite and nonnegative")
     current, fired, arcs, ledger = initial_phase, set(), [], []
+    if control is not None:
+        from .guidance import LaunchControl
+        if not isinstance(control, LaunchControl):
+            raise TypeError("control must be a LaunchControl")
+        control.start(state.t)
     while True:
         mode = modes[current]
         y = _state_vector(state)
@@ -431,6 +439,9 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
         candidates.append(LaunchEvent("__duration", lambda t, y: t-times[-1], None, 1, 10000,
                                       max(1e-9, 8*np.spacing(abs(times[-1])))))
         candidates = [e for e in candidates if e.name not in fired]
+        if control is not None:
+            scheduled = control.next_time
+            candidates.append(LaunchEvent("__control", lambda t,y:t-scheduled, current, 1, 20000, 0.))
 
         def evaluate(event, t, y):
             value = float(event.condition(t, y))
@@ -445,21 +456,26 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
                          < evaluate(e, state.t, y))]
         if not ready:
             functions = []
-            for event in candidates:
+            integration_events = [e for e in candidates if e.name != "__control"]
+            for event in integration_events:
                 def root(t, y, event=event):
                     return evaluate(event, t, y)
                 root.terminal, root.direction = True, event.direction
                 functions.append(root)
-            requested = np.r_[state.t, times[times > state.t]]
+            end = min(times[-1], control.next_time) if control is not None else times[-1]
+            requested = np.r_[state.t, times[(times > state.t) & (times < end)], end]
             trajectory = state.propagate(times=requested, models=mode.models,
                 events=functions, stop_at_dry_mass=False, dense_output=True,
                 constraint=mode.constraint, **options)
             arcs.append((current, trajectory))
+            if trajectory.status == 0:
+                # A clock boundary is an exact endpoint, not a numerical root.
+                trajectory.t[-1] = end
             state = trajectory.spacecraft(body=state.body, tank_name=tank_name,
                 inertia=None if state.body is not None else state.inertia, cd=state.cd, cr=state.cr)
             _check_state(state)
             y = _state_vector(state)
-            roots = {e.name for e, values in zip(candidates, trajectory.t_events or ())
+            roots = {e.name for e, values in zip(integration_events, trajectory.t_events or ())
                      if len(values) and abs(float(values[-1])-state.t) <= max(1e-8, 8*np.spacing(abs(state.t)))}
             previous_t = max(float(trajectory.t[0]), state.t-1e-4)
             previous_y = trajectory.solution(previous_t)
@@ -471,6 +487,8 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
                 raise RuntimeError("launch integration ended without an accepted event")
         trigger_phase = current
         for event in sorted(ready, key=lambda e: (e.priority, e.name)):
+            if event.name == "__control":
+                continue
             pre, source = state, current
             value = evaluate(event, pre.t, y)
             target = current if event.next_phase is None else event.next_phase
@@ -503,3 +521,20 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
                            "conservation": conservation})
             if event.next_phase is None:
                 return LaunchResult(state, current, tuple(arcs), tuple(ledger), event.name)
+        if any(e.name != "__control" for e in ready):
+            continue
+        if control is not None and state.t == control.next_time:
+            before, state = state, deepcopy(state)
+            before_transport = _transport(modes[current].momentum_transport, before)
+            control.update(deepcopy(state), current)
+            after_transport = _transport(modes[current].momentum_transport, state)
+            state.v[:] += (after_transport-before_transport)/state.mass
+            after_transport = _transport(modes[current].momentum_transport, state)
+            conservation = _conservation(before, LaunchReset(state), tolerances, before_transport, after_transport)
+            ledger.append({"order": len(ledger), "event": "__control", "time_gps_s": state.t,
+                           "condition_value": 0., "condition_tolerance": 0.,
+                           "direction": 1, "priority": 20000, "trigger_phase": current,
+                           "pre_phase": current, "post_phase": current,
+                           "pre_state": _snapshot(before, before_transport),
+                           "post_state": _snapshot(state, after_transport), "children": [],
+                           "conservation": conservation})

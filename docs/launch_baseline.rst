@@ -674,7 +674,7 @@ Mach, alpha, beta, commanded deflection, dynamic pressure and Reynolds number
 rho*speed*reynolds_length/mu. A separately declared ``reynolds_length`` is metres.
 The three moment lengths and aerodynamic area remain explicit; assembled stage
 geometry does not infer them. ``deflection`` is a prescribed radian scalar or
-state callable; actuator dynamics belong to Step 9.
+state callable; Step 9 actuator ``value(t)`` can supply actual deflection.
 
 Run the synthetic evidence workflow and independent references::
 
@@ -705,8 +705,8 @@ seconds and the existing state layout: GCRF position and velocity, body-to-GCRF
 quaternion, body angular rate, optional total mass and optional wheel momentum.
 Targets must name declared phases; a ``None`` target terminates. Configure
 distinct phases and globally unique event names for each ignition or restart.
-This finite graph deliberately has no recurring controller updates; those need
-the separate sensor/control scheduling work.
+Physical transitions are one-shot; optional Step 9 ``LaunchControl`` supplies
+recurring sensor/control boundaries separately.
 
 Roots carry direction, priority and an absolute tolerance in the condition's
 units. Initial zero conditions fire immediately, once. During propagation,
@@ -817,3 +817,87 @@ demo; the separate rotating-rail and independent Astropy/WGS84 references check
 those kinematics and ground conversion. ``qualification_status`` stays
 ``NOT RUN``. Mission acceptance, measured vehicle calibration, solver convergence
 qualification and ascent-to-orbit overlap verification remain separate work.
+
+Step 9: sampled guidance, sensors and actuators
+------------------------------------------------
+
+Pass ``control=LaunchControl(...)`` to ``propagate_launch``. Integration splits
+at exact clock endpoints, independent of output spacing. At a shared epoch all
+physical events, including immediate new-mode transitions, settle before
+sensing; a terminal event prevents further updates. Four callbacks separate
+the physical state from measurements, estimates, references and commands:
+
+* ``sensor(copied_truth)`` returns measurements. Use existing sensor models for
+  declared bias, covariance, seeded noise and dropout. Only this callback sees
+  truth; sensor location/orientation and validity remain explicit inputs.
+* ``estimator(time, delivered_packets, previous_estimate)`` receives packets
+  after ``sensor_latency`` seconds, retaining sample/delivery GPS epochs. Supply
+  a prior estimate and a policy for invalid measurements; no truth fallback is
+  provided. Covariance semantics belong to the estimator.
+* ``guidance(time, estimate)`` returns the commanded reference.
+* ``controller(time, estimate, reference)`` returns actuator channels. Reuse
+  ``SpacecraftAttitudePD`` on the estimate, rather than attaching it directly
+  as continuous truth-feedback torque.
+
+Acquisition, delivery/estimation, guidance/control and command activation run in
+that order. ``sensor_period``, ``control_period`` and both latencies are seconds.
+``command_latency`` delays activation; commands are held between updates.
+Clocks use initial GPS epoch plus integer sample index times period. Periods
+must exceed eight floating-point spacings at the epoch. Use a fresh control,
+actuator and seeded sensor for each run. Callbacks receive copies and return
+finite JSON-recordable data; keep hidden truth out of closures/global state.
+
+``LaunchActuator`` requires initial channels, lower/upper limits, positive rates
+(channel units/s), nonnegative lags (s), units and a source. Activated commands
+are clipped. Between commands its continuous response solves
+
+.. math::
+
+   \dot{x} = \operatorname{clip}((u-x)/\tau,-r,+r).
+
+Positive lag gives a constant-rate ramp until error reaches ``r*tau``, then
+exponential convergence; smaller errors are exponential from the start. Zero
+lag gives a finite-rate ramp. Pure ``value(t)`` evaluations at/after the last
+accepted command do not advance sensors, draw noise or mutate actuator memory.
+Record commands and inputs for reconstruction; this is not a historical replay
+API. Coupling, backlash and actuator reaction inertia are not inferred.
+
+``SpacecraftManeuverAccel(position_body=...)`` extends the existing thrust,
+pressure, throttle and named-tank flow path with body torque
+``(position_body-current_COM) cross force_body`` in N m. The fixed application
+point is in body metres; vector thrust callables can use actual gimbal values.
+Omitted position retains thrust through the instantaneous COM. Off-center thrust
+requires body mass properties. Do not add a second copy of the thrust torque.
+The existing quaternion/rate equations evolve the plant; commands do not
+override attitude. Flow and transport must still satisfy Step 5; scheduled
+transport jumps retain the Step 8 material-momentum reset and conservation ledger.
+
+``control.history`` keeps acquisitions, deliveries, estimates, references,
+requested commands, delayed activations, bounded targets and actual values.
+``LaunchResult`` retains truth arcs and ``__control`` pre/post states alongside
+physical event evidence. Exceptions stop the run; completed updates remain in
+the caller-owned history.
+
+Run independent references and retain a new synthetic record::
+
+   python3 -m pytest -q tests/test_launch_guidance.py tests/test_launch_events.py tests/test_launch_propulsion.py
+   python3 -m demos.launch.demo_launch_guidance --output path/to/new-evidence.json
+
+The demo uses ``CartesianSensor`` for orthogonal direction observations and a
+body-rate gyro at the COM, removes an explicitly known bias, fits attitude with
+``fit_star_attitude`` and holds the last measurement. Fixed-target guidance and
+the existing quaternion PD drive a delayed, rate-limited pitch gimbal on an
+off-center force actuator. This synthetic external-wrench reference removes
+point inventory at the fixed COM: B=0, dry inertia is constant and relative fluid
+angular momentum is zero. It does not infer an off-center nozzle's internal
+fluid/transport model. The record keeps truth, measurements,
+measurement covariance (not an estimated attitude covariance), estimates,
+references, gimbal commands/response, timing, inventory, solver inputs and seed.
+It tracks the known nominal pitch/rate equilibrium, obeys stops, matches
+constant-Isp inventory and agrees on two output grids. Independent tests constrain
+actuator closed forms, delayed angular impulse/quaternion motion, changing-COM
+thrust arms, biased GPS position samples and event/transport ordering.
+This demonstrates synthetic models and one nominal pitch case, not calibrated
+performance, an attitude EKF, three-axis launch guidance or mission qualification.
+Gravity, weather, Earth rotation, off-nominal dispersions, slosh/flexibility and
+an acceptance mission remain separate work.

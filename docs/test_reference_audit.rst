@@ -624,3 +624,18 @@ inventory geometry.
 An independently specified equal-material-velocity split checks transport in
 orbital angular momentum about the common pre-event origin (1e-10 kg m/s and
 kg m2/s), where using M*v instead would leave a nonzero moment.
+
+Sampled launch guidance references
+-----------------------------------
+
+``tests/test_launch_guidance.py`` uses piecewise ramp/exponential solutions
+(2e-14 rad), delayed torque integrals on an isotropic rigid body (2e-9 rad/s
+and quaternion; 4e-9 N m s), and rotated force/cross-product moments at two tank
+masses (1e-12 N m and m/s2; 1e-15 kg/s). Constant-velocity GPS motion constrains
+biased samples (1e-7 m) and exact delivery epochs. Immediate phase resets
+precede sensing; commanded transport preserves M*v-B (1e-12 m/s, position
+1e-8 m). The synthetic gimbal case compares terminal pitch/rate with the known
+equilibrium (2e-3 rad and rad/s), mass with constant-Isp flow (1e-8 kg), and
+coarse/fine output grids (1e-10 quaternion). These R1/R4 mathematical and nominal
+stability references are not telemetry, calibrated performance or mission-envelope
+qualification. Sensor covariance in the demo is measurement covariance.
