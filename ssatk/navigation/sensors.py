@@ -6,9 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .measurements import GroundStation
+from .measurements import GroundStation, RadioTrackingConfig, _RADIO_MEASUREMENTS, _SCALAR_MEASUREMENTS
 
-_SCALAR_MEASUREMENTS = frozenset({"range", "range_rate"})
 _VECTOR_MEASUREMENTS = frozenset({"az_el", "ra_dec"})
 _MEASUREMENTS = _SCALAR_MEASUREMENTS | _VECTOR_MEASUREMENTS
 
@@ -95,10 +94,16 @@ class StationObservation:
     visible: bool
     valid: bool = True
     prediction: object | None = None
+    radio: RadioTrackingConfig | None = None
 
     def __post_init__(self):
         if self.measurement not in _MEASUREMENTS:
             raise ValueError(f"unsupported measurement {self.measurement!r}.")
+        if self.measurement in _RADIO_MEASUREMENTS:
+            if not isinstance(self.radio, RadioTrackingConfig):
+                raise ValueError("radio observations require RadioTrackingConfig.")
+        elif self.radio is not None:
+            raise ValueError("radio configuration requires a radio measurement type.")
         dimension = 1 if self.measurement in _SCALAR_MEASUREMENTS else 2
         if not np.isfinite(float(self.time)) or not np.isfinite(float(self.elevation_rad)):
             raise ValueError("time and elevation_rad must be finite.")
@@ -160,6 +165,7 @@ class GroundStationSensor:
         dropout_probability: float = 0.0,
         min_elevation_rad: float | None = None,
         visibility_override: bool = False,
+        radio: RadioTrackingConfig | None = None,
     ):
         if not isinstance(station, GroundStation):
             raise TypeError("station must be a GroundStation.")
@@ -169,6 +175,11 @@ class GroundStationSensor:
             measurement = kind
         if measurement not in _MEASUREMENTS:
             raise ValueError(f"measurement must be one of {sorted(_MEASUREMENTS)}.")
+        if measurement in _RADIO_MEASUREMENTS:
+            if not isinstance(radio, RadioTrackingConfig):
+                raise ValueError("radio sensors require RadioTrackingConfig.")
+        elif radio is not None:
+            raise ValueError("radio configuration requires a radio measurement type.")
         dimension = 1 if measurement in _SCALAR_MEASUREMENTS else 2
         covariance = np.asarray(covariance, dtype=float)
         if dimension == 1 and covariance.ndim == 0:
@@ -194,6 +205,7 @@ class GroundStationSensor:
             raise TypeError("rng must be a numpy Generator or integer seed.")
         self.station = station
         self.measurement = measurement
+        self.radio = radio
         self.covariance = covariance
         self.bias = bias
         self.rng = rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
@@ -208,9 +220,12 @@ class GroundStationSensor:
         return self.measurement
 
     def measure(self, truth, time) -> StationObservation:
-        """Return one noisy observation, or an invalid masked/dropout sample."""
+        """Return an observation; radio truth is a dense state/STM trajectory."""
 
-        prediction = self.station.predict(truth, time, self.measurement)
+        prediction = (
+            self.station.predict_radio(truth, time, self.measurement, self.radio)
+            if self.radio is not None else self.station.predict(truth, time, self.measurement)
+        )
         threshold = self.station.min_elevation_rad if self.min_elevation_rad is None else self.min_elevation_rad
         visible = prediction.elevation_rad >= threshold
         eligible = visible or self.visibility_override
@@ -236,6 +251,7 @@ class GroundStationSensor:
             visible,
             valid,
             prediction,
+            self.radio,
         )
 
 

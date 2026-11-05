@@ -156,6 +156,74 @@ truth.  It does not infer or validate a real
 covariance budget, sensor calibration, observability claim, or operational
 accuracy.
 
+Coherent radio tracking
+-----------------------
+
+``GroundStation.predict_radio`` computes vacuum ``two_way_range`` in metres
+and ``two_way_doppler`` in hertz. Both use a ground transmit event, separate
+spacecraft receive/transmit events, and a ground receive event. A positive
+fixed transponder delay moves the spacecraft reception before retransmission;
+the spacecraft is propagated at both events. Existing ``range`` and
+``range_rate`` observables retain instantaneous geometry.
+Signal paths include Earth's barycentric position and velocity at each event,
+using the DE430 kernel already supplied through SSAPy's planetary ephemerides.
+GPS epochs and signal offsets are converted to two-part TDB kernel epochs.
+
+.. code-block:: python
+
+   import numpy as np
+   from ssatk.navigation import GroundStation, RadioTrackingConfig
+   from ssatk.propagators_orbit import propagate_orbit_state_with_stm
+
+   t0 = 1.4e9
+   station = GroundStation(-104.9, 39.7, elevation_m=1600)
+   radio = RadioTrackingConfig(
+       uplink_frequency_hz=7.2e9, count_interval_s=10,
+       turnaround_ratio=880 / 749, transponder_delay_s=2e-6,
+   )
+   trajectory = propagate_orbit_state_with_stm(
+       r0=[7e6, 0, 0], v0=[0, 7500, 1200], t0=t0,
+       times=[t0, t0 + 60], dense_output=True,
+   )
+   prediction = station.predict_radio(trajectory, t0 + 60, "two_way_doppler", radio)
+
+The timestamp is ground reception. Range is half the full round-trip distance,
+including ``c * transponder_delay_s / 2``. Doppler is mean received frequency
+minus the coherent reference ``turnaround_ratio * uplink_frequency_hz``, over
+the interval ending at that timestamp; recession gives a negative shift.
+It is calculated from the change in solved signal paths, not from a single
+instantaneous range rate. GMAT's generic ``Range`` is a full path in km;
+GMAT ``DSN_TCP`` uses a different carrier/reference convention. Convert those
+conventions explicitly when comparing outputs.
+
+``GroundStationSensor(..., measurement="two_way_doppler", radio=radio)``
+accepts a dense state/STM trajectory as ``truth`` in ``measure(truth, time)``.
+Its ``StationObservation`` retains the immutable radio configuration, including
+the count interval. Sensor covariance and bias use metres for range and hertz
+for Doppler. ``solve_batch_orbit`` consumes these observations alongside the
+existing geometric types, sharing one dense propagation per candidate state.
+Supply an explicit ``t0`` early enough to cover all spacecraft events and the
+beginning of every Doppler count. Out-of-coverage signal events are rejected;
+trajectories are never extrapolated. ``trajectory.at(time, offset_s=...)`` keeps
+signal offsets separate from the large absolute GPS epoch.
+
+For an EKF, ``GroundStationMeasurement(station, receive_time, measurement,
+radio=radio, t0=state_epoch, propagation_kwargs=...)`` returns a prediction and
+its Jacobian with respect to the state at ``state_epoch``. That epoch must
+precede the signal/count interval. Update an EKF holding a state at that epoch,
+then propagate it forward; setting the filter timestamp to receive time alone
+would not propagate its state. Batch fitting likewise includes the dependence
+of the solved signal times on the initial state in its derivatives.
+
+These are constant-frequency, single-station, two-way vacuum links. They
+exclude three-way links, frequency ramps, media corrections, relativistic
+terms, clocks, and proper-time hardware calibration. Visibility checks use
+station elevations on both legs and, for Doppler, both count endpoints; they
+do not search for an interruption within a count interval. The synthetic demo
+uses an all-sky mask and specified noise-free observations with artificial
+fitting weights. Analytic references and finite differences validate this
+model; observed tracking data is still needed for operational accuracy.
+
 Run the examples
 ----------------
 
@@ -164,6 +232,7 @@ Run the examples
    python -m demos.sensor_coverage.demo_observer_pair_screening
    python -m demos.orbital_mechanics.demo_pair_screening_and_conjunctions
    python -m demos.navigation.demo_synthetic_orbit_estimation
+   python -m demos.navigation.demo_radio_tracking
 
 For offline validation without writing PNGs, call each module's
 ``main(make_figures=False)``.  The first demo also has
