@@ -205,6 +205,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_magfield_physics.py,22,R1 R2 R3 R4,Geopack; ppigrf; dipole field theory; IRBEM when present; Astropy star frames,Contains approximate geographic/model sanity bounds; AE8/AP8 cache and IRBEM optional
    tests/test_moon_texture_rotation.py,1,R4,Near-side sub-Earth meridian within optical libration bound,Coarse 9 degree orientation check; not precision PA/ME alignment
    tests/test_moon_webgl_json.py,4,R1 R4 C,Prescribed terrain slopes; lunar radius/unit conversions; near-side geometry,"Libration bounds constrain gross orientation, not precision lunar cartography"
+   tests/test_mpc_orbits.py,3,R1 R2 R3,MPC published packed-designation/date examples; JPL Horizons Eros elements and vectors; independent JPL orbit solution; Kepler-period closure,Ecliptic conversion exact to 1 m; ICRF allows 300 m for SSATK's rounded J2000 obliquity; MPC-JPL solution difference budget 50 km
    tests/test_navigation_batch.py,2,R1 R5 C,Known linear free-flight state and Fisher covariance; finite differences,Synthetic measurement functions; not realistic observed orbit determination
    tests/test_navigation_measurements.py,4,R1 R4 R5,Known range/range-rate/angles; finite differences; station position and ENU basis share one Earth-rotation route,Geometry/derivatives; no atmospheric or instrument calibration
    tests/test_navigation_sensors.py,2,R1 R4,Known Gaussian/chi-square/binomial distributions and synthetic elevation mask,Seeded statistical tests; not measured sensor noise
