@@ -28,7 +28,7 @@ def projected_solver(method, project):
     class ProjectedSolver(OdeSolver):
         def __init__(self, fun, t0, y0, t_bound, vectorized=False, **options):
             if vectorized:
-                raise ValueError("projected wheel integration requires vectorized=False.")
+                raise ValueError("projected integration requires vectorized=False.")
             super().__init__(lambda t, y: fun(t, project(t, y)), t0, y0,
                              t_bound, vectorized=False)
             self.options = dict(options)

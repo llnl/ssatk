@@ -590,3 +590,53 @@ retention of 3-D trajectory coordinates, and faithful display of specified
 residuals including exact zero in the force-model dashboard. The existing sky
 epoch contract now mocks the map-frame helper used by the renderer; its
 independent quarter-turn and expected direction remain unchanged.
+
+Launch phase and reset references
+----------------------------------
+
+``tests/test_launch_events.py`` compares child COM states and separation
+impulses with closed-form rigid-body motion (1e-9 m, m/s and rad/s), and moving
+centroid velocities with momentum conservation (1e-10 m/s and kg m/s).
+Two-stage depletion/restart cases compare against the rocket equation
+(1e-7 m/s), analytic depletion times (1e-7 s), and unusable residual inventory
+(1e-8 kg) on coarse and fine output grids. Simultaneous constant-velocity roots
+check deterministic event ordering (1e-8 s) and final state agreement (1e-10 m).
+
+Ideal hold-down force and torque match static balance (1e-12 N and N m).
+Rail exit matches constant acceleration (1e-8 s, m and m/s); a rotating line
+matches analytic Coriolis reactions (1e-10 N) and kinematics (1e-9 m,
+1e-10 m/s). Direct pad release from rest matches constant acceleration
+(1e-8 s, m and m/s). Ballistic contact and accelerated ascent through 100 km
+match closed-form roots (1e-7 s and m). WGS84 clearance uses an independently
+rotated Astropy equatorial reference and packaged IERS-A (1e-5 m). These are
+synthetic R1/R2 mathematical references, not flight validation or qualification.
+Return to the rail base matches ballistic contact time, position and incoming
+velocity (1e-7 s, m and m/s), requiring an explicit contact ledger entry.
+A reset that mutates its input velocity is checked against the impulse/mass
+closed form (1e-12 m/s and kg m/s), preserving the original pre-state.
+Axial-cylinder ignition/cutoff/restart/depletion compare with closed-form
+centroid velocities, an independent dry-body/plug-flow material momentum sum,
+and exhaust quadrature (1e-8 m/s and kg m/s); axial spin momentum is conserved
+to 1e-9 kg m2/s and root epochs to 1e-7 s on two output grids. Draining-cylinder
+separation checks the differentiated first moment and M*v-B conservation
+(1e-10 m/s and kg m/s) with nonzero parent and child transport. These assume
+zero relative fluid angular momentum, without inferring fluid dynamics from
+inventory geometry.
+An independently specified equal-material-velocity split checks transport in
+orbital angular momentum about the common pre-event origin (1e-10 kg m/s and
+kg m2/s), where using M*v instead would leave a nonzero moment.
+
+Sampled launch guidance references
+-----------------------------------
+
+``tests/test_launch_guidance.py`` uses piecewise ramp/exponential solutions
+(2e-14 rad), delayed torque integrals on an isotropic rigid body (2e-9 rad/s
+and quaternion; 4e-9 N m s), and rotated force/cross-product moments at two tank
+masses (1e-12 N m and m/s2; 1e-15 kg/s). Constant-velocity GPS motion constrains
+biased samples (1e-7 m) and exact delivery epochs. Immediate phase resets
+precede sensing; commanded transport preserves M*v-B (1e-12 m/s, position
+1e-8 m). The synthetic gimbal case compares terminal pitch/rate with the known
+equilibrium (2e-3 rad and rad/s), mass with constant-Isp flow (1e-8 kg), and
+coarse/fine output grids (1e-10 quaternion). These R1/R4 mathematical and nominal
+stability references are not telemetry, calibrated performance or mission-envelope
+qualification. Sensor covariance in the demo is measurement covariance.

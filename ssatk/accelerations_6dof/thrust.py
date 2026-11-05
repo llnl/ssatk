@@ -19,6 +19,7 @@ from .spacecraft import (
     _call_optional,
     _parse_state_args,
     _rotate_vector,
+    _quaternion_conjugate,
     _unit_vector,
     _validate_positive,
 )
@@ -111,14 +112,21 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
     All pressure inputs and the validity ``pressure_range`` in Pa are required.
     Flow and Isp refer to the reference-pressure thrust, not corrected thrust.
     Do not correct an already ambient-adjusted history. No chamber dynamics,
-    nozzle separation, mixture-ratio law or thrust moment is inferred.
+    nozzle separation or mixture-ratio law is inferred. ``position_body``
+    optionally supplies the fixed thrust application point in body metres;
+    torque is (position-current_COM) cross body force, in N m. Omitted means
+    thrust through the instantaneous COM. Vector thrust callables may supply
+    bounded actuator-driven pointing without changing the body geometry.
     """
+
+    spacecraft_torque_model = True
 
     def __init__(
         self,
         thrust,
         *,
         direction: ArrayLike | None = None,
+        position_body: ArrayLike | None = None,
         frame: str = "rtn",
         mass: float | None = None,
         isp: float | None = None,
@@ -134,6 +142,9 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
         stop: float = _np.inf,
     ):
         self.thrust = thrust
+        self.position_body = None if position_body is None else _as_vector3(position_body, "position_body").copy()
+        if self.position_body is not None and not _np.isfinite(self.position_body).all():
+            raise ValueError("position_body must be finite body metres")
         self.frame = frame
         self.direction = _default_maneuver_direction(frame) if direction is None else _unit_vector(direction, "direction")
         self.mass = None if mass is None else _validate_positive(mass, "mass")
@@ -187,6 +198,21 @@ class SpacecraftManeuverAccel(SpacecraftAccel):
         if corrected < 0.0:
             raise ValueError("Pressure correction produces negative thrust; the nozzle model is invalid here.")
         return value * (corrected / magnitude)
+
+    def torque(self, *args, **kwargs) -> _np.ndarray:
+        """Body torque about the instantaneous center of mass, in N m."""
+        if self.position_body is None:
+            return _np.zeros(3)
+        spacecraft, t, r, v, q, omega = _parse_state_args(args, kwargs)
+        thrust = self.thrust_vector(t, r, v, q, omega, spacecraft)
+        if not _np.any(thrust):
+            return _np.zeros(3)
+        force = _frame_vector_to_gcrf(self.frame, thrust, r, v, q)
+        body = getattr(spacecraft, "body", None)
+        if body is None:
+            raise ValueError("off-center thrust requires body center-of-mass properties")
+        return _np.cross(self.position_body-body.current_center_of_mass,
+                         _rotate_vector(_quaternion_conjugate(q), force))
 
     def _reference_thrust_vector(self, t, r, v, q, omega, spacecraft=None):
 
