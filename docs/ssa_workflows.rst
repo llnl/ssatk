@@ -224,6 +224,80 @@ uses an all-sky mask and specified noise-free observations with artificial
 fitting weights. Analytic references and finite differences validate this
 model; observed tracking data is still needed for operational accuracy.
 
+Tracking Data Message ingestion
+-------------------------------
+
+``ssatk.io.read_tdm`` reads CCSDS TDM 1.0 and 2.0 KVN or XML from a path,
+stream, or message text. It retains header/segment metadata, comments,
+original epochs and lexical observable values. Calendar and ordinal dates
+use the existing CCSDS time conversion; GPS, UTC, TAI and other Astropy-backed
+scales are supported. Spacecraft clock (SCLK) tags require external correlation
+and are rejected.
+
+.. code-block:: python
+
+   from ssatk.io import read_tdm
+   from ssatk.navigation import GroundStation, RadioTrackingConfig, solve_batch_orbit
+
+   message = read_tdm("tracking.tdm")
+   station = GroundStation(-104.9, 39.7, elevation_m=1600)
+   hardware = RadioTrackingConfig(7.2e9, 10, 880 / 749, 2e-6)
+   observations = message.to_station_observations(
+       {"DSS-EXAMPLE": station},
+       radio={"DSS-EXAMPLE": hardware},
+       covariance={"two_way_range": 4.0, "two_way_doppler": 0.01},
+       range_convention="round_trip",
+   )
+   # state_guess and state_epoch are the caller's initial orbit estimate.
+   fit = solve_batch_orbit(observations, state_guess, t0=state_epoch)
+
+Station/radio mappings use the ground ``PARTICIPANT_n`` identifier from the
+file. Station coordinates, uplink frequency, fixed coordinate-time transponder
+delay, and measurement noise must be supplied explicitly. Turnaround ratios
+and constant transmit-frequency records, when present, must agree with that
+hardware configuration. The TDM's integration interval replaces the caller's
+count interval for Doppler. Covariances and optional biases use SSATK units:
+metres squared/metres for ``two_way_range`` and hertz squared/hertz for
+``two_way_doppler``. No weighting is inferred from a tracking file.
+
+Supported navigation observations are ``RANGE`` in km or seconds,
+``DOPPLER_INTEGRATED`` in km/s, and ``RECEIVE_FREQ``/``RECEIVE_FREQ_1`` in Hz.
+The source interface control document (ICD) must specify whether range and
+integrated range rate describe the full round-trip path or half of it.
+Accordingly, ``range_convention`` and ``doppler_convention`` must explicitly be
+``"round_trip"`` or ``"half_round_trip"`` for those data types. Frequency data
+needs no path convention: ``FREQ_OFFSET`` reconstructs the received carrier,
+then the coherent reference is subtracted to obtain SSATK's frequency shift.
+Recession gives a negative shift, opposite to the standard's
+transmitted-reference-minus-received Doppler convention.
+
+``TIMETAG_REF`` must be RECEIVE (the standard default for received data).
+START/MIDDLE/END ``INTEGRATION_REF`` tags move to the receive-interval end for
+Doppler; range tags retain their original epoch. Scalar range, Doppler and
+receive-frequency corrections marked ``CORRECTIONS_APPLIED=NO`` are added in
+the source units before conversion; YES avoids applying them twice.
+``DATA_QUALITY=DEGRADED`` records remain invalid. Imported elevation and
+visibility are unknown (``None``); ingestion does not invent a visibility
+check or discard observations by the configured elevation mask.
+
+Conversion requires single-station two-way SEQUENTIAL paths and one spacecraft
+across all segments. It rejects unsupported observables, differenced/three-way
+links, ambiguous range, RU units, varying uplink frequencies, nonzero equipment
+delays, and unsupported corrections. Constant uplink records and zero frequency
+rates are checked and do not become orbit-fit observations. Other raw data can
+be inspected in the parsed message, but are never silently dropped into a fit.
+The reader validates complete sections, unique metadata, and chronological,
+unique epochs per observable, without reordering the file.
+
+The reference is `CCSDS 503.0-B-2, June 2020 with Corrigendum 1
+<https://public.ccsds.org/Pubs/503x0b2c1.pdf>`_, particularly table 3-3 and
+sections 3.4.9, 3.4.15, 3.5.2.3, 3.5.2.7 and 3.5.2.8. The radio demo now
+passes synthetic TDM records through ingestion before fitting. Analytic
+free-flight files validate prediction, fitted state and Fisher covariance;
+they are synthetic references, not measured tracking calibration. Persistent
+external tracking/reference datasets belong in SSAPy-Data; user-provided
+tracking files are explicit inputs, not bundled data.
+
 Run the examples
 ----------------
 

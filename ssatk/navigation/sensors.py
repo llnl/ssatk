@@ -83,15 +83,15 @@ class CartesianSensor:
 
 @dataclass(frozen=True)
 class StationObservation:
-    """One noisy ground-station observation and its quality metadata."""
+    """One station observation; imported elevation/visibility may be unknown."""
 
     time: float
     measurement: str
     value: float | np.ndarray | None
     covariance: np.ndarray
     bias: float | np.ndarray
-    elevation_rad: float
-    visible: bool
+    elevation_rad: float | None
+    visible: bool | None
     valid: bool = True
     prediction: object | None = None
     radio: RadioTrackingConfig | None = None
@@ -105,8 +105,8 @@ class StationObservation:
         elif self.radio is not None:
             raise ValueError("radio configuration requires a radio measurement type.")
         dimension = 1 if self.measurement in _SCALAR_MEASUREMENTS else 2
-        if not np.isfinite(float(self.time)) or not np.isfinite(float(self.elevation_rad)):
-            raise ValueError("time and elevation_rad must be finite.")
+        if not np.isfinite(float(self.time)) or (self.elevation_rad is not None and not np.isfinite(float(self.elevation_rad))):
+            raise ValueError("time and any supplied elevation_rad must be finite.")
         covariance = _covariance(self.covariance, (dimension, dimension))
         if self.value is None:
             value = None
@@ -124,7 +124,7 @@ class StationObservation:
         object.__setattr__(self, "covariance", covariance)
         object.__setattr__(self, "bias", bias)
         object.__setattr__(self, "value", value)
-        object.__setattr__(self, "elevation_rad", float(self.elevation_rad))
+        object.__setattr__(self, "elevation_rad", None if self.elevation_rad is None else float(self.elevation_rad))
 
     @property
     def jacobian(self):
