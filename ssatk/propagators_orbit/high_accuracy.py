@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -35,6 +35,23 @@ class OrbitPropagationWithSTM:
     stm: np.ndarray
     nfev: int
     message: str
+    solution: Callable | None = field(default=None, repr=False, compare=False)
+    time_origin: float = 0.0
+
+    def at(self, time, *, offset_s=0.0):
+        """Return state and STM at a scalar GPS epoch plus a seconds offset.
+
+        Requires ``dense_output=True``. Adding ``offset_s`` after subtracting
+        the origin retains sub-microsecond signal times at modern GPS epochs.
+        Queries outside the integrated interval are rejected.
+        """
+        elapsed = float(time) - self.time_origin + float(offset_s)
+        if self.solution is None:
+            raise ValueError("trajectory requires dense_output=True.")
+        if not np.isfinite(elapsed) or not self.solution.t_min <= elapsed <= self.solution.t_max:
+            raise ValueError("signal epoch is outside the integrated trajectory; choose an earlier t0.")
+        value = self.solution(elapsed)
+        return value[:6], value[6:].reshape(6, 6)
 
 
 def propagate_orbit_state(
@@ -119,6 +136,7 @@ def propagate_orbit_state_with_stm(
     rtol: float = 1.0e-10,
     atol: float = 1.0e-9,
     max_step: float = np.inf,
+    dense_output: bool = False,
 ) -> OrbitPropagationWithSTM:
     """Propagate an inertial state and its 6x6 state transition matrix.
 
@@ -126,6 +144,7 @@ def propagate_orbit_state_with_stm(
     order perturbations at each output time. The unperturbed central-gravity
     Jacobian is analytic; arbitrary SSATK acceleration models use centered
     finite differences so they require no derivative API.
+    Set ``dense_output=True`` to evaluate signal-event states with ``result.at``.
     """
 
     times = _times(times)
@@ -166,6 +185,7 @@ def propagate_orbit_state_with_stm(
         rtol=rtol,
         atol=atol,
         max_step=max_step,
+        dense_output=dense_output,
     )
     if not sol.success:
         raise RuntimeError(f"orbit STM propagation failed: {sol.message}")
@@ -178,6 +198,8 @@ def propagate_orbit_state_with_stm(
         stm=sol.y[6:].T.reshape(-1, 6, 6),
         nfev=int(sol.nfev),
         message=str(sol.message),
+        solution=sol.sol,
+        time_origin=t_ref,
     )
 
 

@@ -209,6 +209,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_navigation_batch.py,2,R1 R5 C,Known linear free-flight state and Fisher covariance; finite differences,Synthetic measurement functions; not realistic observed orbit determination
    tests/test_navigation_measurements.py,4,R1 R4 R5,Known range/range-rate/angles; finite differences; station position and ENU basis share one Earth-rotation route,Geometry/derivatives; no atmospheric or instrument calibration
    tests/test_navigation_sensors.py,2,R1 R4,Known Gaussian/chi-square/binomial distributions and synthetic elevation mask,Seeded statistical tests; not measured sensor noise
+   tests/test_radio_tracking.py,8,R1 R2 R5,Closed-form constant-speed and accelerating vacuum links including origin translation; Earth ephemeris against heliocentric ERFA; signal-event finite differences and dense offsets; analytic three-station orbit fit,Constant frequency and fixed delay; no media or observed tracking calibration
    tests/test_optical_navigation.py,5,R1 C,Literal camera rotations and intersecting rays; batch Gaussian information solution; prescribed impulse,14 cases including invalid geometry/covariance/epochs; synthetic measurements not telemetry
    tests/test_numeric_mechanics_helpers.py,2,R1,Newtonian orbital equations; Kepler residuals; cardinal coordinates,Specified ideal geometry
    tests/test_orbit_absolute_epoch.py,2,C R6,Force callback epochs anchored to known GPS values,Time-interface contract; trajectory truth tested separately

@@ -11,10 +11,9 @@ from scipy.optimize import least_squares
 
 from ..propagators_orbit import propagate_orbit_state_with_stm
 from ..propagators_orbit.high_accuracy import OrbitPropagationWithSTM
-from .measurements import GroundStation, GroundStationMeasurement
+from .measurements import GroundStation, GroundStationMeasurement, _RESERVED_PROPAGATION_KWARGS, _scalar_time
 from .sensors import StationObservation
 
-_RESERVED_PROPAGATION_KWARGS = frozenset({"times", "orbit0", "r0", "v0", "t0", "stm0"})
 _DEFAULT_STATE_SCALE = np.array([1.0e7, 1.0e7, 1.0e7, 1.0e3, 1.0e3, 1.0e3])
 _DEFAULT_STATE_SCALE.flags.writeable = False
 
@@ -79,6 +78,8 @@ class BatchOrbitFitResult:
             stm=trajectory_arrays["stm"],
             nfev=int(trajectory.nfev),
             message=str(trajectory.message),
+            solution=getattr(trajectory, "solution", None),
+            time_origin=getattr(trajectory, "time_origin", 0.0),
         )
         object.__setattr__(self, "trajectory", trajectory_copy)
         object.__setattr__(self, "t0", float(self.t0))
@@ -99,18 +100,6 @@ class _PreparedObservation:
     covariance: np.ndarray
     whitener: np.ndarray
     epoch_index: int
-
-
-def _scalar_time(value, name="time") -> float:
-    if isinstance(value, bool):
-        raise TypeError(f"{name} must be a scalar GPS time.")
-    try:
-        array = np.asarray(value.gps if hasattr(value, "gps") else value, dtype=float)
-    except (TypeError, ValueError):
-        raise TypeError(f"{name} must be a scalar GPS time.") from None
-    if array.ndim != 0 or not np.isfinite(array):
-        raise ValueError(f"{name} must be a finite scalar GPS time.")
-    return float(array)
 
 
 def _validate_state(state, name):
@@ -153,6 +142,8 @@ def solve_batch_orbit(
     ``state0`` is the six-element initial state at ``t0``. The default state
     scales are ``[1e7, 1e7, 1e7, 1e3, 1e3, 1e3]`` in SI units. Observation covariance is Cholesky-whitened, and the
     returned covariance is in physical SI state units when full rank.
+    Radio observations require an explicit ``t0`` early enough to cover the
+    spacecraft signal events and the entire Doppler count interval.
     """
 
     state0 = _validate_state(state0, "state0")
@@ -185,6 +176,9 @@ def solve_batch_orbit(
     if rows < 6:
         raise ValueError("at least six scalar observation residual rows are required.")
     epochs_observed = np.asarray([observation.time for _, observation, _, _, _ in prepared], dtype=float)
+    radio_tracking = any(observation.radio is not None for _, observation, _, _, _ in prepared)
+    if radio_tracking and t0 is None:
+        raise ValueError("radio observations require an explicit t0 preceding their complete signal/count intervals.")
     if t0 is None:
         t0 = float(np.min(epochs_observed))
     else:
@@ -213,8 +207,21 @@ def solve_batch_orbit(
             r0=candidate[:3],
             v0=candidate[3:],
             t0=t0,
+            **({"dense_output": True} if radio_tracking else {}),
             **propagation_kwargs,
         )
+
+    def predict(item, trajectory):
+        if item.observation.radio is not None:
+            result = item.station.predict_radio(
+                trajectory, item.observation.time, item.observation.measurement, item.observation.radio,
+            )
+            return np.atleast_1d(result.value), result.jacobian
+        state = np.concatenate((trajectory.r[item.epoch_index], trajectory.v[item.epoch_index]))
+        value, jacobian = GroundStationMeasurement(
+            item.station, item.observation.time, item.observation.measurement,
+        )(state)
+        return value, jacobian @ trajectory.stm[item.epoch_index]
 
     def evaluate(scaled_state, *, with_jacobian):
         candidate = np.asarray(scaled_state, dtype=float) * state_scale
@@ -222,13 +229,11 @@ def solve_batch_orbit(
         residual_blocks = []
         jacobian_blocks = []
         for item in prepared:
-            prediction = GroundStationMeasurement(
-                item.station, item.observation.time, item.observation.measurement
-            )(np.concatenate((trajectory.r[item.epoch_index], trajectory.v[item.epoch_index])))
+            prediction = predict(item, trajectory)
             residual = _wrap_first(item.value - prediction[0], item.observation.measurement)
             residual_blocks.append(np.linalg.solve(item.whitener, residual))
             if with_jacobian:
-                physical_h = prediction[1] @ trajectory.stm[item.epoch_index]
+                physical_h = prediction[1]
                 jacobian_blocks.append(-np.linalg.solve(item.whitener, physical_h * state_scale))
         weighted = np.concatenate(residual_blocks)
         if not with_jacobian:
@@ -247,13 +252,12 @@ def solve_batch_orbit(
     weighted_blocks = []
     final_jacobian_blocks = []
     for item in prepared:
-        state = np.concatenate((final_trajectory.r[item.epoch_index], final_trajectory.v[item.epoch_index]))
-        prediction = GroundStationMeasurement(item.station, item.observation.time, item.observation.measurement)(state)
+        prediction = predict(item, final_trajectory)
         physical = _wrap_first(item.value - prediction[0], item.observation.measurement)
         physical_blocks.append(physical)
         weighted_blocks.append(np.linalg.solve(item.whitener, physical))
         final_jacobian_blocks.append(
-            np.linalg.solve(item.whitener, prediction[1] @ final_trajectory.stm[item.epoch_index])
+            np.linalg.solve(item.whitener, prediction[1])
         )
     physical_residuals = np.concatenate(physical_blocks)
     weighted_residuals = np.concatenate(weighted_blocks)
