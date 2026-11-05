@@ -108,7 +108,7 @@ display-only.
 | `ssatk.navigation` | Batch orbit fits, EKFs, ground-station and optical sensors, star-tracker attitude |
 | `ssatk.compute` | Sampling, coverage statistics, photometry, FFTs, Lyapunov exponents |
 | `ssatk.environment_eop`, `ssatk.environment_space_weather` | Packaged Earth-orientation and space-weather tables |
-| `ssatk.io` | CCSDS CDM, OMM and OEM; reference-case export and comparison; `ssatk_save` and `ssatk_read`; HDF5, CSV, JSON |
+| `ssatk.io` | CCSDS CDM, OMM and OEM; reference-case export and comparison; `ssatk_save` and `ssatk_read`; HDF5, CSV, JSON; Minor Planet Center asteroid orbits (`fetch_mpc_orbits`, `mpc_heliocentric_states`); Space-Track/CelesTrak TLEs (`io.tle_updater`) |
 | `ssatk.plots` | `orbit_plot` and its views, globes, ground tracks, dashboards, animations, `figsave` |
 | `ssatk.data` | Packaged data access (`data_resource`, `data_path`, `read_data_text`, `read_data_binary`) |
 | `ssatk.launch`, `ssatk.engines`, `ssatk.satellites`, `ssatk.operations` | Launch sites and vehicles, propulsion catalogs, spacecraft presets, mission timelines |
@@ -197,6 +197,11 @@ Optional demo inputs come from `ssatk.io.demo_data.ensure_demo_data_file`,
 which looks in the output root and nearby `ssatk_output` folders, downloads from
 a known public source when allowed, and otherwise returns `None` with a warning
 so demos can skip offline. Do not add data files to this repository.
+
+Minor Planet Center orbit catalogs come from `ssatk.io.mpc.fetch_mpc_orbits`,
+which caches the daily MPC export under `mpc/` in the output root. Its
+heliocentric states are ecliptic J2000 unless `frame="icrf"`, and are
+two-body conics away from the MPC epoch.
 
 ## Command-line tools
 

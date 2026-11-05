@@ -316,6 +316,32 @@ or ordinal Coordinated Universal Time (UTC), ``GCRF``, ``EME2000``, and
 drag, solar-radiation-pressure, and thrust rows. Alternate XYZ covariance
 extensions from later message specifications are rejected explicitly.
 
+Minor Planet Center asteroid orbits
+-----------------------------------
+
+:func:`ssatk.io.mpc.fetch_mpc_orbits` downloads a Minor Planet Center orbit
+catalog (``"nea"``, ``"pha"`` or the full ``"mpcorb"``), caches it under
+``mpc/`` in the output root for a day, and parses the MPC export format into a
+:class:`pandas.DataFrame`. :func:`ssatk.io.mpc.mpc_heliocentric_states` turns
+the elements into heliocentric states in m and m/s:
+
+.. code-block:: python
+
+   from astropy.time import Time
+   from ssatk.io.mpc import fetch_mpc_orbits, mpc_heliocentric_states, select_mpc_object
+
+   neas = fetch_mpc_orbits("nea")
+   phas = neas[neas["is_pha"]]
+   apophis = select_mpc_object(neas, "Apophis")
+   r, v = mpc_heliocentric_states(apophis, frame="icrf")          # at the MPC epoch
+   R, V = mpc_heliocentric_states(phas, time=Time("2029-01-01", scale="tt"))
+
+MPC elements are osculating, heliocentric and referred to the ecliptic and
+mean equinox of J2000.0 at a ``.0 TT`` epoch. ``frame="icrf"`` rotates them to
+equatorial axes. Away from the epoch the states are two-body conics with no
+planetary perturbations; integrate the epoch state with an N-body model for
+long arcs or close approaches.
+
 Satellite operation frames
 --------------------------
 
