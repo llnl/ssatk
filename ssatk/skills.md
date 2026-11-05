@@ -204,6 +204,14 @@ exits nonzero for an incomplete ladder; a passed internal case is not a
 substitute for an independent or measured comparison. Keep generated evidence
 outside version control and retain its configuration and source hashes.
 
+For launch measurement calibration, use `launch.calibrate_launch_measurements`
+with frozen calibration/held-out cases and a sensor prediction callback that
+reuses the launch propagators. Keep input uncertainty, position/filter/time
+alignment, source hashes and acceptance budgets explicit. Only identifiable,
+converged interior fits supply formal covariance; synthetic/missing measured
+evidence cannot establish a validation pass. See `docs/launch_baseline.rst`
+and `demos/launch/demo_launch_calibration.py` for the case contract.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the

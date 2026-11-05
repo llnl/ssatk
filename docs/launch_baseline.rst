@@ -1226,3 +1226,124 @@ Numerical refinement, physical model discrepancy and observational uncertainty
 remain distinct. Step 14 measured calibration/held-out validation and flight
 qualification remain unclaimed. This report does not establish a complete
 pad-to-orbit guidance solution or rank simulation packages.
+
+Step 14: measurement calibration and held-out validation
+---------------------------------------------------------
+
+``ssatk.launch.calibrate_launch_measurements`` fits named physical/sensor
+parameters on designated calibration cases, freezes them, and evaluates
+independent flights or nonoverlapping test segments. It reuses SciPy bounded
+least squares; the prediction callback reuses the existing launch models and
+propagators. It does not introduce another force model or infer calibrated
+hardware from a vehicle catalog.
+
+Prepare the split, sensor operators, uncertainty model and output requirements
+before fitting. Supply cases as JSON-compatible mappings with these fields:
+
+* ``id`` (unique across both splits), ``flight_id``, ``evidence`` (``measured``
+  or ``synthetic``), ``observable``, and ``unit``. Each case is one scalar
+  observable history; angles must already be consistently unwrapped.
+* ``time_gps_s`` and ``observed``: matching finite arrays with increasing
+  absolute GPS sample tags. ``covariance`` is a positive-definite matrix
+  covering all samples, in squared observable units. Preserve instrument
+  uncertainty and temporal correlation, including filtering. Propagate
+  uncertain measured inputs into this covariance or explicitly estimate their
+  identifiable effects; do not count the same uncertainty twice.
+* ``sensor``: ``position_body_m`` relative to the model's body origin,
+  ``frame``, ``filter``, ``time_alignment``, and ``support_gps_s``. The last
+  field bounds the complete physical support, including filter history,
+  clock correction and interpolation. Support from the same flight cannot
+  overlap between calibration and validation. These descriptions are retained
+  evidence; the supplied prediction callback implements them.
+* ``inputs``: entries for ``thrust``, ``mass_properties``, ``atmosphere`` and
+  ``telemetry``. Each supplied entry contains ``source``, lowercase ``sha256``
+  and ``uncertainty`` information. Include test conditions, validity, units
+  and alignment in that record. An omitted entry is explicitly unavailable;
+  a source/hash alone does not establish that an input is measured. Resolve
+  packaged data through ``ssatk.data`` and verify resource hashes with
+  ``verify_data_resources`` before building a case. External files are caller
+  inputs, never paths embedded in package code.
+* ``model_source`` and ``independence``: identify the physical model and justify
+  conditional independence between cases. Use an optional ``model`` mapping
+  to retain initial conditions, solver settings and other callback inputs.
+  Shared unestimated noise or calibration errors violate independence even
+  when time spans do not overlap; combine correlated samples into one case
+  or use a suitable joint observation model before using this workflow.
+* ``requirements``: ``max_abs_residual`` and ``max_abs_bias`` in observable
+  units, ``min_coverage`` in [0, 1], and ``source`` for the preregistered
+  acceptance budget. Requirements apply to each case; choose them from the
+  mission contract and measurement uncertainty, not from the fitted result.
+
+``predict(parameters, case)`` returns predicted sensor observables, in the
+declared units/frame/sample order. It receives a read-only parameter mapping
+and a copy of the case; it must not derive predictions from ``observed``.
+Build fresh stateful control/actuator objects for each run. Account for sensor
+position, attitude, acquisition/filtering and clock alignment before returning
+the history. For example, a body-mounted velocity sensor sees COM velocity
+plus the rotated ``omega cross lever_arm`` contribution. Do not compare its
+data directly to COM velocity. Invalid predictions during calibration raise
+an error; evaluation errors on held-out cases are retained as ``ERROR`` rows.
+
+With measured cases and the corresponding sensor callback already prepared::
+
+   from ssatk.launch import calibrate_launch_measurements
+
+   report = calibrate_launch_measurements(
+       calibration_cases, validation_cases, predict,
+       {"thrust_scale": 1.0, "velocity_bias_m_s": 0.0},
+       parameter_units=["1", "m/s"], parameter_scale=[1.0, 0.1],
+       parameter_bounds=([0.8, -0.5], [1.2, 0.5]),
+       coverage_probability=0.95,
+   )
+
+Those example bounds/scales are illustrative inputs, not hardware limits.
+Parameter names follow insertion order. Bounds are finite physical limits;
+scales define the coordinates used for numerical derivatives and SVD rank.
+The reported ``rank_rtol`` defaults to ``1e-8`` relative to the largest scaled
+singular value. Inspect singular values, parameter correlations and uncertainty
+against physical requirements; numerical full rank alone is not practical or
+global identifiability. Resolve the prediction change under finite differences
+with the integration tolerances, and check sensitivity to numerical refinement.
+An unconverged, rank-deficient or active-bound fit has no formal covariance
+and cannot produce a validation pass.
+
+The report retains the frozen case inputs and their hashes, parameter guesses,
+bounds/scales/units, fitted values, solver termination, rank, active bounds,
+software versions and residual histories. Parameter covariance is local inverse
+Fisher information and is not scaled down to the observed fit residuals.
+For held-out cases, predictive covariance is ``R + J C_parameter J.T``.
+Gaussian marginal intervals use ``coverage_probability``; the joint squared
+Mahalanobis residual is checked against the corresponding chi-square quantile
+with one degree of freedom per held-out sample. This joint check uses temporal
+correlation and reports its statistic and limit. Mean signed bias, bias standard
+error, RMS, maximum absolute residual and observed interval coverage are retained.
+Coverage fraction is descriptive, not an independent-binomial confidence bound
+or a demonstrated long-run coverage rate. All uncertainty statements remain
+conditional on the local linear/Gaussian model and supplied covariance.
+
+``calibration_status`` describes the fit's convergence/rank/bound checks;
+each case separately reports its output-budget checks. ``validation_status``
+retains failing and errored cases and is ``UNAVAILABLE`` without usable held-out
+evidence. ``measurement_evidence_status`` requires measured cases and all four
+input records. Overall ``PASS`` requires all those checks; synthetic cases
+cannot turn unavailable flight evidence into a pass. ``qualification_status``
+always remains ``NOT RUN``. Assess attitude, lateral motion and loads with
+their own measured observables and budgets; an apogee match does not cover them.
+
+Run the numerical demonstration::
+
+   python3 -m demos.launch.demo_launch_calibration --output new-calibration.json
+   python3 -m pytest tests/test_launch_calibration.py -q
+
+The example uses the existing changing-mass 6-DoF propagator, a rotating offset
+velocity sensor, an explicit clock correction and a two-sample filter. Its
+reference observations come independently from the constant-flow rocket
+equation and a closed-form rotation. It estimates thrust and sensor bias on
+one synthetic flight, then retains a nominal holdout and a deliberately biased
+failed holdout. Its JSON output is never overwritten, and exit code 2 reports
+the expected failed/incomplete validation. The tests compare fitted parameters,
+Fisher/predictive covariance and interval widths against closed-form regression,
+and expose an unidentifiable pair of multiplicative thrust coefficients.
+This is software verification; measured thrust, mass-property, weather and
+synchronized telemetry inputs plus independent flight cases are still required
+to complete measurement validation.
