@@ -216,6 +216,15 @@ dataset and `--dataset <edited.json> --output <new-report.json>` to run it.
 Keep sample evidence labeled synthetic; JSON sensor/model settings change
 predictions without silently regenerating the stored observations.
 
+For joint station orbit determination, extend `navigation.solve_batch_orbit`
+with `parameters0`, ordered `parameter_scale`/`parameter_bounds`, a
+`propagation_kwargs(parameters)` factory using existing force models, and an
+optional `measurement_bias(station, observation, parameters)` callback. The
+result's `joint_covariance` and `correlation` follow `estimate_names`; the
+existing `covariance` remains the six-state block. Known observation biases
+are subtracted before the additional fitted bias. Check `success`, rank and
+`active_mask` before using formal uncertainties. See `docs/ssa_workflows.rst`.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the
