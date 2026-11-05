@@ -146,13 +146,13 @@ def _handoff(perturbed):
             "limits": ["Native SSAPy shares force implementations with the launch wrapper; this is integration/handoff evidence"]}
 
 
-def run_verification(output_dir):
+def run_verification(output_dir, *, external=True):
     """Write fresh evidence per case and a complete ladder, never hiding unavailable rows.
 
     This is a source-checkout verification command. The optional external
     checks reuse scripts.external_validation_report without installing tools.
+    Set ``external=False`` to retain them as NOT RUN without loading any bridge.
     """
-    from scripts.external_validation_report import run_external_validation
     from ssapy.ephemeris import get_planetary_ephemeris
 
     if sys.flags.optimize:
@@ -171,10 +171,12 @@ def run_verification(output_dir):
         ("handoff_two_body", "orbit and finite burns", lambda: _handoff(False)),
         ("handoff_perturbed", "orbit and finite burns", lambda: _handoff(True)),
     ):
-        if name == "integration":
+        if name == "integration" and external:
+            from scripts.external_validation_report import run_external_validation
+
             print("Running existing external-tool comparisons", flush=True)
-            external = run_external_validation(output_path=output_dir/"external.json", fast=True)
-            for result in external["cases"]:
+            external_report = run_external_validation(output_path=output_dir/"external.json", fast=True)
+            for result in external_report["cases"]:
                 status = {"passed": "PASS", "failed": "FAIL", "error": "ERROR", "skipped": "UNAVAILABLE"}[result["status"]]
                 cases.append(dict(id=result["id"], family="independent package comparison", comparison_mode="identical_physics",
                                   status=status, metrics=[{**m, "status": "PASS" if m["pass"] else "FAIL"}
@@ -199,6 +201,11 @@ def run_verification(output_dir):
         case["sha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
         cases.append(case)
 
+    if not external:
+        for name in ("orekit_two_body", "gmat_two_body", "gmat_finite_burn", "basilisk_6dof"):
+            cases.append(dict(id=name, family="independent package comparison", comparison_mode="identical_physics",
+                              status="NOT RUN", metrics=[], reason="External comparisons explicitly disabled."))
+
     for name, family, mode, reason in (
         ("nasa_flight_cases", "NASA flight cases", "identical_physics",
          "No pinned dropped/tumbling-body or corrected Atmospheric Case 17 input and reference histories are packaged."),
@@ -217,7 +224,7 @@ def run_verification(output_dir):
     resources = verify_data_resources([{"path": path} for path in
                                        ("environment/eop/finals2000A.all", "egm84.egm", "egm84.egm.cof", kernel)], strict=False)
     statuses = {case["status"] for case in cases} | {resource["status"] for resource in resources}
-    status = next((s for s in ("ERROR", "FAIL", "BLOCKED", "UNAVAILABLE") if s in statuses), "PASS")
+    status = next((s for s in ("ERROR", "FAIL", "BLOCKED", "UNAVAILABLE", "NOT RUN") if s in statuses), "PASS")
     root = Path(__file__).resolve().parents[2]
     report = {"schema": "ssatk.launch_verification.v1", "status": status,
               "scope": "Synthetic launch verification ladder; incomplete independent/observed validation",
@@ -227,7 +234,7 @@ def run_verification(output_dir):
               "source_sha256": {str(p.relative_to(root)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest()
                                 for directory in ("ssatk", "demos", "scripts", "tests")
                                 for p in sorted((root/directory).rglob("*.py"))},
-              "summary": {s: sum(c["status"] == s for c in cases) for s in ("PASS", "FAIL", "ERROR", "UNAVAILABLE")},
+              "summary": {s: sum(c["status"] == s for c in cases) for s in ("PASS", "FAIL", "ERROR", "UNAVAILABLE", "NOT RUN")},
               "limits": ["Synthetic budgets reuse component references; they are not mission acceptance tolerances",
                          "Numerical refinement, model discrepancy and measurement uncertainty are distinct",
                          "No cross-tool superiority, pad-to-orbit solution or flight qualification is established"]}
@@ -238,8 +245,9 @@ def run_verification(output_dir):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path, help="New directory for JSON evidence; never overwritten")
+    parser.add_argument("--no-external", action="store_true", help="Record external comparisons as NOT RUN without loading bridges")
     args = parser.parse_args(argv)
-    report = run_verification(args.output)
+    report = run_verification(args.output, external=not args.no_external)
     print(json.dumps({"status": report["status"], "summary": report["summary"]}, indent=2))
     return 0 if report["status"] == "PASS" else 2
 

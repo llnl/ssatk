@@ -225,6 +225,14 @@ existing `covariance` remains the six-state block. Known observation biases
 are subtracted before the additional fitted bias. Check `success`, rank and
 `active_mask` before using formal uncertainties. See `docs/ssa_workflows.rst`.
 
+For a reproducible launch handoff, stage or commit source changes and run
+`python -m demos.launch.demo_launch_capability --output <new-external-directory>`.
+Use `--verify <bundle>` for integrity only and `--replay <bundle> --output
+<new-directory>` for the pinned numerical rerun. This reuses the existing
+verification/calibration cases and leaves external bridges unexecuted. Keep
+the synthetic demonstration status separate from blocked mission acceptance
+and unavailable measured-flight evidence. See `docs/launch_capability.rst`.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the

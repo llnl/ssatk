@@ -1415,3 +1415,12 @@ with the measured case information before marking a case ``measured``.
 Choose acceptance requirements before fitting and retain failed heldouts.
 Generated datasets and reports belong in user-selected data/output locations;
 the Toolkit stores the generator and workflow, not generated datasets.
+
+Step 15: reproducible capability statement
+------------------------------------------
+
+:doc:`launch_capability` defines the supported domain and the bundle/replay
+workflow for these examples. It freezes source revisions and staged changes,
+installed versions, data hashes, synthetic inputs, solver settings, seeds,
+histories, metrics and explicit missing-evidence statuses. It does not promote
+component checks or editable synthetic data to measured-flight validation.
