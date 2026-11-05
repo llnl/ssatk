@@ -745,6 +745,11 @@ linear reduced-order couplings, not finite-element or computational-fluid-
 dynamics replacements. Each mode argument may be one mode or a sequence;
 single-mode results retain shape ``(samples, 2)`` and multi-mode results use
 ``(samples, 2, modes)``.
+The default modes are prescribed disturbances, without bus-acceleration
+feedback. For reciprocal constant-mass slosh mechanics, pass
+``coupled_slosh=True`` and each mode's ``displacement_limit``; see
+:doc:`launch_baseline` for mass ownership, bus-versus-system COM, calibration
+and supported-domain requirements. This option supports slosh modes only.
 For sensitivity or covariance propagation through those modes, use
 :func:`ssatk.propagators_6dof.propagate_6dof_extended_variational`.
 Its ``stm`` uses the full ``[r, v, q, omega, mass, modes]`` state ordering and

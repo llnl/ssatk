@@ -16,10 +16,12 @@ from scipy.integrate import solve_ivp
 from ..constants import EARTH_MU
 from .sixdof import (
     SixDOFTrajectory,
+    _inertia_matrix,
     _initial_state,
     _rhs_in_elapsed_time,
     _times,
     _validate_time_direction,
+    quaternion_conjugate,
     rotate_vector,
     sixdof_rhs,
 )
@@ -104,6 +106,13 @@ class FlexibleMode:
 
 @dataclass(frozen=True)
 class SloshMode:
+    """Spring/damper point mass on a body-fixed axis (m, kg, rad/s).
+
+    With ``coupled_slosh=True``, displacement is relative to
+    ``lever_arm_body`` and ``displacement_limit`` bounds the calibrated range.
+    Frequency and damping refer to a clamped bus, not the free coupled system.
+    """
+
     axis_body: np.ndarray
     mass: float
     natural_frequency: float
@@ -111,6 +120,7 @@ class SloshMode:
     lever_arm_body: np.ndarray = (0.0, 0.0, 0.0)
     displacement0: float = 0.0
     velocity0: float = 0.0
+    displacement_limit: float | None = None
 
     def __post_init__(self):
         axis = _vec(self.axis_body, "axis_body")
@@ -124,6 +134,13 @@ class SloshMode:
         object.__setattr__(self, "mass", mass)
         object.__setattr__(self, "natural_frequency", natural_frequency)
         object.__setattr__(self, "damping_ratio", damping_ratio)
+        if not np.all(np.isfinite([self.displacement0, self.velocity0])):
+            raise ValueError("slosh initial displacement and velocity must be finite.")
+        if self.displacement_limit is not None:
+            limit = float(self.displacement_limit)
+            if not np.isfinite(limit) or limit <= 0 or abs(self.displacement0) > limit:
+                raise ValueError("slosh displacement_limit must be positive and contain displacement0.")
+            object.__setattr__(self, "displacement_limit", limit)
 
 
 @dataclass(frozen=True)
@@ -143,7 +160,7 @@ class Extended6DOFTrajectory:
 
 
 def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=None,
-                            bus_mass=None, r0=None, v0=None, t0=None, q0=None, omega0=None,
+                            bus_mass=None, coupled_slosh=False, r0=None, v0=None, t0=None, q0=None, omega0=None,
                             mass0=None, mu=EARTH_MU, acceleration=None, torque=None,
                             gravity_gradient=False, rtol=1e-9, atol=1e-12, method="DOP853",
                             max_step=np.inf, first_step=None, with_stm=False, stm0=None,
@@ -156,6 +173,17 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
     ``m*w²*x`` at ``lever_arm_body``.
     ``HingedAppendage.cubic_stiffness`` adds the restoring torque
     ``cubic_stiffness * angle**3`` in N m, and defaults to zero.
+
+    By default the modes are prescribed oscillators: they load the bus but
+    do not respond to its acceleration. ``coupled_slosh=True`` instead solves
+    reciprocal bus/slider mechanics, including guide reactions and rotation.
+    It requires slosh only, constant bus inertia/mass excluding modal masses,
+    and a displacement limit for each mode. ``r/v`` then describe the bus COM,
+    not the combined COM. ``mass0``, if supplied, is the total mass. Acceleration
+    and torque callbacks apply external loads to the bus (acceleration is
+    force divided by bus_mass). Central gravity acts uniformly on the assembly;
+    gravity gradients, draining tanks, hinges and flexibility are excluded.
+    See :doc:`/launch_baseline` for the equations and validity limits.
     """
     times = _times(times)
     hinges = _modes(hinge, HingedAppendage, "hinge")
@@ -167,6 +195,17 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
         bus_mass = float(bus_mass) if bus_mass is not None else 0.0
         if not np.isfinite(bus_mass) or bus_mass <= 0:
             raise ValueError("positive bus_mass is required for slosh force coupling.")
+    if coupled_slosh:
+        if not sloshes or hinges or flexibles or gravity_gradient or callable(inertia):
+            raise ValueError("coupled slosh requires only slosh modes, constant inertia and no gravity gradient.")
+        if any(mode.displacement_limit is None for mode in sloshes):
+            raise ValueError("coupled slosh requires each mode's calibrated displacement_limit.")
+        if not np.all(np.isfinite(inertia)):
+            raise ValueError("coupled slosh requires finite bus inertia.")
+        inertia = _inertia_matrix(inertia)
+        total_mass = bus_mass + sum(mode.mass for mode in sloshes)
+        if mass0 is not None and not np.isclose(mass0, total_mass, rtol=1e-12, atol=0):
+            raise ValueError("mass0 must equal bus_mass plus slosh masses; do not count modal mass twice.")
     state = _initial_state(orbit0=None, r0=r0, v0=v0, t0=t0, q0=q0, omega0=omega0, mass0=mass0)
     _validate_time_direction(times, state.t)
     ext0 = []
@@ -190,6 +229,37 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
 
     def rhs(t, y):
         rigid, z = y[:rigid_n], y[rigid_n:]
+        if coupled_slosh:
+            base = sixdof_rhs(t, rigid, inertia=inertia, mu=mu, acceleration=acceleration,
+                              torque=torque, mass_state=mass0 is not None)
+            modal = z.reshape(-1, 2)
+            inverse_q = quaternion_conjugate(rigid[6:10])
+            radius = np.linalg.norm(rigid[:3])
+            gravity = np.zeros(3) if mu == 0 or radius == 0 else -mu * rigid[:3] / radius**3
+            # Remove common free fall so gravity cannot spuriously excite a mode.
+            forcing = np.r_[bus_mass * rotate_vector(inverse_q, base[3:6] - gravity),
+                            inertia @ base[10:13], np.zeros(len(sloshes))]
+            matrix = np.zeros((6 + len(sloshes), 6 + len(sloshes)))
+            matrix[:3, :3] = bus_mass * np.eye(3)
+            matrix[3:6, 3:6] = inertia
+            omega = rigid[10:13]
+            for i, (mode, (disp, rate)) in enumerate(zip(sloshes, modal)):
+                if abs(disp) > mode.displacement_limit:
+                    raise ValueError("coupled slosh displacement exceeds its calibrated limit.")
+                arm = mode.lever_arm_body + mode.axis_body * disp
+                jacobian = np.zeros((3, matrix.shape[0]))
+                jacobian[:, :3] = np.eye(3)
+                jacobian[:, 3:6] = np.cross(np.eye(3), arm).T
+                jacobian[:, 6+i] = mode.axis_body
+                transport = np.cross(omega, np.cross(omega, arm)) + 2*np.cross(omega, mode.axis_body*rate)
+                matrix += mode.mass * jacobian.T @ jacobian
+                forcing -= mode.mass * jacobian.T @ transport
+                forcing[6+i] -= mode.mass * (mode.natural_frequency**2 * disp
+                                             + 2*mode.damping_ratio*mode.natural_frequency*rate)
+            generalized = np.linalg.solve(matrix, forcing)
+            base[3:6] = rotate_vector(rigid[6:10], generalized[:3]) + gravity
+            base[10:13] = generalized[3:6]
+            return np.r_[base, np.column_stack((modal[:, 1], generalized[6:])).ravel()]
         i = 0; loads_t = np.zeros(3); loads_a = np.zeros(3)
         for mode in hinges:
             angle, rate = z[i:i+2]; i += 2
@@ -199,6 +269,8 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
             loads_t += mode.axis_body * (mode.effective_mass * mode.natural_frequency**2 * disp + 2 * mode.damping_ratio * mode.natural_frequency * mode.effective_mass * rate)
         for mode in sloshes:
             disp, rate = z[i:i+2]; i += 2
+            if mode.displacement_limit is not None and abs(disp) > mode.displacement_limit:
+                raise ValueError("slosh displacement exceeds its calibrated limit.")
             force = mode.axis_body * (
                 mode.mass * mode.natural_frequency**2 * disp
                 + 2 * mode.damping_ratio * mode.natural_frequency * mode.mass * rate
@@ -264,7 +336,7 @@ def propagate_6dof_extended(*, times, inertia, hinge=None, flexible=None, slosh=
 
 
 def propagate_6dof_extended_variational(*, times, inertia, hinge=None, flexible=None, slosh=None,
-                                         bus_mass=None, r0=None, v0=None, t0=None, q0=None,
+                                         bus_mass=None, coupled_slosh=False, r0=None, v0=None, t0=None, q0=None,
                                          omega0=None, mass0=None, mu=EARTH_MU, acceleration=None,
                                          torque=None, gravity_gradient=False, stm0=None,
                                          jacobian_step=1e-7, rtol=1e-9, atol=1e-12,
@@ -282,7 +354,7 @@ def propagate_6dof_extended_variational(*, times, inertia, hinge=None, flexible=
     """
     return propagate_6dof_extended(
         times=times, inertia=inertia, hinge=hinge, flexible=flexible, slosh=slosh,
-        bus_mass=bus_mass, r0=r0, v0=v0, t0=t0, q0=q0, omega0=omega0, mass0=mass0,
+        bus_mass=bus_mass, coupled_slosh=coupled_slosh, r0=r0, v0=v0, t0=t0, q0=q0, omega0=omega0, mass0=mass0,
         mu=mu, acceleration=acceleration, torque=torque, gravity_gradient=gravity_gradient,
         rtol=rtol, atol=atol, method=method, max_step=max_step, first_step=first_step,
         with_stm=True, stm0=stm0, jacobian_step=jacobian_step,
