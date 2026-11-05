@@ -100,6 +100,7 @@ def propagate_spacecraft_high_accuracy(
     """
 
     from ..accelerations_6dof import make_ssapy_perturbation_acceleration
+    from ..accelerations_6dof.ssapy_models import _spacecraft_kwargs
     from ..environment import SpaceEnvironment
 
     model_list = list(models or ())
@@ -114,7 +115,7 @@ def propagate_spacecraft_high_accuracy(
         model_list[:0] = environment_model_list
     if ssapy_perturbations:
         options = {} if ssapy_perturbations is True else dict(ssapy_perturbations)
-        options.setdefault("spacecraft_kwargs", _spacecraft_physical_kwargs(spacecraft))
+        options.setdefault("spacecraft_kwargs", _spacecraft_kwargs(spacecraft))
         if environment_flags.get("solar_radiation"):
             options.setdefault("include_solar_radiation", False)
         if environment_flags.get("drag"):
@@ -222,15 +223,6 @@ def _propagate_spacecraft_segment(spacecraft, segment, *, tracks_mass=False):
         ),
         bool(impulses),
     )
-
-
-def _spacecraft_physical_kwargs(spacecraft) -> dict:
-    mapping = {"mass": "mass", "area": "area", "cd": "CD", "cr": "CR"}
-    return {
-        key: float(getattr(spacecraft, attr))
-        for attr, key in mapping.items()
-        if getattr(spacecraft, attr, None) is not None
-    }
 
 
 def _environment_model_options(environment_models) -> dict:

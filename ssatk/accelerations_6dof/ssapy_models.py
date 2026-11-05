@@ -165,7 +165,7 @@ def make_ssapy_perturbation_acceleration(
     return SpacecraftAccelSum(models)
 
 
-def _spacecraft_kwargs(spacecraft, kwarg_map: dict[str, str]) -> dict:
+def _spacecraft_kwargs(spacecraft, kwarg_map: dict[str, str] = _DEFAULT_SPACECRAFT_KWARG_MAP) -> dict:
     if spacecraft is None:
         return {}
     kwargs = {}

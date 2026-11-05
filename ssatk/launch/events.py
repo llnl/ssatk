@@ -472,7 +472,8 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
                 # A clock boundary is an exact endpoint, not a numerical root.
                 trajectory.t[-1] = end
             state = trajectory.spacecraft(body=state.body, tank_name=tank_name,
-                inertia=None if state.body is not None else state.inertia, cd=state.cd, cr=state.cr)
+                inertia=None if state.body is not None else state.inertia, area=state.area,
+                cd=state.cd, cr=state.cr, center_of_pressure=state.center_of_pressure)
             _check_state(state)
             y = _state_vector(state)
             roots = {e.name for e, values in zip(integration_events, trajectory.t_events or ())

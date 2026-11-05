@@ -967,3 +967,88 @@ terms; a continuous STM must not be concatenated across these resets as if it
 contained them. Numerical evidence is scoped to the declared synthetic
 staging and nominal pitch cases. ``qualification_status`` remains ``NOT RUN``
 for measured vehicle performance, the mission envelope and flight qualification.
+
+Step 11: ascent to orbital analysis
+------------------------------------
+
+Use the accepted ``LaunchResult.state`` after cutoff and separation/reset,
+not the nearest requested output sample. Its r/v are the current geometric COM
+in GCRF metres and m/s; t is the stored GPS epoch. Complete the Step 8
+material-momentum transition before handoff: a nonzero flow transport B cannot
+be discarded without its centroid-velocity reset. A terminal event alone does
+not switch off a force or change that convention.
+
+``state.to_orbit(mu=mu)`` copies r/v/t into SSAPy without rotating,
+interpolating or reconstructing from elements. By default ``Orbit.propkw``
+carries current mass, area, CD and CR when present. Explicit ``propkw`` replaces
+those defaults; include all required coast properties when overriding it.
+Conversion requires finite state/epoch and positive finite mu. Keep the
+spacecraft alongside the orbit: body, inventories, attitude, rates and wheel
+momenta are not represented by Orbit. The launch runner preserves explicit
+area and center of pressure through accepted phase advancement.
+
+Select coast forces explicitly. Reuse the native objects wrapped by
+``make_ssapy_perturbation_acceleration`` for identical-physics overlap::
+
+   import ssapy
+
+   insertion = launch_result.state
+   orbit = insertion.to_orbit(mu=mu)
+   # perturbations is the tuple used in the unpowered LaunchPhase.
+   native_acceleration = ssapy.AccelSum([
+       ssapy.AccelKepler(mu=mu), *(term.accel for term in perturbations)
+   ])
+   coast = ssapy.SciPyPropagator(native_acceleration, ode_kwargs={
+       "method": "DOP853", "rtol": 1e-11, "atol": 1e-9, "max_step": 2.0
+   })
+   r, v = ssapy.rv(orbit, coast_times, propagator=coast)
+
+Start ``coast_times`` at exactly ``insertion.t``. The 6-DoF runner adds central
+gravity through mu; native SciPyPropagator needs the complete force including
+exactly one AccelKepler. The perturbation builder and native harmonics omit
+central gravity. Do not add the same perturbation directly and through a
+preset. Use the same mu for gravity and elements. Match remaining mass, area,
+coefficients, ephemerides, frames and forces before interpreting overlap error.
+Native orbital propagation retains its low-altitude policy; surface ascent
+must remain on the launch path.
+
+This constant-property translational coast requires stopped thrust/mass flow
+and force laws independent of evolving attitude/geometry. Retain 6-DoF for
+further burns, deployments or facet loads. Orbit does not serialize a force
+configuration; retain it explicitly with the insertion report. Native force
+laws keep their own environment/frame approximations, which are not upgraded
+to the launch atmosphere or Earth-rotation model by this handoff.
+
+Run the two reference cases::
+
+   python3 -m pytest -q tests/test_launch_orbit_handoff.py
+   python3 -m demos.launch.demo_launch_orbit_handoff --output path/to/two-body.json
+   python3 -m demos.launch.demo_launch_orbit_handoff --perturbed --output path/to/perturbed.json
+
+The reference starts with a specified ascending upper-stage state, burns
+fixed-COM point inventory and cuts off at an exact scheduled endpoint. Known
+scheduled times should be integration boundaries: at large GPS epochs a
+time-only root has a floating-point plateau even with elapsed-time integration.
+State-triggered roots retain numerical event-time uncertainty. The reference
+joins ascent/coast at their identical boundary sample and compares ten minutes
+of native SSAPy coast with the launch runner. Both cases check constant-Isp
+inventory and single-count force assembly. The unperturbed case also compares
+with analytic Keplerian propagation. The perturbed case enables degree-2 zonal
+gravity, Sun and Moon, Harris-Priester drag and cannonball solar/Earth radiation.
+
+The report retains state, epoch, inventory, force settings, specific energy and
+angular momentum, osculating semimajor axis, eccentricity, inclination and
+equinoctial elements. Cartesian/nonsingular quantities avoid undefined
+periapsis/node angles near circular or equatorial insertion. These are
+instantaneous osculating elements relative to GCRF and the declared mu, not
+mean elements, an SGP4 initialization or a TLE. Independent circular references
+check two specified gravitational parameters. Energy/angular momentum
+conservation is checked only for two-body coast, not drag or third-body motion.
+Ground tracks reuse ``gcrf_to_llh`` with packaged EOP, IAU 2006/2000A and WGS84;
+Astropy references share the IERS table and allow its omitted celestial-pole
+offsets. The generated JSON retains the continuous history and event ledger.
+
+These cases verify terminal-ascent handoff, not a surface-to-orbit guidance
+solution, mission acceptance or measured vehicle/flight qualification.
+``qualification_status`` stays ``NOT RUN``. Generated evidence remains outside
+version control; persistent reference data belongs in SSAPy-Data.

@@ -182,6 +182,14 @@ argument list; its result diagnostics report the schema
 `ssatk.transfer_problem.v1`. `transfer_bielliptic` is the analytic
 three-impulse coplanar circular case only and does not solve phasing.
 
+For launch-to-orbit handoff, use the accepted `LaunchResult.state` after
+cutoff/reset and its existing `to_orbit(mu=...)` method. It copies the GCRF
+SI state and GPS epoch, and defaults `propkw` to current mass/area/CD/CR.
+Keep the body, inventories and explicit force configuration separately.
+Native SSAPy coast needs one central-gravity term; the 6-DoF runner already
+includes that term through `mu`. See `docs/launch_baseline.rst` and
+`demos/launch/demo_launch_orbit_handoff.py` for the overlap reference.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the

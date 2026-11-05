@@ -250,11 +250,21 @@ class Spacecraft:
         )
 
     def to_orbit(self, *, mu: float = EARTH_MU, propkw=None):
-        """Return an SSAPy ``Orbit`` carrying this spacecraft's ``r/v/t`` state."""
+        """Copy the GCRF SI state and exact GPS epoch into an SSAPy ``Orbit``.
+
+        By default, carry current mass, area, CD and CR as constant coast
+        properties. Explicit ``propkw`` replaces those defaults. Attitude,
+        inventories and force models remain on the spacecraft/caller; Orbit
+        does not propagate them. ``mu`` defines the osculating elements.
+        """
 
         from ssapy import Orbit
+        from ..accelerations_6dof.ssapy_models import _spacecraft_kwargs
 
-        return Orbit(self.r.copy(), self.v.copy(), self.t, mu=mu, propkw=propkw)
+        if not np.isfinite(mu) or mu <= 0 or not np.isfinite(self.t) or not np.isfinite([self.r, self.v]).all():
+            raise ValueError("Orbit conversion requires finite state/epoch and positive finite mu.")
+        properties = _spacecraft_kwargs(self) if propkw is None else dict(propkw)
+        return Orbit(self.r.copy(), self.v.copy(), self.t, mu=mu, propkw=properties)
 
     def with_body(self, body: object) -> Spacecraft:
         """Return a copy with a spacecraft body design attached."""
