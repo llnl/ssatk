@@ -17,7 +17,7 @@ from ssatk.satellites import SpacecraftBody, Tank
 GALLERY_INCLUDE = False
 
 
-def run_reference():
+def run_reference(*, solver=None):
     """Two constant-Isp burns and conservative staging against the rocket equation."""
     radius, exhaust_speed = 6378137., 300.*9.80665
     upper = SpacecraftBody(name="synthetic upper", mass=10., inertia=np.diag([20.,20.,5.]),
@@ -51,7 +51,7 @@ def run_reference():
                     momentum_transport=second_transport),
         LaunchPhase("coast", events=(LaunchEvent("insertion_boundary", lambda t,y:y[0]-radius-100000., "inserted", 1),)),
         LaunchPhase("inserted")]
-    solver = dict(mu=0., rtol=1e-10, atol=1e-11, max_step=.25)
+    solver = {**dict(mu=0., rtol=1e-10, atol=1e-11, max_step=.25), **(solver or {})}
     results = [propagate_launch(state, grid, phases, initial_phase="pad",
                   ground_condition=lambda t,y:y[0]-radius, **solver)
                for grid in ([0.,70.], np.linspace(0.,70.,141))]
@@ -66,7 +66,8 @@ def run_reference():
     assert result.state.r[0] > radius+100000., "ascent crosses the orbital burnup boundary"
     truth = [{"phase": phase, "time_gps_s": arc.t, "position_gcrf_m": arc.r,
               "velocity_gcrf_m_s": arc.v, "q_body_to_gcrf": arc.q,
-              "omega_body_rad_s": arc.omega, "mass_kg": arc.mass}
+              "omega_body_rad_s": arc.omega, "mass_kg": arc.mass,
+              "nfev": arc.nfev, "integration_diagnostics": arc.integration_diagnostics}
              for phase,arc in result.arcs]
     return {"scope": "STEP 8 SYNTHETIC PHASE AND RESET REFERENCE", "status": "PASS",
             "qualification_status": "NOT RUN", "software": collect_software_baseline(),

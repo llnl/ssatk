@@ -196,6 +196,7 @@ checks, not that every assertion has every kind of independent reference.
    tests/test_launch_changing_mass.py,6,R1 R4 R5,Closed-form axial centroid/spin/quaternion; dry/plug momentum sum; independent exhaust quadrature; fixed-mass Euler motion; point-nozzle flux; center-rate differences; moving thrust moment,Steady synthetic axial plug flow and point nozzle only; no general internal-fluid angular momentum or event resets
    tests/test_launch_gravity_turn.py,1,R1,Known vertical/azimuth/half-turn thrust directions plus gravity,Prescribed steering law
    tests/test_launch_initialization.py,6,R1 R2 R4 R5,WGS84 pad/heading; Astropy frames; IERS-A leap seconds; inverse states; finite-difference 6-DoF attitude,Initialization only; finite-difference rotation rate; no release dynamics or terrain source
+   tests/test_launch_integration.py,2,R1 R4,Isotropic free spin and linear motion; rocket equation and constant-Isp inventory; staging and sampled-pitch refinement; raw norm and internal-mesh invariants,Synthetic nonstiff numerical studies only; no stiff hardware models or reset-crossing STM or mission qualification
    tests/test_launch_mass_accounting.py,5,R1 R2 R4 R5,Independent cylinder volume quadrature; depletion finite differences and continuity; detachment tensor conservation; residual-limited rocket equation,Specified synthetic geometry; no slosh or cylinder exhaust flux; no separation state reset
    tests/test_launch_preflight.py,13,R1 R2 R4 C,Closed-form WGS84 pad position; independent erfa-based EOP rotation and SpacePy pad/speed; offline frame closure; schema/resource/EOP-coverage contracts,Initialization only; not ascent or telemetry validation
    tests/test_launch_propulsion.py,5,R1 R4,Constant-flow rocket equation; fixed-nozzle pressure formula; triangle CSV impulse/flow; segmented coast/burn/restart inventories,Synthetic fixed-nozzle linear-throttle reference; no engine operating-map or flight calibration
@@ -639,3 +640,20 @@ equilibrium (2e-3 rad and rad/s), mass with constant-Isp flow (1e-8 kg), and
 coarse/fine output grids (1e-10 quaternion). These R1/R4 mathematical and nominal
 stability references are not telemetry, calibrated performance or mission-envelope
 qualification. Sensor covariance in the demo is measurement covariance.
+
+Launch integration references
+------------------------------
+
+``tests/test_launch_integration.py`` compares DOP853, RK45 and Radau with
+isotropic free spin (1e-9 quaternion and raw norm drift; 1e-12 rad/s) and
+linear motion (1e-8 m). The prescribed binary step keeps position increments
+exactly representable, separating integration from accumulated summation
+roundoff. Coarse and fine output grids retain the same internal mesh.
+The existing staging and delayed sampled-pitch references undergo separate
+tolerance and maximum-step refinement. The staging velocity remains within
+1e-6 m/s of the independent two-burn rocket equation; inventory and actuator
+checks retain their existing closed-form references. Refinement is R4
+numerical stability evidence, not independent physical validation. Raw norm
+and output normalization corrections are recorded before normalization hides
+them. These studies cover the declared synthetic cases, not a calibrated
+vehicle, stiff extension, reset-crossing sensitivity or mission qualification.

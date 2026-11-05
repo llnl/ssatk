@@ -901,3 +901,69 @@ This demonstrates synthetic models and one nominal pitch case, not calibrated
 performance, an attitude EKF, three-axis launch guidance or mission qualification.
 Gravity, weather, Earth rotation, off-nominal dispersions, slosh/flexibility and
 an acceptance mission remain separate work.
+
+Step 10: numerical integration and convergence
+------------------------------------------------
+
+``propagate_launch`` reuses the existing coupled 6-DoF solver. DOP853 is the
+initial choice for the smooth, nonstiff reference phases; phase roots, force
+breakpoints and sampled-control endpoints split integration explicitly.
+Output spacing selects retained samples, not solver steps. Fast or stiff
+actuator, slosh or flexible-body models require their own solver comparison
+and convergence evidence; the references below do not qualify those models.
+
+Supply ``atol`` as a vector in the propagated state order: three positions in
+metres, three velocities in m/s, four dimensionless quaternion components,
+three body rates in rad/s, optional mass in kg, then optional wheel momenta in
+kg m squared/s. A phase may override solver settings through its existing
+``propagation`` mapping. The local error scale is ``atol + rtol*abs(y)``;
+relative tolerance can dominate absolute tolerance at large GCRF positions.
+Neither a local tolerance nor a smaller maximum step alone bounds mission
+output error. Choose settings using independent references and refinement of
+the actual quantities and event epochs required by the application.
+
+Each standard :class:`~ssatk.propagators_6dof.sixdof.SixDOFTrajectory` retains
+``integration_diagnostics``. The tuple preserves separate solve summaries
+when depletion/coast or maneuver segments are combined. Summaries report
+finite output states, raw quaternion norm error and the magnitude of output
+normalization corrections. With ``dense_output=True`` they also report
+internal step count, minimum/maximum step in seconds, and raw quaternion norm
+errors at accepted endpoints, clipping the last interval to a terminal root.
+The launch runner already requests dense output. Without it the internal-mesh
+fields are ``None``. The variational and extended propagators do not produce
+these summaries. These sampled checks do not bound state health between
+samples, and guide projection is a physical constraint, not a normalization
+error. A nonfinite output or inspected endpoint fails propagation.
+
+Run the reference study and retain a new evidence file::
+
+   python3 -m pytest -q tests/test_launch_integration.py
+   python3 -m demos.launch.demo_launch_integration --output path/to/new-evidence.json
+
+The study reuses the two-burn staging reference and the delayed sampled pitch
+reference, with fresh controls and identical noise seeds for every run. It
+first tightens state-unit tolerances at fixed maximum step, then halves that
+step, and confirms with tighter tolerances and another halving. Each case
+also checks coarse and fine output grids through the existing reference.
+Comparisons cover common requested history epochs, each event's pre/post and
+detached-child states at its root, event topology and event-time residuals.
+The JSON retains
+every run's settings, truth, control/measurement histories, conservation
+ledger, reference residuals, function evaluations, internal step counts,
+normalization diagnostics and unit-labelled comparison budgets. Changing
+event topology or exceeding a budget fails the study.
+
+Independent isotropic free-spin and linear-motion references constrain
+DOP853, RK45 and Radau, including absolute GPS epochs and internal-mesh
+independence from output sampling. A binary maximum/first step isolates
+position summation roundoff in that closed-form experiment; it is not a
+general recommendation for adaptive integration. The rocket equation and
+constant-Isp inventory anchor the staging results. Convergence between two
+SSATK runs alone does not establish physical accuracy.
+
+The launch runner provides no reset-crossing STM. Linear sensitivities across
+events require both the reset derivative and event-time sensitivity (saltation)
+terms; a continuous STM must not be concatenated across these resets as if it
+contained them. Numerical evidence is scoped to the declared synthetic
+staging and nominal pitch cases. ``qualification_status`` remains ``NOT RUN``
+for measured vehicle performance, the mission envelope and flight qualification.
