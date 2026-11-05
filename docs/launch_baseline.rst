@@ -674,7 +674,7 @@ Mach, alpha, beta, commanded deflection, dynamic pressure and Reynolds number
 rho*speed*reynolds_length/mu. A separately declared ``reynolds_length`` is metres.
 The three moment lengths and aerodynamic area remain explicit; assembled stage
 geometry does not infer them. ``deflection`` is a prescribed radian scalar or
-state callable; actuator dynamics belong to Step 9.
+state callable; Step 9 actuator ``value(t)`` can supply actual deflection.
 
 Run the synthetic evidence workflow and independent references::
 
@@ -691,5 +691,364 @@ the declared mathematical models. The demo's states are prescribed, not an
 ascent integration or measured launch weather. ``qualification_status`` stays
 ``NOT RUN``. Rate damping, Reynolds-dependent coefficients, plume corrections,
 rarefaction (including mean-free-path inputs), changing gas composition, slosh,
-event resets, measured vehicle calibration and mission qualification require
+measured vehicle calibration and mission qualification require
 their own evidenced models and domains.
+
+Step 8: mission phases and event resets
+---------------------------------------
+
+``ssatk.launch.events`` runs a finite graph of :class:`~ssatk.launch.events.LaunchPhase`
+modes through the existing ``Spacecraft.propagate`` solver. Each mode supplies
+its force models, optional ideal pad/rail constraint and outgoing
+:class:`~ssatk.launch.events.LaunchEvent` roots. Conditions use absolute GPS
+seconds and the existing state layout: GCRF position and velocity, body-to-GCRF
+quaternion, body angular rate, optional total mass and optional wheel momentum.
+Targets must name declared phases; a ``None`` target terminates. Configure
+distinct phases and globally unique event names for each ignition or restart.
+Physical transitions are one-shot; optional Step 9 ``LaunchControl`` supplies
+recurring sensor/control boundaries separately.
+
+Roots carry direction, priority and an absolute tolerance in the condition's
+units. Initial zero conditions fire immediately, once. During propagation,
+direction selects crossings. All roots stop integration; reset callbacks run
+only on copied accepted states, preserving the pre-state even if a callback
+updates its arrays in place. Simultaneous old-mode roots fire in increasing priority,
+then name order, before the new mode's immediate roots. Their conditions and
+``trigger_phase`` retain the common pre-root state; each reset receives the
+previous reset's post-state. Ground contact has priority -200, rail bottom
+contact -190, tank depletion
+-100, user events greater than -100, and duration termination 10000. User
+terminal events end the run immediately. Output sampling does not select roots
+or solver step size; set ``max_step`` small enough to resolve the declared
+event functions, since a solver cannot discover multiple unresolved crossings
+inside one step.
+
+Mass-flow models require explicit tank inventories. The runner uses existing
+named-tank or proportional depletion and residual-aware event helpers.
+Depletion is recorded as ``__depletion:<phase>`` and enters the declared
+``depletion_phase`` or terminates; it never silently treats unusable fuel as
+available. Coast and restart modes replace force configurations and carry
+current inventories. The final requested epoch is a recorded duration event.
+
+Each phase declares ``momentum_transport``: a GCRF vector in kg m/s or a
+side-effect-free ``callable(state)`` returning B from Step 5. Zero selects
+the rigid/no-transport model; it must not be assumed for a draining moving
+centroid. Supply the phase's one-sided boundary value, including the incoming
+value at depletion, rather than an engine callback that has already switched
+off at the residual floor. Continuous acceleration must satisfy the same
+material balance; changing B only in the ledger does not correct a force model.
+
+At an instantaneous same-mass transition without a custom reset,
+``v_post = v_pre + (B_post-B_pre)/M`` preserves material momentum. Ignition,
+cutoff and restart therefore reset geometric centroid velocity even without
+a physical external impulse. A custom reset supplies its own consistent
+velocity map and physical impulses. A terminal event keeps the current
+transport convention; stopping integration alone does not model shutdown.
+Fluid relative angular momentum is assumed zero, as in the Step 5 reference.
+
+:class:`~ssatk.launch.events.LaunchGuide` models ideal hold-down (zero length)
+or a frictionless straight rail (positive length), with body +Z along the rail.
+Its caller-supplied frame includes origin position, velocity and acceleration,
+rotation, angular rate and angular acceleration. It may rotate, and includes
+centripetal and Coriolis terms. The existing accepted-state projector enforces
+rail position, velocity and attitude; the constrained derivative computes
+support reactions from the free force/torque equations. ``reactions`` reports
+GCRF force in N and body torque in N m. Returning to the rail bottom is a
+terminal ``__rail_bottom`` root that records the incoming state, without an
+unmodeled velocity reset; contact restitution would need an explicit model.
+At rest on the base, ideal support prevents downward acceleration. The
+``exit_condition`` is the geometric distance-minus-length root in metres.
+Declare an explicit release root for hold-down. Initial states must agree with
+their constraints. Contact compliance, friction and calibrated release loads
+are outside this ideal model.
+
+``propagate_launch`` requires explicit signed terrain clearance, positive above
+ground. :func:`~ssatk.launch.events.launch_ground_clearance` reuses the strict
+packaged-EOP rotation and WGS84 conversion; supply ellipsoidal terrain height
+in metres or a latitude/longitude terrain callable. No datum is inferred.
+Airborne descending contact stops at zero clearance. Constrained terrain contact uses
+half the declared clearance tolerance as a guard band to avoid repeated zero
+roots while resting on the pad; penetration is bounded by that tolerance.
+Initial and reset states below the tolerance or outside terrain coverage fail.
+This launch policy is independent of SSAPy's orbital burnup policy: the
+6-DoF launch path remains active through 100 km.
+
+:func:`~ssatk.launch.events.separate_launch_body` receives current child bodies
+in the common pre-separation body axes and origin. Their masses, first moments,
+full inertias and named tank inventories must partition the parent. The first
+child is retained; other child states remain in the event ledger. Child COM
+positions shift by the rotated parent-to-child COM offset. Velocities include
+the common rigid motion, ``omega cross offset``, and explicitly supplied child
+minus parent centroid rates. Internal impulses at declared body-frame points
+change child translation and spin and must sum to zero force impulse and
+moment. Supply zero centroid rates after cutoff, or physically consistent
+rates for a moving reference. During flow, also supply
+``momentum_transport_body`` and ``child_momentum_transports_body`` in the
+common body axes; the rate map must conserve M*v-B, not M*v. Retained-child B
+comes from the target phase; detached-child B is carried by
+``LaunchReset.child_momentum_transports`` in GCRF. A custom :class:`~ssatk.launch.events.LaunchReset`
+may also declare external GCRF linear and angular impulses. Nonzero stored
+wheel momentum needs an explicit child wheel reset.
+
+Every accepted reset checks mass (kg), material linear momentum M*v-B (kg m/s) and angular
+momentum (kg m squared/s) about the common pre-event COM, after accounting for
+external impulses. User-supplied tolerances carry those explicit units. Failed
+resets raise rather than continue. The ordered ledger retains condition, epoch,
+pre/post modes, full states, B, material momentum, child states, tank accounting and conservation
+residuals. Detached states are initial conditions, not propagated child flights.
+
+Run the independent references and retain a synthetic evidence record::
+
+   python3 -m pytest -q tests/test_launch_events.py
+   python3 -m demos.launch.demo_launch_events --output ../SSAPy-Data/.cache/launch_validation/step8-events.json
+
+The demo models two synthetic burns with ideal pad/rail constraints, burnout,
+conservative staging, coast, restart, cutoff and a 100 km insertion boundary.
+It compares velocity with the rocket equation and event times across two output
+grids, retaining per-mode truth and the ledger. It reuses the Step 5 axial
+acceleration correction for its offset point inventories and declares transport
+on both sides of ignition and cutoff. Additional cylindrical references check
+ignition, cutoff, restart and depletion against closed-form centroid velocities,
+dry-body/plug-flow material momentum, independent exhaust quadrature and axial
+spin conservation. Ongoing-flow separation checks centroid rates and material
+momentum with nonzero parent and child B. The boundary is not an achieved
+orbit. Gravity, atmosphere and Earth rotation are excluded from this closed-form
+demo; the separate rotating-rail and independent Astropy/WGS84 references check
+those kinematics and ground conversion. ``qualification_status`` stays
+``NOT RUN``. Mission acceptance, measured vehicle calibration, solver convergence
+qualification and ascent-to-orbit overlap verification remain separate work.
+
+Step 9: sampled guidance, sensors and actuators
+------------------------------------------------
+
+Pass ``control=LaunchControl(...)`` to ``propagate_launch``. Integration splits
+at exact clock endpoints, independent of output spacing. At a shared epoch all
+physical events, including immediate new-mode transitions, settle before
+sensing; a terminal event prevents further updates. Four callbacks separate
+the physical state from measurements, estimates, references and commands:
+
+* ``sensor(copied_truth)`` returns measurements. Use existing sensor models for
+  declared bias, covariance, seeded noise and dropout. Only this callback sees
+  truth; sensor location/orientation and validity remain explicit inputs.
+* ``estimator(time, delivered_packets, previous_estimate)`` receives packets
+  after ``sensor_latency`` seconds, retaining sample/delivery GPS epochs. Supply
+  a prior estimate and a policy for invalid measurements; no truth fallback is
+  provided. Covariance semantics belong to the estimator.
+* ``guidance(time, estimate)`` returns the commanded reference.
+* ``controller(time, estimate, reference)`` returns actuator channels. Reuse
+  ``SpacecraftAttitudePD`` on the estimate, rather than attaching it directly
+  as continuous truth-feedback torque.
+
+Acquisition, delivery/estimation, guidance/control and command activation run in
+that order. ``sensor_period``, ``control_period`` and both latencies are seconds.
+``command_latency`` delays activation; commands are held between updates.
+Clocks use initial GPS epoch plus integer sample index times period. Periods
+must exceed eight floating-point spacings at the epoch. Use a fresh control,
+actuator and seeded sensor for each run. Callbacks receive copies and return
+finite JSON-recordable data; keep hidden truth out of closures/global state.
+
+``LaunchActuator`` requires initial channels, lower/upper limits, positive rates
+(channel units/s), nonnegative lags (s), units and a source. Activated commands
+are clipped. Between commands its continuous response solves
+
+.. math::
+
+   \dot{x} = \operatorname{clip}((u-x)/\tau,-r,+r).
+
+Positive lag gives a constant-rate ramp until error reaches ``r*tau``, then
+exponential convergence; smaller errors are exponential from the start. Zero
+lag gives a finite-rate ramp. Pure ``value(t)`` evaluations at/after the last
+accepted command do not advance sensors, draw noise or mutate actuator memory.
+Record commands and inputs for reconstruction; this is not a historical replay
+API. Coupling, backlash and actuator reaction inertia are not inferred.
+
+``SpacecraftManeuverAccel(position_body=...)`` extends the existing thrust,
+pressure, throttle and named-tank flow path with body torque
+``(position_body-current_COM) cross force_body`` in N m. The fixed application
+point is in body metres; vector thrust callables can use actual gimbal values.
+Omitted position retains thrust through the instantaneous COM. Off-center thrust
+requires body mass properties. Do not add a second copy of the thrust torque.
+The existing quaternion/rate equations evolve the plant; commands do not
+override attitude. Flow and transport must still satisfy Step 5; scheduled
+transport jumps retain the Step 8 material-momentum reset and conservation ledger.
+
+``control.history`` keeps acquisitions, deliveries, estimates, references,
+requested commands, delayed activations, bounded targets and actual values.
+``LaunchResult`` retains truth arcs and ``__control`` pre/post states alongside
+physical event evidence. Exceptions stop the run; completed updates remain in
+the caller-owned history.
+
+Run independent references and retain a new synthetic record::
+
+   python3 -m pytest -q tests/test_launch_guidance.py tests/test_launch_events.py tests/test_launch_propulsion.py
+   python3 -m demos.launch.demo_launch_guidance --output path/to/new-evidence.json
+
+The demo uses ``CartesianSensor`` for orthogonal direction observations and a
+body-rate gyro at the COM, removes an explicitly known bias, fits attitude with
+``fit_star_attitude`` and holds the last measurement. Fixed-target guidance and
+the existing quaternion PD drive a delayed, rate-limited pitch gimbal on an
+off-center force actuator. This synthetic external-wrench reference removes
+point inventory at the fixed COM: B=0, dry inertia is constant and relative fluid
+angular momentum is zero. It does not infer an off-center nozzle's internal
+fluid/transport model. The record keeps truth, measurements,
+measurement covariance (not an estimated attitude covariance), estimates,
+references, gimbal commands/response, timing, inventory, solver inputs and seed.
+It tracks the known nominal pitch/rate equilibrium, obeys stops, matches
+constant-Isp inventory and agrees on two output grids. Independent tests constrain
+actuator closed forms, delayed angular impulse/quaternion motion, changing-COM
+thrust arms, biased GPS position samples and event/transport ordering.
+This demonstrates synthetic models and one nominal pitch case, not calibrated
+performance, an attitude EKF, three-axis launch guidance or mission qualification.
+Gravity, weather, Earth rotation, off-nominal dispersions, slosh/flexibility and
+an acceptance mission remain separate work.
+
+Step 10: numerical integration and convergence
+------------------------------------------------
+
+``propagate_launch`` reuses the existing coupled 6-DoF solver. DOP853 is the
+initial choice for the smooth, nonstiff reference phases; phase roots, force
+breakpoints and sampled-control endpoints split integration explicitly.
+Output spacing selects retained samples, not solver steps. Fast or stiff
+actuator, slosh or flexible-body models require their own solver comparison
+and convergence evidence; the references below do not qualify those models.
+
+Supply ``atol`` as a vector in the propagated state order: three positions in
+metres, three velocities in m/s, four dimensionless quaternion components,
+three body rates in rad/s, optional mass in kg, then optional wheel momenta in
+kg m squared/s. A phase may override solver settings through its existing
+``propagation`` mapping. The local error scale is ``atol + rtol*abs(y)``;
+relative tolerance can dominate absolute tolerance at large GCRF positions.
+Neither a local tolerance nor a smaller maximum step alone bounds mission
+output error. Choose settings using independent references and refinement of
+the actual quantities and event epochs required by the application.
+
+Each standard :class:`~ssatk.propagators_6dof.sixdof.SixDOFTrajectory` retains
+``integration_diagnostics``. The tuple preserves separate solve summaries
+when depletion/coast or maneuver segments are combined. Summaries report
+finite output states, raw quaternion norm error and the magnitude of output
+normalization corrections. With ``dense_output=True`` they also report
+internal step count, minimum/maximum step in seconds, and raw quaternion norm
+errors at accepted endpoints, clipping the last interval to a terminal root.
+The launch runner already requests dense output. Without it the internal-mesh
+fields are ``None``. The variational and extended propagators do not produce
+these summaries. These sampled checks do not bound state health between
+samples, and guide projection is a physical constraint, not a normalization
+error. A nonfinite output or inspected endpoint fails propagation.
+
+Run the reference study and retain a new evidence file::
+
+   python3 -m pytest -q tests/test_launch_integration.py
+   python3 -m demos.launch.demo_launch_integration --output path/to/new-evidence.json
+
+The study reuses the two-burn staging reference and the delayed sampled pitch
+reference, with fresh controls and identical noise seeds for every run. It
+first tightens state-unit tolerances at fixed maximum step, then halves that
+step, and confirms with tighter tolerances and another halving. Each case
+also checks coarse and fine output grids through the existing reference.
+Comparisons cover common requested history epochs, each event's pre/post and
+detached-child states at its root, event topology and event-time residuals.
+The JSON retains
+every run's settings, truth, control/measurement histories, conservation
+ledger, reference residuals, function evaluations, internal step counts,
+normalization diagnostics and unit-labelled comparison budgets. Changing
+event topology or exceeding a budget fails the study.
+
+Independent isotropic free-spin and linear-motion references constrain
+DOP853, RK45 and Radau, including absolute GPS epochs and internal-mesh
+independence from output sampling. A binary maximum/first step isolates
+position summation roundoff in that closed-form experiment; it is not a
+general recommendation for adaptive integration. The rocket equation and
+constant-Isp inventory anchor the staging results. Convergence between two
+SSATK runs alone does not establish physical accuracy.
+
+The launch runner provides no reset-crossing STM. Linear sensitivities across
+events require both the reset derivative and event-time sensitivity (saltation)
+terms; a continuous STM must not be concatenated across these resets as if it
+contained them. Numerical evidence is scoped to the declared synthetic
+staging and nominal pitch cases. ``qualification_status`` remains ``NOT RUN``
+for measured vehicle performance, the mission envelope and flight qualification.
+
+Step 11: ascent to orbital analysis
+------------------------------------
+
+Use the accepted ``LaunchResult.state`` after cutoff and separation/reset,
+not the nearest requested output sample. Its r/v are the current geometric COM
+in GCRF metres and m/s; t is the stored GPS epoch. Complete the Step 8
+material-momentum transition before handoff: a nonzero flow transport B cannot
+be discarded without its centroid-velocity reset. A terminal event alone does
+not switch off a force or change that convention.
+
+``state.to_orbit(mu=mu)`` copies r/v/t into SSAPy without rotating,
+interpolating or reconstructing from elements. By default ``Orbit.propkw``
+carries current mass, area, CD and CR when present. Explicit ``propkw`` replaces
+those defaults; include all required coast properties when overriding it.
+Conversion requires finite state/epoch and positive finite mu. Keep the
+spacecraft alongside the orbit: body, inventories, attitude, rates and wheel
+momenta are not represented by Orbit. The launch runner preserves explicit
+area and center of pressure through accepted phase advancement.
+
+Select coast forces explicitly. Reuse the native objects wrapped by
+``make_ssapy_perturbation_acceleration`` for identical-physics overlap::
+
+   import ssapy
+
+   insertion = launch_result.state
+   orbit = insertion.to_orbit(mu=mu)
+   # perturbations is the tuple used in the unpowered LaunchPhase.
+   native_acceleration = ssapy.AccelSum([
+       ssapy.AccelKepler(mu=mu), *(term.accel for term in perturbations)
+   ])
+   coast = ssapy.SciPyPropagator(native_acceleration, ode_kwargs={
+       "method": "DOP853", "rtol": 1e-11, "atol": 1e-9, "max_step": 2.0
+   })
+   r, v = ssapy.rv(orbit, coast_times, propagator=coast)
+
+Start ``coast_times`` at exactly ``insertion.t``. The 6-DoF runner adds central
+gravity through mu; native SciPyPropagator needs the complete force including
+exactly one AccelKepler. The perturbation builder and native harmonics omit
+central gravity. Do not add the same perturbation directly and through a
+preset. Use the same mu for gravity and elements. Match remaining mass, area,
+coefficients, ephemerides, frames and forces before interpreting overlap error.
+Native orbital propagation retains its low-altitude policy; surface ascent
+must remain on the launch path.
+
+This constant-property translational coast requires stopped thrust/mass flow
+and force laws independent of evolving attitude/geometry. Retain 6-DoF for
+further burns, deployments or facet loads. Orbit does not serialize a force
+configuration; retain it explicitly with the insertion report. Native force
+laws keep their own environment/frame approximations, which are not upgraded
+to the launch atmosphere or Earth-rotation model by this handoff.
+
+Run the two reference cases::
+
+   python3 -m pytest -q tests/test_launch_orbit_handoff.py
+   python3 -m demos.launch.demo_launch_orbit_handoff --output path/to/two-body.json
+   python3 -m demos.launch.demo_launch_orbit_handoff --perturbed --output path/to/perturbed.json
+
+The reference starts with a specified ascending upper-stage state, burns
+fixed-COM point inventory and cuts off at an exact scheduled endpoint. Known
+scheduled times should be integration boundaries: at large GPS epochs a
+time-only root has a floating-point plateau even with elapsed-time integration.
+State-triggered roots retain numerical event-time uncertainty. The reference
+joins ascent/coast at their identical boundary sample and compares ten minutes
+of native SSAPy coast with the launch runner. Both cases check constant-Isp
+inventory and single-count force assembly. The unperturbed case also compares
+with analytic Keplerian propagation. The perturbed case enables degree-2 zonal
+gravity, Sun and Moon, Harris-Priester drag and cannonball solar/Earth radiation.
+
+The report retains state, epoch, inventory, force settings, specific energy and
+angular momentum, osculating semimajor axis, eccentricity, inclination and
+equinoctial elements. Cartesian/nonsingular quantities avoid undefined
+periapsis/node angles near circular or equatorial insertion. These are
+instantaneous osculating elements relative to GCRF and the declared mu, not
+mean elements, an SGP4 initialization or a TLE. Independent circular references
+check two specified gravitational parameters. Energy/angular momentum
+conservation is checked only for two-body coast, not drag or third-body motion.
+Ground tracks reuse ``gcrf_to_llh`` with packaged EOP, IAU 2006/2000A and WGS84;
+Astropy references share the IERS table and allow its omitted celestial-pole
+offsets. The generated JSON retains the continuous history and event ledger.
+
+These cases verify terminal-ascent handoff, not a surface-to-orbit guidance
+solution, mission acceptance or measured vehicle/flight qualification.
+``qualification_status`` stays ``NOT RUN``. Generated evidence remains outside
+version control; persistent reference data belongs in SSAPy-Data.

@@ -82,6 +82,7 @@ class SixDOFTrajectory:
     y_events: tuple[np.ndarray, ...] | None = None
     solution: Callable | None = None
     event_functions: tuple[Callable | None, ...] | None = None
+    integration_diagnostics: tuple[dict, ...] = ()
 
     def spacecraft(
         self,
@@ -249,11 +250,21 @@ class Spacecraft:
         )
 
     def to_orbit(self, *, mu: float = EARTH_MU, propkw=None):
-        """Return an SSAPy ``Orbit`` carrying this spacecraft's ``r/v/t`` state."""
+        """Copy the GCRF SI state and exact GPS epoch into an SSAPy ``Orbit``.
+
+        By default, carry current mass, area, CD and CR as constant coast
+        properties. Explicit ``propkw`` replaces those defaults. Attitude,
+        inventories and force models remain on the spacecraft/caller; Orbit
+        does not propagate them. ``mu`` defines the osculating elements.
+        """
 
         from ssapy import Orbit
+        from ..accelerations_6dof.ssapy_models import _spacecraft_kwargs
 
-        return Orbit(self.r.copy(), self.v.copy(), self.t, mu=mu, propkw=propkw)
+        if not np.isfinite(mu) or mu <= 0 or not np.isfinite(self.t) or not np.isfinite([self.r, self.v]).all():
+            raise ValueError("Orbit conversion requires finite state/epoch and positive finite mu.")
+        properties = _spacecraft_kwargs(self) if propkw is None else dict(propkw)
+        return Orbit(self.r.copy(), self.v.copy(), self.t, mu=mu, propkw=properties)
 
     def with_body(self, body: object) -> Spacecraft:
         """Return a copy with a spacecraft body design attached."""
@@ -592,6 +603,7 @@ def _combine_trajectory_segments(first, second, event_count):
         y_events=y_events,
         event_functions=event_functions,
         solution=solution,
+        integration_diagnostics=first.integration_diagnostics + second.integration_diagnostics,
     )
 
 
@@ -873,14 +885,28 @@ def propagate_6dof(
     wheel_torque: WheelTorqueModel | None = None,
     wheel_momentum_capacity: ArrayLike | None = None,
     rtol: float = 1e-9,
-    atol: float = 1e-12,
+    atol: float | ArrayLike = 1e-12,
     method: str = "DOP853",
     max_step: float = np.inf,
     first_step: float | None = None,
     events=None,
     dense_output: bool = False,
+    constraint=None,
 ) -> SixDOFTrajectory:
     """Propagate a coupled translational and rigid-body attitude state.
+
+    An optional ``constraint`` supplies ``project(t, y)`` for accepted/dense
+    states and ``derivative(t, y, free_rhs)`` for ideal support reactions.
+    Both callbacks use absolute GPS epochs and must be free of side effects.
+
+    ``atol`` may contain one tolerance per state component, ordered r [m],
+    v [m/s], q [dimensionless], omega [rad/s], optional mass [kg], then
+    wheel momentum [kg m^2/s]. The error scale is ``atol + rtol*abs(y)``;
+    output spacing does not set integration steps. ``integration_diagnostics``
+    retains raw quaternion norm errors before output normalization. With
+    ``dense_output=True`` it also reports internal step sizes and raw norm
+    errors at accepted endpoints (clipped to the terminal root). These are
+    sampled diagnostics, not bounds between samples or global error estimates.
 
     ``acceleration`` returns inertial/GCRF m/s². ``ntw_acceleration`` returns
     SSAPy-style ``[N, T, W]`` m/s², where ``T`` follows velocity and ``W``
@@ -952,15 +978,28 @@ def propagate_6dof(
     t_ref = float(state.t)
     times_elapsed = times - t_ref
     events = _event_tuple(events) if events is not None else None
+    project = None
     if wheel_capacity is not None and np.any(np.isfinite(wheel_capacity)):
         project = _wheel_state_projector(
             inertia_arg, wheel_axes, wheel_capacity, state.mass is not None,
             t_ref=t_ref, mass_floor=getattr(mass_flow_rate, "mass_floor", None),
         )
+    if constraint is not None:
+        wheel_project = project
+
+        def project(t, y):
+            if wheel_project is not None:
+                y = wheel_project(t, y)
+            return constraint.project(t_ref + t, y)
+
+        y0 = project(0.0, y0)
+    if project is not None:
         method = projected_solver(method, project)
 
-    sol = solve_ivp_at_breakpoints(
-        lambda t, y: sixdof_rhs(
+    def rhs(t, y):
+        if constraint is not None:
+            y = constraint.project(t_ref + t, y)
+        derivative = sixdof_rhs(
             t_ref + t,
             y,
             inertia=inertia_arg,
@@ -978,7 +1017,11 @@ def propagate_6dof(
             wheel_momentum_capacity=wheel_capacity,
             inv_inertia=inv_inertia,
             mass_state=state.mass is not None,
-        ),
+        )
+        return derivative if constraint is None else constraint.derivative(t_ref + t, y, derivative)
+
+    sol = solve_ivp_at_breakpoints(
+        rhs,
         (0.0, float(times_elapsed[-1])),
         y0,
         time_origin=t_ref,
@@ -1017,7 +1060,31 @@ def propagate_6dof(
                 t = np.append(t, event_t)
                 y = np.vstack([y, event_y])
     t = t + t_ref
+    if not np.isfinite(y).all():
+        raise RuntimeError("6-DoF propagation returned nonfinite states.")
     q = np.array([normalize_quaternion(item) for item in y[:, 6:10]])
+    diagnostics = {
+        "finite_output_states": True,
+        "max_output_quaternion_norm_error": float(np.max(np.abs(np.linalg.norm(y[:, 6:10], axis=1)-1), initial=0)),
+        "max_output_quaternion_correction": float(np.max(np.linalg.norm(q.reshape(-1, 4)-y[:, 6:10], axis=1), initial=0)),
+        "accepted_steps": None,
+        "min_step_s": None,
+        "max_step_s": None,
+        "max_endpoint_quaternion_norm_error": None,
+    }
+    if sol.sol is not None:
+        steps = np.diff(sol.sol.ts)
+        steps = steps[steps > 0]
+        norm_errors = [abs(np.linalg.norm(y0[6:10])-1)]
+        for interpolant in sol.sol.interpolants:
+            raw = getattr(interpolant, "dense", interpolant)(min(interpolant.t, sol.sol.ts[-1]))
+            if not np.isfinite(raw).all():
+                raise RuntimeError("6-DoF propagation returned nonfinite endpoint states.")
+            norm_errors.append(abs(np.linalg.norm(raw[6:10])-1))
+        diagnostics.update(accepted_steps=len(steps),
+                           min_step_s=float(np.min(steps)) if len(steps) else None,
+                           max_step_s=float(np.max(steps)) if len(steps) else None,
+                           max_endpoint_quaternion_norm_error=float(max(norm_errors)))
     mass = y[:, 13] if state.mass is not None else None
     wheel_start = 14 if state.mass is not None else 13
     wheel_momentum_series = (
@@ -1042,6 +1109,7 @@ def propagate_6dof(
         y_events=None if getattr(sol, "y_events", None) is None else tuple(sol.y_events),
         solution=_solution_in_absolute_time(getattr(sol, "sol", None), t_ref),
         event_functions=events,
+        integration_diagnostics=(diagnostics,),
     )
 
 
