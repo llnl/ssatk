@@ -1059,6 +1059,14 @@ Use ``--require-external`` in an environment that provides all three runtimes;
 the command then exits nonzero for a skipped runtime as well as for a failed
 residual gate. ``--full`` selects the longer fixed cases.
 
+``--case gmat_finite_burn`` runs a fixed 60-second point-mass burn with
+constant inertial thrust and Isp, comparing Cartesian states, mass depletion
+and cutoff time. It retains the generated script and sampled residuals in
+the report. On Windows, ``GMAT_ROOT`` may select a native installation with
+``bin/GmatConsole.exe``; Linux retains the Podman route. See
+:doc:`launch_baseline` for the complete launch verification ladder and its
+explicit unavailable evidence.
+
 For SSATK, the first performance table should compare:
 
 * fixed-step RK4,

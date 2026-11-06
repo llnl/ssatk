@@ -33,6 +33,7 @@ body and component model.
    ssa_workflows
    artemis_radiation_demo
    launch_baseline
+   launch_capability
    launch_roadmap
    spacecraft_view
    gallery_hosting

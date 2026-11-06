@@ -156,6 +156,97 @@ truth.  It does not infer or validate a real
 covariance budget, sensor calibration, observability claim, or operational
 accuracy.
 
+Joint orbit-and-parameter estimation
+------------------------------------
+
+``solve_batch_orbit`` also accepts ``parameters0``, a mapping of named scalar
+guesses. The six Cartesian state components are always fitted. Parameters
+follow the mapping's insertion order; ``parameter_scale`` contains their
+positive characteristic magnitudes and ``parameter_bounds`` contains lower
+and upper arrays in physical units. ``parameter_step`` optionally supplies
+absolute numerical-differentiation steps in those physical units. Choose steps
+large enough for their observation changes to exceed integration error.
+
+Supply ``propagation_kwargs`` as a callable of the parameter mapping to rebuild
+existing force models with candidate drag/SRP coefficients or finite-burn
+thrust, duration, or direction parameters. It returns the usual propagation
+options and cannot override the initial state, epoch, STM, or dense output.
+The existing propagator handles force-model ``time_breakpoints`` so a fitted
+burn boundary is evaluated again for every candidate. Keep fixed force
+components and all physical data explicit. Reuse SSAPy/SSATK models rather
+than implementing a second force-model engine.
+
+``measurement_bias(station, observation, parameters)`` returns an additive
+bias with the observable's dimension, in metres, metres/second, radians, or
+hertz as appropriate. The observation's known ``bias`` is corrected first;
+this callback models an additional unknown bias. It can select parameters by
+station, observable, and observation epoch. Parameter mappings are read-only.
+
+.. code-block:: python
+
+   import numpy as np
+   from ssapy import AccelDrag, AccelSolRad
+   from ssatk.accelerations_6dof import make_finite_burn_acceleration
+   from ssatk.navigation import solve_batch_orbit
+
+   # Ground-station observations, initial state, epoch, and burn epochs are inputs.
+   drag = AccelDrag(area=10, mass=100)
+   srp = AccelSolRad(area=10, mass=100)
+
+   def propagation(parameters):
+       def drag_force(t, r, v):
+           return drag(r, v, t, CD=parameters["cd"])
+
+       def srp_force(t, r, v):
+           return srp(r, v, t, CR=parameters["cr"])
+
+       burn = make_finite_burn_acceleration(
+           parameters["thrust_n"], mass=100, frame="inertial",
+           direction=[0, 0, 1], start=burn_start, stop=burn_stop,
+       )
+       return {"acceleration": (drag_force, srp_force, burn)}
+
+   def bias(station, observation, parameters):
+       if observation.measurement == "range":
+           return parameters["range_bias_m"]
+       return np.zeros_like(np.atleast_1d(observation.value))
+
+   fit = solve_batch_orbit(
+       observations, state_guess, t0=state_epoch,
+       parameters0={"cd": 2.2, "cr": 1.3, "thrust_n": 0.2, "range_bias_m": 0},
+       parameter_scale=[2, 1, 0.2, 10],
+       parameter_step=[0.002, 0.002, 0.0002, 0.1],
+       parameter_bounds=([0.1, 0.1, 0, -100], [5, 3, 1, 100]),
+       propagation_kwargs=propagation, measurement_bias=bias,
+   )
+   print(fit.parameters, fit.estimate_names, fit.correlation)
+
+``fit.joint_covariance`` includes state/parameter cross-covariances in the
+order given by ``fit.estimate_names``. ``fit.covariance`` remains the 6-by-6
+state block for existing callers. ``fit.correlation`` is the dimensionless
+joint matrix. The covariance is local inverse Fisher information using the
+supplied observation noise; it is not multiplied by the fitted residual
+variance. Insufficient numerical rank makes ``success`` false and leaves
+both covariance matrices and correlation unavailable. ``active_mask`` reports
+lower-bound (-1), interior (0), and upper-bound (1) estimates; formal Gaussian
+covariance does not model truncation at active bounds.
+
+State derivatives use the existing STM. Geometric residuals and perturbed
+parameter trials use the existing state-only propagator. Named derivatives use
+bounded finite differences that repropagate the orbit and re-solve radio
+signal times, including Doppler count intervals. They require more propagation
+work than a state-only fit. Set propagation accuracy and parameter scales so
+parameter-induced changes exceed integration roundoff; verify that smaller
+steps give consistent uncertainties. Identifiability still
+depends on the observation geometry and arc, physical assumptions, and noise.
+Synthetic references do not establish measured coefficient or flight accuracy.
+
+Run the controlled example with:
+
+.. code-block:: bash
+
+   python -m demos.navigation.demo_joint_orbit_parameter_estimation
+
 Coherent radio tracking
 -----------------------
 

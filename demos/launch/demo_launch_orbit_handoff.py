@@ -11,6 +11,7 @@ from astropy.time import Time
 from ssatk.accelerations_6dof import SpacecraftManeuverAccel, make_ssapy_perturbation_acceleration
 from ssatk.constants import EARTH_MU, EARTH_RADIUS
 from ssatk.coordinates import gcrf_to_llh
+from ssatk.coordinates.satellite_frames import transform_from_gcrf
 from ssatk.launch import LaunchEvent, LaunchPhase, propagate_launch
 from ssatk.launch.preflight import collect_software_baseline
 from ssatk.propagators_6dof import Spacecraft
@@ -114,6 +115,11 @@ def run_reference(*, perturbed=False):
         "comparison": dict(overlap_position_m=position_error, overlap_velocity_m_s=velocity_error,
                            acceleration_assembly_m_s2=assembly_error, kepler_reference=analytic,
                            position_budget_m=1e-3, velocity_budget_m_s=1e-6),
+        "overlap_residuals": {"time_gps_s": times, "position_gcrf_m": arc.r-r, "velocity_gcrf_m_s": arc.v-v,
+                              "position_rtn_m": np.array([transform_from_gcrf(dr, "rtn", r=ri, v=vi)
+                                                          for dr, ri, vi in zip(arc.r-r, r, v)]),
+                              "velocity_rtn_m_s": np.array([transform_from_gcrf(dv, "rtn", r=ri, v=vi)
+                                                            for dv, ri, vi in zip(arc.v-v, r, v)])},
         "events": ascent.events,
         "history": dict(time_gps_s=history_t, position_gcrf_m=history_r, velocity_gcrf_m_s=history_v,
                         mass_kg=history_mass, longitude_deg=longitude, latitude_deg=latitude, height_wgs84_m=height),

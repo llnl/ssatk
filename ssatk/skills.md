@@ -190,12 +190,48 @@ Native SSAPy coast needs one central-gravity term; the 6-DoF runner already
 includes that term through `mu`. See `docs/launch_baseline.rst` and
 `demos/launch/demo_launch_orbit_handoff.py` for the overlap reference.
 
+For launch verification, reuse the source-checkout command
+`python3 -m demos.launch.demo_launch_verification --output <new-directory>`.
+Its report keeps missing external/observed references as `UNAVAILABLE` and
+exits nonzero for an incomplete ladder; a passed internal case is not a
+substitute for an independent or measured comparison. Keep generated evidence
+outside version control and retain its configuration and source hashes.
+
+For launch measurement calibration, use `launch.calibrate_launch_measurements`
+with frozen calibration/held-out cases and a sensor prediction callback that
+reuses the launch propagators. Keep input uncertainty, position/filter/time
+alignment, source hashes and acceptance budgets explicit. Only identifiable,
+converged interior fits supply formal covariance; synthetic/missing measured
+evidence cannot establish a validation pass. See `docs/launch_baseline.rst`
+and `demos/launch/demo_launch_calibration.py` for the case contract.
+Use that demo's `--write-sample <new.json>` to create an editable synthetic
+dataset and `--dataset <edited.json> --output <new-report.json>` to run it.
+Keep sample evidence labeled synthetic; JSON sensor/model settings change
+predictions without silently regenerating the stored observations.
+
 For optional constant-mass slosh, reuse `SloshMode` and
 `propagate_6dof_extended(coupled_slosh=True)`. Supply a displacement limit,
 clamped-bus frequency/damping and bus mass/inertia excluding modal masses.
 The returned r/v are the bus COM; reconstruct total COM before an orbital
 handoff. The default prescribed modes do not provide reciprocal coupling.
 See `docs/launch_baseline.rst` for validity and evidence requirements.
+
+For joint station orbit determination, extend `navigation.solve_batch_orbit`
+with `parameters0`, ordered `parameter_scale`/`parameter_bounds`, a
+`propagation_kwargs(parameters)` factory using existing force models, and an
+optional `measurement_bias(station, observation, parameters)` callback. The
+result's `joint_covariance` and `correlation` follow `estimate_names`; the
+existing `covariance` remains the six-state block. Known observation biases
+are subtracted before the additional fitted bias. Check `success`, rank and
+`active_mask` before using formal uncertainties. See `docs/ssa_workflows.rst`.
+
+For a reproducible launch handoff, stage or commit source changes and run
+`python -m demos.launch.demo_launch_capability --output <new-external-directory>`.
+Use `--verify <bundle>` for integrity only and `--replay <bundle> --output
+<new-directory>` for the pinned numerical rerun. This reuses the existing
+verification/calibration cases and leaves external bridges unexecuted. Keep
+the synthetic demonstration status separate from blocked mission acceptance
+and unavailable measured-flight evidence. See `docs/launch_capability.rst`.
 
 ## Data
 
