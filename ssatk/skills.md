@@ -233,6 +233,16 @@ verification/calibration cases and leaves external bridges unexecuted. Keep
 the synthetic demonstration status separate from blocked mission acceptance
 and unavailable measured-flight evidence. See `docs/launch_capability.rst`.
 
+For advanced radio tracking, reuse `GroundStation.predict_radio` with
+`RadioTrackingConfig.transmitter`, `reference_receiver`/`reference_radio`,
+bounded `frequency_ramps` and explicit station clock/media/equipment inputs.
+Proper transponder and Earth/Sun Shapiro corrections are opt-in. Feed CCSDS
+TDM through `io.read_tdm(...).to_station_observations`; radio mappings identify
+transmitting stations. `io.read_ramp_table` reads explicit GMAT ramp epochs.
+Preserve source path signs, counter conventions and calibration coverage;
+never guess hardware, meteorology, clock correlation or ramp extrapolation.
+See `docs/ssa_workflows.rst` for units, model limits and reference evidence.
+
 ## Data
 
 Read packaged data through `ssatk.data`, never through paths relative to the

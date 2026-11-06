@@ -12,7 +12,7 @@ from scipy.optimize import least_squares
 
 from ..propagators_orbit import propagate_orbit_state, propagate_orbit_state_with_stm
 from ..propagators_orbit.high_accuracy import OrbitPropagationWithSTM
-from .measurements import GroundStation, GroundStationMeasurement, _RESERVED_PROPAGATION_KWARGS, _scalar_time
+from .measurements import GroundStation, GroundStationMeasurement, _RESERVED_PROPAGATION_KWARGS, _scalar_time, _radio_receive_epochs
 from .sensors import StationObservation
 
 _DEFAULT_STATE_SCALE = np.array([1.0e7, 1.0e7, 1.0e7, 1.0e3, 1.0e3, 1.0e3])
@@ -270,7 +270,9 @@ def solve_batch_orbit(
         t0 = _scalar_time(t0, "t0")
     if t0 > float(np.min(epochs_observed)):
         raise ValueError("t0 must be no later than the earliest observation epoch.")
-    epochs = np.unique(np.concatenate(([t0], epochs_observed)))
+    receive_epochs = [epoch for station, observation, _, _, _ in prepared if observation.radio is not None
+                      for epoch in _radio_receive_epochs(station, observation.time, observation.radio)]
+    epochs = np.unique(np.concatenate(([t0], epochs_observed, receive_epochs)))
     if epochs.size < 2:
         raise ValueError("observations must span at least two distinct propagation epochs.")
     epoch_indices = {float(epoch): index for index, epoch in enumerate(epochs)}

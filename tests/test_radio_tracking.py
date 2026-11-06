@@ -41,13 +41,13 @@ def test_radial_light_time_delay_and_doppler_closed_form(fixed_station, gps_epoc
     trajectory = _trajectory(state, gps_epoch, gps_epoch + elapsed)
     range_prediction = fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_range", radio)
     expected = (radius + speed * elapsed) * c / (c + speed) + (c - speed) * radio.transponder_delay_s / 2
-    assert range_prediction.value == pytest.approx(expected, abs=1e-6)
+    assert range_prediction.value == pytest.approx(expected, rel=0, abs=1e-6)
     expected_jacobian = np.array([[c / (c + speed), 0, 0,
                                   c * (elapsed * c - radius) / (c + speed)**2 - radio.transponder_delay_s / 2, 0, 0]])
     np.testing.assert_allclose(range_prediction.jacobian, expected_jacobian, atol=1e-8, rtol=0)
     doppler = fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_doppler", radio)
     expected_doppler = -2 * radio.turnaround_ratio * radio.uplink_frequency_hz * speed / (c + speed)
-    assert doppler.value == pytest.approx(expected_doppler, abs=1e-6)
+    assert doppler.value == pytest.approx(expected_doppler, rel=0, abs=1e-6)
     expected_h = np.zeros((1, 6))
     expected_h[0, 3] = -2 * radio.turnaround_ratio * radio.uplink_frequency_hz * c / (c + speed)**2
     np.testing.assert_allclose(doppler.jacobian, expected_h, atol=1e-8, rtol=0)
@@ -75,8 +75,8 @@ def test_accelerating_count_doppler_closed_form(fixed_station, gps_epoch):
     expected_doppler = -2 * radio.turnaround_ratio * radio.uplink_frequency_hz / (c * radio.count_interval_s) * (
         expected_range - reference_range(elapsed - radio.count_interval_s)
     )
-    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_range", radio).value == pytest.approx(expected_range, abs=1e-6)
-    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_doppler", radio).value == pytest.approx(expected_doppler, abs=1e-6)
+    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_range", radio).value == pytest.approx(expected_range, rel=0, abs=1e-6)
+    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_doppler", radio).value == pytest.approx(expected_doppler, rel=0, abs=1e-6)
 
 
 @pytest.mark.parametrize("measurement", ["two_way_range", "two_way_doppler"])
@@ -129,7 +129,7 @@ def test_sensor_and_batch_against_analytic_free_flight(monkeypatch, gps_epoch, s
                     )
                 sensor = GroundStationSensor(station, 0.0, measurement=measurement, radio=radio, bias=2.0, rng=0)
                 observation = sensor.measure(trajectory, gps_epoch + elapsed)
-                assert observation.as_measurement()[0][0] == pytest.approx(reference, abs=1e-6)
+                assert observation.as_measurement()[0][0] == pytest.approx(reference, rel=0, abs=1e-6)
                 observations.append((station, replace(observation, value=reference + 2, covariance=np.array([[1.0]]))))
     fit = solve_batch_orbit(
         observations, state0=truth + [100, -200, 300, 1, -2, 3], t0=gps_epoch,
@@ -156,8 +156,8 @@ def test_translating_earth_origin_closed_form(fixed_station, monkeypatch, gps_ep
     expected_doppler = -2 * radio.turnaround_ratio * radio.uplink_frequency_hz * c * speed / (
         (c + speed + origin_speed) * (c - origin_speed)
     )
-    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_range", radio).value == pytest.approx(expected_range, abs=1e-6)
-    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_doppler", radio).value == pytest.approx(expected_doppler, abs=1e-6)
+    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_range", radio).value == pytest.approx(expected_range, rel=0, abs=1e-6)
+    assert fixed_station.predict_radio(trajectory, gps_epoch + elapsed, "two_way_doppler", radio).value == pytest.approx(expected_doppler, rel=0, abs=1e-6)
 
 
 def test_earth_origin_against_erfa_epv00():

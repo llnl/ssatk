@@ -40,7 +40,7 @@ The `demos/` package is organized by workflow area:
 | `launch/` | preflight, mass/propulsion, phase resets, sampled control, integration, ascent-to-orbit, coupled slosh, verification, calibration (`demo_launch_calibration --write-sample <new.json>`, then `--dataset <edited.json> --output <new-report.json>`) and reproducible capability bundles (`demo_launch_capability --output <new-external-directory>`; validation demos are excluded from the visual gallery) |
 | `orbit_visualization/` | orbit, cislunar, globe, Moon, and ground-track visualization workflows |
 | `sensor_coverage/` | satellite viewer and sensor field-of-view coverage demos |
-| `navigation/` | star-catalogue attitude, landmark-bearing position, synthetic geometric/radio orbit estimation with TDM ingestion, and joint force/bias parameter fitting |
+| `navigation/` | star-catalogue attitude, landmark-bearing position, geometric/radio orbit estimation, corrected three-way/differenced links with ramps and TDM ingestion, and joint force/bias parameter fitting |
 | `space_environment/` | Sun/Earth/Moon scenes, solar-system views, magnetic fields, and Van Allen belts |
 | `eclipse/` | solar and lunar eclipse geometry and animation demos |
 | `analysis_dashboards/` | dashboards, divergence plots, and population summary visualizations |

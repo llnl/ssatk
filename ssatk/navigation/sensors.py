@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -222,12 +222,16 @@ class GroundStationSensor:
     def measure(self, truth, time) -> StationObservation:
         """Return an observation; radio truth is a dense state/STM trajectory."""
 
+        station = (self.station if self.min_elevation_rad is None else
+                   replace(self.station, min_elevation_rad=self.min_elevation_rad))
         prediction = (
-            self.station.predict_radio(truth, time, self.measurement, self.radio)
+            station.predict_radio(truth, time, self.measurement, self.radio)
             if self.radio is not None else self.station.predict(truth, time, self.measurement)
         )
         threshold = self.station.min_elevation_rad if self.min_elevation_rad is None else self.min_elevation_rad
         visible = prediction.elevation_rad >= threshold
+        if self.radio is not None:
+            visible = visible and prediction.visible
         eligible = visible or self.visibility_override
         valid = eligible and float(self.rng.random()) >= self.dropout_probability
         if valid:

@@ -1,8 +1,8 @@
 """CCSDS TDM 1.0/2.0 KVN and XML ingestion for coherent radio navigation.
 
 The parsed message retains metadata, comments, original epochs and values.
-Conversion supports unambiguous two-way range, integrated range rate and
-received frequency for constant-frequency, single-station vacuum links.
+Conversion supports coherent two-/three-way and differenced radar links,
+bounded ramps, cumulative Doppler counts and explicit media/calibration data.
 """
 
 from __future__ import annotations
@@ -23,11 +23,57 @@ from ssatk.constants import c
 from ssatk.io.ccsds_cdm import _split_source, _time
 from ssatk.navigation import GroundStation, RadioTrackingConfig, StationObservation
 
-__all__ = ["TDMObservation", "TDMSegment", "TrackingDataMessage", "read_tdm"]
+__all__ = ["TDMObservation", "TDMSegment", "TrackingDataMessage", "read_tdm", "read_ramp_table"]
 
 _CONVENTIONS = {"round_trip": 0.5, "half_round_trip": 1.0}
-_DOPPLER = {"DOPPLER_INTEGRATED", "RECEIVE_FREQ", "RECEIVE_FREQ_1"}
+_DOPPLER = {"DOPPLER_INTEGRATED", "DOPPLER_COUNT", "RECEIVE_FREQ", "RECEIVE_FREQ_1"}
 _MEASUREMENTS = _DOPPLER | {"RANGE"}
+
+
+def read_ramp_table(source: str | Path | TextIO, *, station_id: str, spacecraft_id: str,
+                    stop_time, time_system: str = "TAI", epoch_format: str = "mjd") -> np.ndarray:
+    """Read GMAT seven-column ramps as [start GPS, stop GPS, Hz, Hz/s].
+
+    Rows are epoch, station ID, spacecraft ID, uplink band, ramp type,
+    frequency and rate. Select one explicit link; type 1..5 ramps are valid.
+    Epoch format is conventional MJD (JD-2400000.5) or ``gmat_mjd``
+    (JD-2430000.0). Specify the source time scale; A1 is not silently TAI.
+    Final coverage ends at explicit ``stop_time`` (Astropy Time or GPS seconds).
+    """
+    if not isinstance(station_id, str) or not station_id or not isinstance(spacecraft_id, str) or not spacecraft_id:
+        raise ValueError("station_id and spacecraft_id must be nonempty strings.")
+    if time_system not in {"TAI", "UTC", "TT", "TDB", "GPS"} or epoch_format not in {"mjd", "gmat_mjd"}:
+        raise ValueError("ramp time_system and epoch_format must identify the actual source convention.")
+    text = source if isinstance(source, str) and ("\n" in source or len(source.split()) == 7) else _split_source(source)
+    selected = []
+    band = None
+    for number, line in enumerate(text.splitlines(), 1):
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("%"):
+            continue
+        fields = line.split()
+        if len(fields) != 7:
+            raise ValueError(f"ramp row {number} requires seven columns.")
+        if fields[1:3] != [station_id, spacecraft_id]:
+            continue
+        if not re.fullmatch(r"[1-3]", fields[3]) or not re.fullmatch(r"[1-5]", fields[4]):
+            raise ValueError(f"ramp row {number} has an unsupported band or invalid ramp type.")
+        if band is not None and band != fields[3]:
+            raise ValueError("one ramp table cannot change uplink band.")
+        band = fields[3]
+        epoch = _number(fields[0], "ramp epoch")
+        jd_offset = 2400000.5 if epoch_format == "mjd" else 2430000.0
+        if time_system == "GPS":
+            time = Time(jd_offset, epoch, format="jd", scale="tai") + 19 * u.s
+        else:
+            time = Time(jd_offset, epoch, format="jd", scale=time_system.lower())
+        selected.append((float(time.gps), _number(fields[5], "ramp frequency", "Hz"), _number(fields[6], "ramp rate", "Hz/s")))
+    if not selected:
+        raise ValueError("ramp table contains no records for the selected link.")
+    stop = float(stop_time.gps) if isinstance(stop_time, Time) else float(stop_time)
+    rows = [[epoch, selected[index + 1][0] if index + 1 < len(selected) else stop, frequency, rate]
+            for index, (epoch, frequency, rate) in enumerate(selected)]
+    return RadioTrackingConfig(selected[0][1], 1., frequency_ramps=rows).frequency_ramps
 
 
 @dataclass(frozen=True)
@@ -65,6 +111,7 @@ class TrackingDataMessage:
         covariance: Mapping[str, float],
         range_convention: str | None = None,
         doppler_convention: str | None = None,
+        doppler_count_convention: str | None = None,
         bias: Mapping[str, float] | None = None,
     ) -> list[tuple[GroundStation, StationObservation]]:
         """Convert records for ``solve_batch_orbit`` or EKF updates.
@@ -80,45 +127,46 @@ class TrackingDataMessage:
         Scalar corrections marked NO are added before conversion. START and
         MIDDLE count tags move to the receive-interval end. Degraded records
         remain invalid; elevation and visibility remain unknown (None).
-        Unsupported observables, ramps, delays and link modes raise ValueError.
+        SINGLE_DIFF data (PATH_2 minus PATH_1) becomes primary-minus-reference.
+        Ramps and equipment/media inputs require explicit coverage/calibration.
+        Counter beat signs come from ``doppler_count_convention`` and the ICD.
         """
         output = []
         target = None
         bias = {} if bias is None else bias
+        supplied_stations = stations
+        stations, media_targets = _tdm_media(self.segments, stations)
         for segment in self.segments:
             meta = segment.metadata
-            if meta.get("MODE") != "SEQUENTIAL" or meta.get("TIMETAG_REF", "RECEIVE") != "RECEIVE" or "PATH_1" in meta or "PATH_2" in meta:
-                raise ValueError("TDM navigation requires SEQUENTIAL mode and RECEIVE time tags.")
-            path = meta.get("PATH", "").split(",")
-            path = [part.strip() for part in path]
-            if len(path) != 3 or path[0] != path[2] or path[0] == path[1] or not all(
-                re.fullmatch(r"[1-5]", part) for part in path
-            ):
-                raise ValueError("TDM navigation requires a single-station two-way PATH.")
-            try:
-                station_id = meta[f"PARTICIPANT_{path[0]}"]
-                spacecraft_id = meta[f"PARTICIPANT_{path[1]}"]
-                station, config = stations[station_id], radio[station_id]
-            except KeyError as exc:
-                raise ValueError(f"missing TDM participant or station/radio configuration: {exc}") from exc
-            if station_id == spacecraft_id or (target is not None and spacecraft_id != target):
+            if {item.keyword for item in segment.observations} <= {"STEC", "TROPO_DRY", "TROPO_WET"}:
+                continue
+            if meta.get("MODE") not in {"SEQUENTIAL", "SINGLE_DIFF"} or meta.get("TIMETAG_REF", "RECEIVE") != "RECEIVE":
+                raise ValueError("TDM navigation requires SEQUENTIAL/SINGLE_DIFF mode and RECEIVE time tags.")
+            differenced = meta["MODE"] == "SINGLE_DIFF"
+            if differenced and "RECEIVE_BAND" not in meta:
+                raise ValueError("SINGLE_DIFF data requires RECEIVE_BAND identifying the differenced carriers.")
+            if (differenced and "PATH" in meta) or (not differenced and ("PATH_1" in meta or "PATH_2" in meta)):
+                raise ValueError("TDM PATH fields must agree with MODE.")
+            paths = [[part.strip() for part in meta.get(key, "").split(",")]
+                     for key in (("PATH_1", "PATH_2") if differenced else ("PATH",))]
+            links = [_tdm_link(segment, path, stations, radio, supplied_stations) for path in paths]
+            spacecraft_id, station, config = links[0]
+            if target is not None and spacecraft_id != target:
                 raise ValueError("TDM navigation must describe one spacecraft distinct from its stations.")
             target = spacecraft_id
-            if not isinstance(station, GroundStation) or not isinstance(config, RadioTrackingConfig):
-                raise TypeError("stations and radio must contain GroundStation and RadioTrackingConfig objects.")
+            if media_targets and media_targets != {target}:
+                raise ValueError("STEC segments must refer to the same spacecraft as the tracking paths.")
+            if differenced:
+                if links[1][0] != spacecraft_id:
+                    raise ValueError("differenced TDM paths must track the same spacecraft.")
+                config = replace(config, reference_receiver=links[1][1], reference_radio=links[1][2])
+            prefix = "differenced" if differenced else ("two_way" if paths[0][0] == paths[0][2] else "three_way")
             kinds = {item.keyword for item in segment.observations}
-            auxiliary = {f"TRANSMIT_FREQ_{path[0]}", f"TRANSMIT_FREQ_RATE_{path[0]}"}
+            auxiliary = {f"{name}_{path[0]}" for path in paths for name in ("TRANSMIT_FREQ", "TRANSMIT_FREQ_RATE")}
             unsupported = kinds - _MEASUREMENTS - auxiliary
             if unsupported:
                 raise ValueError(f"unsupported TDM navigation observables: {sorted(unsupported)}")
-            _check_radio_metadata(meta, config)
-            for item in segment.observations:
-                if item.keyword in auxiliary:
-                    expected = config.uplink_frequency_hz if "RATE" not in item.keyword else 0.0
-                    units = "Hz" if "RATE" not in item.keyword else "Hz/s"
-                    if _number(item.value, item.keyword, units) != expected:
-                        raise ValueError("TDM transmit frequencies must match the constant uplink; ramps are unsupported.")
-            has_doppler = bool(kinds & _DOPPLER)
+            has_doppler = bool(kinds & (_DOPPLER - {"DOPPLER_COUNT"}))
             offset = 0.0
             if has_doppler:
                 interval = _number(meta.get("INTEGRATION_INTERVAL", ""), "INTEGRATION_INTERVAL", "s")
@@ -126,6 +174,8 @@ class TrackingDataMessage:
                 if interval <= 0 or reference not in {"START", "MIDDLE", "END"}:
                     raise ValueError("TDM Doppler requires positive INTEGRATION_INTERVAL and START/MIDDLE/END INTEGRATION_REF.")
                 config = replace(config, count_interval_s=interval)
+                if config.reference_radio is not None:
+                    config = replace(config, reference_radio=replace(config.reference_radio, count_interval_s=interval))
                 offset = {"START": interval, "MIDDLE": interval / 2, "END": 0.0}[reference]
             quality = meta.get("DATA_QUALITY", "RAW")
             if quality not in {"RAW", "VALIDATED", "DEGRADED"}:
@@ -135,6 +185,7 @@ class TrackingDataMessage:
             if (corrections or applied is not None) and applied not in {"YES", "NO"}:
                 raise ValueError("TDM corrections require CORRECTIONS_APPLIED=YES or NO.")
             range_units = meta.get("RANGE_UNITS", "km")
+            counts = _tdm_counts(segment, doppler_count_convention) if "DOPPLER_COUNT" in kinds else {}
             for key, value in corrections.items():
                 units = {"CORRECTION_RANGE": range_units, "CORRECTION_DOPPLER": "km/s", "CORRECTION_RECEIVE": "Hz"}.get(key)
                 correction_value = _number(value, key, units)
@@ -144,28 +195,56 @@ class TrackingDataMessage:
                 key = item.keyword
                 if key in auxiliary:
                     continue
+                observation_config = config
                 if key == "RANGE":
                     if range_units not in {"km", "s"} or meta.get("RANGE_MODE", "CONSTANT") not in {"CONSTANT", "COHERENT"}:
                         raise ValueError("TDM navigation supports unambiguous range in km or s, without RU conversion.")
                     if _number(meta.get("RANGE_MODULUS", "0"), "RANGE_MODULUS", range_units) != 0:
                         raise ValueError("ambiguous TDM range is unsupported.")
                     scale = _path_scale(range_convention, "range_convention") * (1000.0 if range_units == "km" else c)
-                    units, measurement, correction = range_units, "two_way_range", "CORRECTION_RANGE"
+                    units, measurement, correction = range_units, f"{prefix}_range", "CORRECTION_RANGE"
                 elif key == "DOPPLER_INTEGRATED":
+                    if config.frequency_ramps is not None or (config.reference_radio is not None and
+                        (config.reference_radio.frequency_ramps is not None or
+                         config.reference_radio.uplink_frequency_hz * config.reference_radio.turnaround_ratio != config.uplink_frequency_hz * config.turnaround_ratio)):
+                        raise ValueError("integrated range rate requires a single constant carrier; use received frequency or Doppler counts for ramps.")
+                    if config.reference_frequency != config.uplink_frequency_hz * config.turnaround_ratio or (config.reference_radio is not None and
+                        config.reference_radio.reference_frequency != config.reference_radio.uplink_frequency_hz * config.reference_radio.turnaround_ratio):
+                        raise ValueError("integrated range rate requires the coherent carrier reference; use received frequency for custom references.")
                     scale = -2 * _path_scale(doppler_convention, "doppler_convention") * config.uplink_frequency_hz * config.turnaround_ratio * 1000 / c
-                    units, measurement, correction = "km/s", "two_way_doppler", "CORRECTION_DOPPLER"
+                    units, measurement, correction = "km/s", f"{prefix}_doppler", "CORRECTION_DOPPLER"
+                elif key == "DOPPLER_COUNT":
+                    epoch_key = float(item.epoch.gps)
+                    if epoch_key not in counts:
+                        continue
+                    count_value, duration = counts[epoch_key]
+                    observation_config = replace(config, count_interval_s=duration)
+                    if config.reference_radio is not None:
+                        observation_config = replace(observation_config, reference_radio=replace(config.reference_radio, count_interval_s=duration))
+                    scale = 1.0
+                    units, measurement, correction = "Hz", f"{prefix}_doppler", "CORRECTION_RECEIVE"
                 else:
                     scale = 1.0
-                    units, measurement, correction = "Hz", "two_way_doppler", "CORRECTION_RECEIVE"
-                value = _number(item.value, key, units)
+                    units, measurement, correction = "Hz", f"{prefix}_doppler", "CORRECTION_RECEIVE"
+                value = count_value if key == "DOPPLER_COUNT" else _number(item.value, key, units)
                 if applied == "NO":
                     value += _number(meta.get(correction, "0"), correction, units)
                 value *= scale
-                if key == "RANGE" and value < 0:
-                    raise ValueError("two-way TDM range must be nonnegative after correction.")
+                if key == "RANGE" and value < 0 and not differenced:
+                    raise ValueError("sequential TDM range must be nonnegative after correction.")
                 if key.startswith("RECEIVE_FREQ"):
-                    value += _number(meta.get("FREQ_OFFSET", "0"), "FREQ_OFFSET", "Hz") - config.uplink_frequency_hz * config.turnaround_ratio
-                epoch = item.epoch + (offset if key in _DOPPLER else 0.0) * u.s
+                    reference = config.reference_frequency
+                    if differenced:
+                        reference -= config.reference_radio.reference_frequency
+                    offset_frequency = _number(meta.get("FREQ_OFFSET", "0"), "FREQ_OFFSET", "Hz")
+                    if differenced:
+                        value = -value
+                        offset_frequency = -offset_frequency
+                    # Cancel carrier offsets before adding the much smaller Doppler shift.
+                    value += offset_frequency - reference
+                elif differenced:
+                    value = -value
+                epoch = item.epoch + (offset if key in _DOPPLER and key != "DOPPLER_COUNT" else 0.0) * u.s
                 try:
                     variance = float(covariance[measurement])
                     observation_bias = float(bias.get(measurement, 0.0))
@@ -175,7 +254,7 @@ class TrackingDataMessage:
                     raise ValueError("TDM measurement variance must be finite and positive; bias must be finite.")
                 output.append((station, StationObservation(
                     float(epoch.gps), measurement, value, np.array([[variance]]), observation_bias,
-                    None, None, valid=quality != "DEGRADED", radio=config,
+                    None, None, valid=quality != "DEGRADED", radio=observation_config,
                 )))
         if not output:
             raise ValueError("TDM contains no supported navigation observations.")
@@ -186,6 +265,92 @@ def _path_scale(convention, name):
     if convention not in _CONVENTIONS:
         raise ValueError(f"{name} must explicitly be 'round_trip' or 'half_round_trip' according to the source ICD.")
     return _CONVENTIONS[convention]
+
+
+def _tdm_counts(segment, convention):
+    if convention not in {"received_minus_reference", "reference_minus_received"}:
+        raise ValueError("Doppler counts require an explicit received/reference beat-sign convention from the ICD.")
+    meta = segment.metadata
+    if meta.get("DOPPLER_COUNT_ROLLOVER", "NO") != "NO":
+        raise ValueError("counter rollover requires source accumulator calibration and cannot be reconstructed implicitly.")
+    scale_text = meta.get("DOPPLER_COUNT_SCALE", "1")
+    if not re.fullmatch(r"[1-9]\d*", scale_text):
+        raise ValueError("DOPPLER_COUNT_SCALE must be a positive integer.")
+    scale = int(scale_text)
+    bias = _number(meta.get("DOPPLER_COUNT_BIAS", "0"), "DOPPLER_COUNT_BIAS", "Hz")
+    if bias < 0:
+        raise ValueError("DOPPLER_COUNT_BIAS must be nonnegative.")
+    samples = [item for item in segment.observations if item.keyword == "DOPPLER_COUNT"]
+    if len(samples) < 2:
+        raise ValueError("cumulative Doppler counts require at least two counter samples.")
+    output = {}
+    previous = None
+    for item in samples:
+        if not re.fullmatch(r"\d+", item.value.strip()):
+            raise ValueError("DOPPLER_COUNT values must be nonnegative integers.")
+        count = int(item.value)
+        if previous is not None:
+            duration = float((item.epoch - previous[0]).to_value(u.s))
+            value = ((count - previous[1]) / duration - bias) / scale
+            if convention == "reference_minus_received":
+                value = -value
+            output[float(item.epoch.gps)] = value, duration
+        previous = item.epoch, count
+    return output
+
+
+def _tdm_media(segments, stations):
+    stations = dict(stations)
+    tables = {}
+    targets = set()
+    for segment in segments:
+        kinds = {item.keyword for item in segment.observations}
+        if not kinds or not kinds <= {"STEC", "TROPO_DRY", "TROPO_WET"}:
+            continue
+        participants = [value for key, value in segment.metadata.items() if re.fullmatch(r"PARTICIPANT_[1-5]", key)]
+        station_ids = [value for value in participants if value in stations]
+        if len(station_ids) != 1 or segment.metadata.get("INTERPOLATION") != "LINEAR":
+            raise ValueError("media segments require one identified station and explicit LINEAR interpolation.")
+        if "INTERPOLATION_DEGREE" in segment.metadata and segment.metadata["INTERPOLATION_DEGREE"] != "1":
+            raise ValueError("LINEAR media interpolation requires degree 1.")
+        if "STEC" in kinds:
+            spacecraft = set(participants) - set(station_ids)
+            if len(spacecraft) != 1 or segment.metadata.get("MODE") != "SEQUENTIAL":
+                raise ValueError("STEC segments require one spacecraft and one station in SEQUENTIAL mode.")
+            targets.update(spacecraft)
+        station_id = station_ids[0]
+        for item in segment.observations:
+            values = tables.setdefault(station_id, {}).setdefault(item.keyword, [])
+            epoch = float(item.epoch.gps)
+            units = "TECU" if item.keyword == "STEC" else "m"
+            value = _number(item.value, item.keyword, units)
+            if value < 0 or (values and epoch <= values[-1][0]):
+                raise ValueError("media samples must be nonnegative and chronological across segments.")
+            values.append((epoch, value * (1e16 if item.keyword == "STEC" else 1)))
+
+    def interpolate(samples, time):
+        epochs, values = np.asarray(samples).T
+        if len(samples) < 2 or time < epochs[0] or time > epochs[-1]:
+            raise ValueError("media interpolation requires two samples and coverage of every signal event.")
+        return float(np.interp(time, epochs, values))
+
+    for station_id, channels in tables.items():
+        station = stations[station_id]
+        if any(len(samples) < 2 for samples in channels.values()):
+            raise ValueError("each media channel requires at least two interpolation samples.")
+        if "STEC" in channels:
+            if callable(station.slant_tec) or station.slant_tec != 0:
+                raise ValueError("TDM STEC and station TEC calibration would be applied twice.")
+            station = replace(station, slant_tec=lambda time, elevation, samples=channels["STEC"]: interpolate(samples, time))
+        if "TROPO_DRY" in channels or "TROPO_WET" in channels:
+            if not {"TROPO_DRY", "TROPO_WET"} <= channels.keys() or station.troposphere_mapping is None:
+                raise ValueError("TDM troposphere requires dry/wet samples and an explicit ICD elevation mapping.")
+            if station.meteorology is not None or station.zenith_troposphere is not None:
+                raise ValueError("TDM zenith delays and station troposphere calibration would be applied twice.")
+            station = replace(station, zenith_troposphere=lambda time, dry=channels["TROPO_DRY"], wet=channels["TROPO_WET"]:
+                              (interpolate(dry, time), interpolate(wet, time)))
+        stations[station_id] = station
+    return stations, targets
 
 
 def _number(text, key, units=None):
@@ -202,16 +367,78 @@ def _number(text, key, units=None):
     return result
 
 
-def _check_radio_metadata(meta, config):
+def _tdm_link(segment, path, stations, radio, supplied_stations):
+    meta = segment.metadata
+    if len(path) != 3 or path[0] == path[1] or path[1] == path[2] or not all(re.fullmatch(r"[1-5]", part) for part in path):
+        raise ValueError("TDM navigation requires station-spacecraft-station paths.")
+    try:
+        transmit_id, spacecraft_id, receive_id = [meta[f"PARTICIPANT_{part}"] for part in path]
+        transmitter, receiver, config = stations[transmit_id], stations[receive_id], radio[transmit_id]
+    except KeyError as exc:
+        raise ValueError(f"missing TDM participant or station/radio configuration: {exc}") from exc
+    if spacecraft_id in {transmit_id, receive_id}:
+        raise ValueError("TDM spacecraft must be distinct from its stations.")
+    if path[0] != path[2] and transmit_id == receive_id:
+        raise ValueError("three-way TDM participants must identify distinct transmitting and receiving stations.")
+    if not isinstance(transmitter, GroundStation) or not isinstance(receiver, GroundStation) or not isinstance(config, RadioTrackingConfig):
+        raise TypeError("stations and radio must contain GroundStation and RadioTrackingConfig objects.")
+    if config.reference_receiver is not None or (config.transmitter is not None and config.transmitter != supplied_stations[transmit_id]):
+        raise ValueError("supplied radio path differs from TDM participants.")
+    _check_radio_metadata(meta, config, path, transmitter, receiver)
+    config = _tdm_ramps(segment, path[0], config)
+    if path[0] != path[2] or config.transmitter is not None:
+        config = replace(config, transmitter=transmitter)
+    return spacecraft_id, receiver, config
+
+
+def _tdm_ramps(segment, participant, config):
+    frequencies = [item for item in segment.observations if item.keyword == f"TRANSMIT_FREQ_{participant}"]
+    rates = {float(item.epoch.gps): _number(item.value, item.keyword, "Hz/s") for item in segment.observations
+             if item.keyword == f"TRANSMIT_FREQ_RATE_{participant}"}
+    if rates and not frequencies:
+        raise ValueError("frequency-rate records require matching frequency records.")
+    if rates and set(rates) != {float(item.epoch.gps) for item in frequencies}:
+        raise ValueError("frequency and rate records must have matching epochs.")
+    if not frequencies:
+        return config
+    values = [(float(item.epoch.gps), _number(item.value, item.keyword, "Hz"), rates.get(float(item.epoch.gps), 0.)) for item in frequencies]
+    if config.frequency_ramps is None and all(frequency == config.uplink_frequency_hz and rate == 0 for _, frequency, rate in values):
+        return config
+    if config.frequency_ramps is None:
+        if not rates:
+            raise ValueError("varying uplink records require explicit frequency rates or a supplied ramp table.")
+        if "STOP_TIME" not in segment.metadata:
+            raise ValueError("TDM ramp records require an explicit STOP_TIME for final coverage.")
+        stop = float(_time(segment.metadata["STOP_TIME"], "UTC").gps)
+        rows = [[epoch, values[index + 1][0] if index + 1 < len(values) else stop, frequency, rate]
+                for index, (epoch, frequency, rate) in enumerate(values)]
+        return replace(config, frequency_ramps=rows)
+    for epoch, frequency, rate in values:
+        if not np.isclose(config.uplink_frequency(epoch), frequency, rtol=0, atol=1e-6):
+            raise ValueError("TDM transmit frequencies disagree with the supplied ramp table.")
+        index = min(np.searchsorted(config.frequency_ramps[:, 0], epoch, side="right") - 1, len(config.frequency_ramps) - 1)
+        if rates and rate != config.frequency_ramps[index, 3]:
+            raise ValueError("TDM transmit rates disagree with the supplied ramp table.")
+    return config
+
+
+def _check_radio_metadata(meta, config, path, transmitter, receiver):
     numerator, denominator = meta.get("TURNAROUND_NUMERATOR"), meta.get("TURNAROUND_DENOMINATOR")
     if numerator is not None or denominator is not None:
         if numerator is None or denominator is None or not re.fullmatch(r"[1-9]\d*", numerator) or not re.fullmatch(r"[1-9]\d*", denominator):
             raise ValueError("TDM turnaround ratio requires two positive integers.")
         if int(numerator) / int(denominator) != config.turnaround_ratio:
             raise ValueError("TDM turnaround ratio differs from the supplied radio configuration.")
-    for key, value in meta.items():
-        if key.startswith(("TRANSMIT_DELAY_", "RECEIVE_DELAY_")) and _number(value, key, "s") != 0:
-            raise ValueError("nonzero TDM equipment delays require calibration beyond the supported radio model.")
+    delays = {f"TRANSMIT_DELAY_{path[0]}": transmitter.transmit_delay_s,
+              f"RECEIVE_DELAY_{path[2]}": receiver.receive_delay_s}
+    for key, expected in delays.items():
+        if key in meta and _number(meta[key], key, "s") != expected:
+            raise ValueError("TDM equipment delays must match the explicit station calibration.")
+    spacecraft_delays = (f"TRANSMIT_DELAY_{path[1]}", f"RECEIVE_DELAY_{path[1]}")
+    if any(key in meta for key in spacecraft_delays):
+        delay = sum(_number(meta.get(key, "0"), key, "s") for key in spacecraft_delays)
+        if delay != config.transponder_delay_s:
+            raise ValueError("TDM spacecraft equipment delays must match the explicit transponder calibration.")
 
 
 def _fields(items):

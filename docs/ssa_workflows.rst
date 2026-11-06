@@ -306,14 +306,104 @@ then propagate it forward; setting the filter timestamp to receive time alone
 would not propagate its state. Batch fitting likewise includes the dependence
 of the solved signal times on the initial state in its derivatives.
 
-These are constant-frequency, single-station, two-way vacuum links. They
-exclude three-way links, frequency ramps, media corrections, relativistic
-terms, clocks, and proper-time hardware calibration. Visibility checks use
+The default remains constant-frequency, single-station, two-way vacuum
+tracking. Optional corrections and advanced links are described below. Visibility checks use
 station elevations on both legs and, for Doppler, both count endpoints; they
 do not search for an interruption within a count interval. The synthetic demo
 uses an all-sky mask and specified noise-free observations with artificial
 fitting weights. Analytic references and finite differences validate this
 model; observed tracking data is still needed for operational accuracy.
+
+Advanced links, ramps and corrections
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Set ``RadioTrackingConfig.transmitter`` to a separate ``GroundStation`` for
+``three_way_range`` / ``three_way_doppler``. Range is half the complete
+station-spacecraft-station path, in metres, and Doppler is received minus
+reference frequency, in hertz. ``differenced_range`` / ``differenced_doppler``
+subtract a second link specified by ``reference_receiver`` and optional
+``reference_radio``. Both links use the supplied receive timestamp in their
+own calibrated clock conventions; align the source observations accordingly.
+Each leg and both Doppler endpoints must meet their own station elevation mask.
+These are coherent radar links, rather than one-way beacon or Delta-DOR models.
+
+``frequency_ramps`` is a read-only array with rows
+``[start GPS, stop GPS, frequency Hz, rate Hz/s]``. Epochs are transmitting
+clock readings. Rows must be chronological, contiguous, and strictly positive
+in frequency across their full duration. Frequency jumps between rows are
+allowed; integrated Doppler splits the phase integral at every boundary.
+Explicit coverage must include every solved transmit event. No ramp is
+extrapolated. ``reference_frequency_hz`` optionally specifies a distinct
+receiving oscillator; by default it remains the base carrier times the
+turnaround ratio. Path/vector differences and carrier-offset cancellation
+preserve small Doppler shifts beside large carriers and absolute GPS epochs.
+
+.. code-block:: python
+
+   from dataclasses import replace
+
+   uplink_station = GroundStation(-110, 35)
+   advanced = replace(radio, transmitter=uplink_station, frequency_ramps=[
+       [t0, t0 + 30, 7.2e9, 40],
+       [t0 + 30, t0 + 120, 7.2e9 + 1200, -20],
+   ])
+   three_way = station.predict_radio(trajectory, t0 + 60, "three_way_doppler", advanced)
+   differential = replace(advanced, reference_receiver=GroundStation(-100, 40))
+   difference = station.predict_radio(trajectory, t0 + 60, "differenced_doppler", differential)
+
+``GroundStation`` clock calibration is
+``clock reading = GPS + clock_offset_s + clock_drift * (GPS - clock_epoch)``.
+The receive timestamp and Doppler count interval are in receiving-clock
+seconds. Clocks are inverted before solving the signal events. The transmitting
+carrier's coordinate-time frequency is its clock frequency multiplied by
+``1 + clock_drift``; this same rate enters coherent phase counting and dispersive
+media delays. ``transmit_delay_s`` and
+``receive_delay_s`` are nonnegative coordinate-time electronics-to-antenna
+delays, as defined by the source ICD. Batch and EKF adapters extend dense
+propagation through corrected receive epochs while retaining the initial-state
+STM. Direct trajectory callers must also cover those epochs.
+
+Atmospheric inputs remain explicit. ``meteorology=(pressure_hPa,
+temperature_K, water_vapour_hPa)`` supplies Saastamoinen dry/wet zenith delays
+(Saastamoinen 1972); its height correction is restricted to -500..5000 m.
+Alternatively, ``zenith_troposphere=(dry_m, wet_m)`` or a callable of GPS time
+supplies calibrated zenith delays. The default plane-parallel ``1/sin(elevation)``
+mapping is restricted to elevations >= 10 degrees. Supply
+``troposphere_mapping(time, elevation)`` returning positive dry/wet mapping
+factors for an ICD-specific model such as Niell. No weather or mapping
+calibration is inferred from spacecraft geometry.
+
+``slant_tec`` is explicit electrons/m², or
+``slant_tec(time, elevation)``. The first-order plasma excess path is
+``40.3 * TEC / frequency**2`` metres for code/group delay and its negative for
+carrier phase. Dispersive light times and local signal frequencies are iterated
+together. ``media_delay(time, elevation, frequency, phase)`` adds an explicit
+calibrated slant excess path, allowing other media models without a second
+propagation engine. Independent slant inputs must describe the actual ray;
+neither these inputs nor a vacuum trajectory model ionospheric ray bending.
+
+``shapiro_bodies=("earth", "sun")`` adds the leading GR logarithmic light-time
+delay, ``2 GM/c³ * log((r1+r2+R)/(r1+r2-R))`` (Moyer 2000), using the existing
+DE430 kernel. This is a first-post-Newtonian propagation term, rather than a
+complete relativistic frame/clock transformation. Set
+``transponder_delay_is_proper=True`` for an onboard proper-time hardware delay.
+By default its integrated geocentric rate is
+``1 + L_G - (GM_Earth/r + v²/2)/c²``, with IAU ``L_G=6.969290134e-10`` and SI
+GCRF states; GPS and TT have the same rate. Supply
+``transponder_clock(time, state)`` returning positive d(proper time)/d(GPS)
+for another potential model or measured clock calibration. The proper interval
+is integrated over the moving spacecraft trajectory, rather than converted at
+one endpoint. Weak-field and source-calibration assumptions remain explicit.
+
+Advanced state Jacobians differentiate the complete solved observation along
+the existing STM (1 m position and 0.001 m/s velocity steps). This includes
+ramps, media, clocks and proper delays in the same state/parameter covariance
+workflow. Their cost exceeds the retained analytic vacuum two-way path;
+verify derivative convergence for substantially different scales or rapidly
+changing user-supplied corrections. The reference tests use independent
+quadratic signal events, high-precision phase integrals, published delay
+equations, and a joint-fit Fisher matrix. These are synthetic references,
+not measured flight or station calibration.
 
 Tracking Data Message ingestion
 -------------------------------
@@ -342,8 +432,8 @@ and are rejected.
    # state_guess and state_epoch are the caller's initial orbit estimate.
    fit = solve_batch_orbit(observations, state_guess, t0=state_epoch)
 
-Station/radio mappings use the ground ``PARTICIPANT_n`` identifier from the
-file. Station coordinates, uplink frequency, fixed coordinate-time transponder
+Station mappings use the ground ``PARTICIPANT_n`` identifiers; radio mappings
+use transmitting station identifiers. Station coordinates, uplink frequency, transponder
 delay, and measurement noise must be supplied explicitly. Turnaround ratios
 and constant transmit-frequency records, when present, must agree with that
 hardware configuration. The TDM's integration interval replaces the caller's
@@ -352,7 +442,9 @@ metres squared/metres for ``two_way_range`` and hertz squared/hertz for
 ``two_way_doppler``. No weighting is inferred from a tracking file.
 
 Supported navigation observations are ``RANGE`` in km or seconds,
-``DOPPLER_INTEGRATED`` in km/s, and ``RECEIVE_FREQ``/``RECEIVE_FREQ_1`` in Hz.
+``DOPPLER_INTEGRATED`` in km/s, cumulative ``DOPPLER_COUNT``, and
+``RECEIVE_FREQ``/``RECEIVE_FREQ_1`` in Hz. Integrated range rates require a
+constant common carrier; use received frequencies or phase counters for ramps.
 The source interface control document (ICD) must specify whether range and
 integrated range rate describe the full round-trip path or half of it.
 Accordingly, ``range_convention`` and ``doppler_convention`` must explicitly be
@@ -371,14 +463,56 @@ the source units before conversion; YES avoids applying them twice.
 visibility are unknown (``None``); ingestion does not invent a visibility
 check or discard observations by the configured elevation mask.
 
-Conversion requires single-station two-way SEQUENTIAL paths and one spacecraft
-across all segments. It rejects unsupported observables, differenced/three-way
-links, ambiguous range, RU units, varying uplink frequencies, nonzero equipment
-delays, and unsupported corrections. Constant uplink records and zero frequency
-rates are checked and do not become orbit-fit observations. Other raw data can
+Conversion supports two-way/three-way ``SEQUENTIAL`` paths and coherent radar
+``SINGLE_DIFF`` paths, with one spacecraft across all tracking segments.
+CCSDS differences are PATH_2 minus PATH_1; ingestion converts them to SSATK's
+primary PATH_1 minus reference PATH_2 convention. Nonzero station and spacecraft
+equipment delays must agree with supplied calibration, preventing accidental
+double application or inferred hardware values. Unsupported observables,
+one-way/Delta-DOR paths, ambiguous range, RU units and unsupported corrections
+remain rejected. Other raw data can
 be inspected in the parsed message, but are never silently dropped into a fit.
 The reader validates complete sections, unique metadata, and chronological,
 unique epochs per observable, without reordering the file.
+
+``TRANSMIT_FREQ_n`` / ``TRANSMIT_FREQ_RATE_n`` pairs can reconstruct ramps.
+Their epochs must match, and explicit ``STOP_TIME`` bounds the final row.
+Constant frequency records need no ramp; supplied ramp tables are checked
+against source records. ``ssatk.io.read_ramp_table`` also accepts GMAT's
+seven-column epoch/station/spacecraft/band/type/frequency/rate format:
+
+.. code-block:: python
+
+   from ssatk.io import read_ramp_table
+
+   ramps = read_ramp_table("uplink.ramp", station_id="DSS-EXAMPLE",
+       spacecraft_id="MISSION", stop_time=final_coverage_gps,
+       time_system="TAI", epoch_format="mjd")
+   hardware = replace(hardware, frequency_ramps=ramps)
+
+Specify the actual source epoch convention: conventional MJD is JD-2400000.5;
+``gmat_mjd`` is JD-2430000.0. GPS calendar epochs differ from TAI by 19 seconds.
+The reader supports explicit TAI/UTC/TT/TDB/GPS scales; A1 is not silently
+treated as TAI. The selected station-spacecraft link and final coverage are
+explicit inputs. Invalid ramp types, band changes and uncovered intervals
+raise errors.
+
+Cumulative counters use consecutive samples:
+``[(count_next-count_previous)/duration - DOPPLER_COUNT_BIAS] /
+DOPPLER_COUNT_SCALE``. Integer differences retain large accumulator values
+without float truncation. Supply ``doppler_count_convention`` as
+``reference_minus_received`` or ``received_minus_reference`` from the ICD.
+The initial accumulator anchors the first interval; each following counter
+produces a receive-end observation with its own count duration. Counter rollover
+is rejected until the source accumulator modulus/calibration is supplied.
+
+Dedicated ``STEC`` and ``TROPO_DRY`` / ``TROPO_WET`` segments supply bounded
+``LINEAR`` media interpolation. STEC is converted from TECU to electrons/m²;
+each segment identifies one station and its spacecraft. Troposphere records
+require both dry/wet channels and an explicit station ``troposphere_mapping``
+from the ICD. Signal events must remain inside each channel's coverage;
+calibration is not extrapolated. Supplying both these records and the same
+station's weather/zenith/TEC inputs raises an error to prevent double counting.
 
 The reference is `CCSDS 503.0-B-2, June 2020 with Corrigendum 1
 <https://public.ccsds.org/Pubs/503x0b2c1.pdf>`_, particularly table 3-3 and
@@ -398,6 +532,7 @@ Run the examples
    python -m demos.orbital_mechanics.demo_pair_screening_and_conjunctions
    python -m demos.navigation.demo_synthetic_orbit_estimation
    python -m demos.navigation.demo_radio_tracking
+   python -m demos.navigation.demo_advanced_radio_tracking
 
 For offline validation without writing PNGs, call each module's
 ``main(make_figures=False)``.  The first demo also has
