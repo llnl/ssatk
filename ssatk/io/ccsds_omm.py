@@ -1,12 +1,13 @@
-"""CCSDS Orbit Mean-Elements Message (OMM) XML 2.0 interoperability.
+"""CCSDS Orbit Mean-Elements Message (OMM) XML and CelesTrak JSON interoperability.
 
 The record uses UTC, Earth-centered TEME SGP4 mean elements.  Public angular
 values are radians and mean motion (and its derivatives) use rad/s powers;
-XML uses the CCSDS degree and revolution/day conventions.
+XML and JSON inputs use degrees and revolution/day conventions.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -27,6 +28,7 @@ __all__ = [
     "format_omm",
     "format_omm_xml",
     "read_omm",
+    "read_omm_json",
     "read_omm_xml",
     "write_omm",
     "write_omm_xml",
@@ -34,6 +36,7 @@ __all__ = [
 
 _DAY = 86400.0
 _TWO_PI = 2.0 * math.pi
+_MAX_NORAD_CAT_ID = 999_999_999
 _METADATA = (
     "OBJECT_NAME",
     "OBJECT_ID",
@@ -109,6 +112,26 @@ def _finite(value, name):
         raise ValueError(f"OMM {name} must be numeric.") from exc
     if not math.isfinite(result):
         raise ValueError(f"OMM {name} must be finite.")
+    return result
+
+
+def _integer(value, name):
+    if isinstance(value, bool):
+        raise ValueError(f"OMM {name} must be an integer.")
+    if isinstance(value, str):
+        text = value.strip()
+        if not re.fullmatch(r"[+-]?\d+", text):
+            raise ValueError(f"OMM {name} must be an integer.")
+        return int(text)
+    try:
+        result = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"OMM {name} must be an integer.") from exc
+    try:
+        if result != value:
+            raise ValueError(f"OMM {name} must be an integer.")
+    except TypeError as exc:
+        raise ValueError(f"OMM {name} must be an integer.") from exc
     return result
 
 
@@ -210,8 +233,9 @@ class OMMRecord:
             raise ValueError("OMM angular fields must be in [0, 360) degrees.")
         if int(self.ephemeris_type) != 0:
             raise ValueError("only SGP4 EPHEMERIS_TYPE 0 is supported.")
-        if not 0 <= int(self.norad_cat_id) <= 99999:
-            raise ValueError("OMM NORAD_CAT_ID must be in [0, 99999].")
+        norad_cat_id = _integer(self.norad_cat_id, "NORAD_CAT_ID")
+        if not 0 <= norad_cat_id <= _MAX_NORAD_CAT_ID:
+            raise ValueError("OMM NORAD_CAT_ID must be in [0, 999999999].")
         if not 0 <= int(self.element_set_no) <= 9999 or not 0 <= int(self.rev_at_epoch) <= 99999:
             raise ValueError("OMM TLE integer fields are out of range.")
         object.__setattr__(self, "version", "2.0")
@@ -228,7 +252,7 @@ class OMMRecord:
         for name, value in values.items():
             object.__setattr__(self, name, value)
         object.__setattr__(self, "ephemeris_type", int(self.ephemeris_type))
-        object.__setattr__(self, "norad_cat_id", int(self.norad_cat_id))
+        object.__setattr__(self, "norad_cat_id", norad_cat_id)
         object.__setattr__(self, "element_set_no", int(self.element_set_no))
         object.__setattr__(self, "rev_at_epoch", int(self.rev_at_epoch))
         object.__setattr__(self, "comments", tuple(str(value) for value in self.comments))
@@ -242,6 +266,7 @@ class OMMRecord:
         if missing:
             raise ValueError(f"OMM SGP4 fields are missing {', '.join(sorted(missing))}.")
         fields["EPOCH"] = self.epoch.to_datetime().strftime("%Y-%m-%dT%H:%M:%S.%f")
+        fields["NORAD_CAT_ID"] = str(self.norad_cat_id)
         object.__setattr__(self, "_sgp4_fields", MappingProxyType({key: str(value) for key, value in fields.items()}))
 
     @property
@@ -292,8 +317,19 @@ class OMMRecord:
         """Build the native SGP4 record from the unrounded OMM fields."""
         from sgp4 import omm
         from sgp4.api import Satrec
-        sat = Satrec()
-        omm.initialize(sat, dict(self._sgp4_fields))
+        fields = dict(self._sgp4_fields)
+        if self.norad_cat_id <= 339_999:
+            sat = Satrec()
+        else:
+            # The accelerated Satrec limits its identifier to Alpha-5, while
+            # OMM permits nine-digit catalog numbers; the ID does not affect
+            # the SGP4 dynamics.
+            from sgp4.model import Satrec as PythonSatrec
+            sat = PythonSatrec()
+            fields["NORAD_CAT_ID"] = "339999"
+        omm.initialize(sat, fields)
+        if self.norad_cat_id > 339_999:
+            sat.satnum_str = str(self.norad_cat_id)
         return sat
 
     def to_ssapy_orbit(self):
@@ -321,8 +357,9 @@ def _split_source(source):
     if isinstance(source, Path) or hasattr(source, "__fspath__"):
         return Path(source).read_text(encoding="utf-8")
     if isinstance(source, str):
-        return source if "<" in source else Path(source).read_text(encoding="utf-8")
-    raise TypeError("source must be OMM XML, a path, or a text stream.")
+        stripped = source.lstrip("\ufeff \t\r\n")
+        return source if stripped.startswith(("<", "{", "[")) else Path(source).read_text(encoding="utf-8")
+    raise TypeError("source must be OMM XML or JSON, a path, or a text stream.")
 
 
 def _parse_segment(omm):
@@ -426,6 +463,99 @@ def read_omm_xml(source: str | Path | TextIO):
     return records[0] if len(records) == 1 else records
 
 
+def _parse_json_record(values):
+    if not isinstance(values, Mapping):
+        raise ValueError("each OMM JSON record must be an object.")
+    required = ("OBJECT_NAME", "OBJECT_ID") + _MEAN_ELEMENTS + _TLE_PARAMETERS
+    missing = [key for key in required if key not in values]
+    if missing:
+        raise ValueError(f"OMM JSON record is missing required {missing[0]}.")
+
+    def scalar(key):
+        value = values[key]
+        if value is None or isinstance(value, (bool, dict, list)):
+            raise ValueError(f"OMM JSON {key} must be a string or number.")
+        return str(value)
+
+    def text(key, default):
+        value = values.get(key, default)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"OMM JSON {key} must be a non-empty string.")
+        return value
+
+    sgp4_fields = {key: scalar(key) for key in _MEAN_ELEMENTS + _TLE_PARAMETERS}
+    sgp4_fields["OBJECT_ID"] = text("OBJECT_ID", "")
+    known = set(required) | {
+        "CENTER_NAME", "REF_FRAME", "TIME_SYSTEM", "MEAN_ELEMENT_THEORY",
+        "CREATION_DATE", "ORIGINATOR", "MESSAGE_ID",
+    }
+    extras = {key: scalar(key) for key in values if key not in known}
+    creation_date = values.get("CREATION_DATE")
+    if creation_date is not None:
+        creation_date = _time(scalar("CREATION_DATE"), "CREATION_DATE")
+    message_id = values.get("MESSAGE_ID")
+    if message_id is not None:
+        message_id = scalar("MESSAGE_ID")
+
+    return OMMRecord(
+        object_name=text("OBJECT_NAME", ""),
+        object_id=sgp4_fields["OBJECT_ID"],
+        center_name=text("CENTER_NAME", "EARTH"),
+        reference_frame=text("REF_FRAME", "TEME"),
+        time_system=text("TIME_SYSTEM", "UTC"),
+        mean_element_theory=text("MEAN_ELEMENT_THEORY", "SGP4"),
+        epoch=_time(sgp4_fields["EPOCH"], "EPOCH"),
+        mean_motion=_finite(sgp4_fields["MEAN_MOTION"], "MEAN_MOTION") * _TWO_PI / _DAY,
+        eccentricity=_finite(sgp4_fields["ECCENTRICITY"], "ECCENTRICITY"),
+        inclination=math.radians(_finite(sgp4_fields["INCLINATION"], "INCLINATION")),
+        raan=math.radians(_finite(sgp4_fields["RA_OF_ASC_NODE"], "RA_OF_ASC_NODE")),
+        argument_of_perigee=math.radians(_finite(sgp4_fields["ARG_OF_PERICENTER"], "ARG_OF_PERICENTER")),
+        mean_anomaly=math.radians(_finite(sgp4_fields["MEAN_ANOMALY"], "MEAN_ANOMALY")),
+        ephemeris_type=_integer(sgp4_fields["EPHEMERIS_TYPE"], "EPHEMERIS_TYPE"),
+        classification_type=text("CLASSIFICATION_TYPE", ""),
+        norad_cat_id=_integer(sgp4_fields["NORAD_CAT_ID"], "NORAD_CAT_ID"),
+        element_set_no=_integer(sgp4_fields["ELEMENT_SET_NO"], "ELEMENT_SET_NO"),
+        rev_at_epoch=_integer(sgp4_fields["REV_AT_EPOCH"], "REV_AT_EPOCH"),
+        bstar=_finite(sgp4_fields["BSTAR"], "BSTAR"),
+        mean_motion_dot=_finite(sgp4_fields["MEAN_MOTION_DOT"], "MEAN_MOTION_DOT") * _TWO_PI / _DAY**2,
+        mean_motion_ddot=_finite(sgp4_fields["MEAN_MOTION_DDOT"], "MEAN_MOTION_DDOT") * _TWO_PI / _DAY**3,
+        version="2.0",
+        omm_id="CCSDS_OMM_VERS",
+        creation_date=creation_date,
+        originator=text("ORIGINATOR", "") if "ORIGINATOR" in values else "",
+        message_id=message_id,
+        extra_fields=extras,
+        _sgp4_fields=sgp4_fields,
+    )
+
+
+def read_omm_json(source: str | Path | TextIO):
+    """Read one CelesTrak GP JSON record or a catalog list of records."""
+    text = _split_source(source)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("invalid OMM JSON.") from exc
+    if isinstance(payload, Mapping):
+        values = (payload,)
+    elif isinstance(payload, list):
+        values = tuple(payload)
+    else:
+        raise ValueError("OMM JSON root must be a record object or catalog list.")
+    if not values:
+        raise ValueError("OMM JSON catalog contains no records.")
+    records = tuple(_parse_json_record(value) for value in values)
+    return records[0] if len(records) == 1 else records
+
+
+def read_omm(source: str | Path | TextIO):
+    """Read one XML OMM or CelesTrak JSON GP record, or a catalog of records."""
+    text = _split_source(source)
+    if text.lstrip("\ufeff \t\r\n").startswith(("{", "[")):
+        return read_omm_json(text)
+    return read_omm_xml(text)
+
+
 def _text(parent, tag, value):
     ET.SubElement(parent, tag).text = str(value)
 
@@ -505,7 +635,6 @@ def format_omm_xml(records, *, precision: int = 17) -> str:
 
 
 format_omm = format_omm_xml
-read_omm = read_omm_xml
 
 
 def write_omm_xml(records, destination, *, precision: int = 17, overwrite: bool = False):

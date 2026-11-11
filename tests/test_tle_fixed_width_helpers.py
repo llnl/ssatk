@@ -18,3 +18,14 @@ def test_read_3le_by_bit_schema(tmp_path):
     assert df.loc[0, "classification"] == "U"
     assert df.loc[0, "eccentricity"] == pytest.approx(0.0007417)
     assert df.loc[0, "mean_motion"] == pytest.approx(15.49147159)
+
+
+def test_read_3le_by_bit_decodes_alpha5_satnum(tmp_path):
+    path = tmp_path / "alpha5.txt"
+    path.write_text(
+        TLE1.replace("25544", "A0000") + "\n"
+        + TLE2.replace("25544", "A0000") + "\n",
+        encoding="utf-8",
+    )
+    df = read_3le_by_bit.read_3le_by_bit(path)
+    assert df.loc[0, "satnum"] == 100000

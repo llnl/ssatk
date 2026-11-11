@@ -25,6 +25,7 @@ import time
 import urllib.request
 import urllib.parse
 import ssl
+from .catalog_ids import decode_tle_catalog_id
 
 # This module lives at ssatk/io/, so the repo root is three levels up.
 # Defined here, above _load_local_credentials(), because that function needs it
@@ -176,8 +177,8 @@ def _cache_is_fresh(cache, norad_id):
 def _norad_from_tle(line1):
     """Extract NORAD catalog ID from TLE line 1."""
     try:
-        return int(line1[2:7].strip())
-    except Exception:
+        return decode_tle_catalog_id(line1[2:7])
+    except (IndexError, TypeError, ValueError):
         return None
 
 
@@ -219,6 +220,63 @@ def fetch_tle_celestrak(norad_id):
     except Exception as e:
         print(f"  [celestrak] NORAD {norad_id} failed: {e}")
     return None, None
+
+
+def fetch_omm_celestrak(norad_id, force_refresh=False):
+    """Fetch one CelesTrak GP record as OMM JSON, or return ``None``.
+
+    The decoded record is cached with the same two-hour lifetime as TLE
+    updates. Cached source JSON is retained so the standard OMM parser remains
+    the single conversion path.
+    """
+    try:
+        norad_id = int(norad_id)
+        if not 0 <= norad_id <= 999_999_999:
+            return None
+        from .ccsds_omm import read_omm_json
+
+        cache = _load_cache()
+        cache_key = str(norad_id)
+        cached_entry = cache.get(cache_key, {})
+        records = None
+        if (
+            not force_refresh
+            and _cache_is_fresh(cache, norad_id)
+            and "omm_json" in cached_entry
+        ):
+            try:
+                records = read_omm_json(json.dumps(cached_entry["omm_json"]))
+            except (TypeError, ValueError):
+                records = None
+
+        if records is None:
+            query = urllib.parse.urlencode({"CATNR": norad_id, "FORMAT": "JSON"})
+            url = f"https://celestrak.org/NORAD/elements/gp.php?{query}"
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "ssatk-tle-updater/1.0"},
+            )
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as response:
+                text = response.read().decode()
+            payload = json.loads(text)
+            records = read_omm_json(text)
+            cached_entry.update({
+                "norad_id": norad_id,
+                "omm_json": payload,
+                "fetched_at": time.time(),
+                "source": "celestrak-omm",
+            })
+            cache[cache_key] = cached_entry
+            _save_cache(cache)
+
+        if not isinstance(records, (tuple, list)):
+            records = (records,)
+        matches = [record for record in records if record.norad_cat_id == norad_id]
+        if len(matches) == 1:
+            return matches[0]
+    except Exception as exc:
+        print(f"  [celestrak-omm] NORAD {norad_id} failed: {exc}")
+    return None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -323,33 +381,11 @@ def _spacetrack_login(session_cookie=None):
 # is a plausible cause of a request outright failing (e.g. HTTP 500) rather
 # than just returning fewer records than paginating would expect.
 #
-# The query below is Space-Track's own literal link target from their
-# Alpha-5 FAQ (the surrounding prose renders "<" and ">" unescaped for
-# readability, but the actual href is percent-encoded — worth checking the
-# real link target directly rather than the human-readable text around it,
-# which is the mistake in this function's first version: it sent a raw,
-# unencoded "<" in NORAD_CAT_ID/<100000, which almost certainly caused the
-# 500 error seen when this was first tried):
-#
-#   class/gp/NORAD_CAT_ID/%3C100000/decay_date/null-val/epoch/%3Enow-10/
-#     orderby/norad_cat_id/format/json
-#
-# Field meaning:
-#   NORAD_CAT_ID/%3C100000 — "<100000", excludes Alpha-5 (6-character
-#                           alphanumeric) catalog numbers, which classic
-#                           TLE-based propagators (including this repo's,
-#                           and satellite.js as used in the 3D viewer)
-#                           can't parse as a plain integer NORAD ID anyway.
-#   decay_date/null-val   — only objects that haven't decayed/reentered.
-#   epoch/%3Enow-10        — ">now-10", only element sets updated in the
-#                           last 10 days (Space-Track's own recommended
-#                           window for this specific hourly-refresh use
-#                           case) -- "actively maintained", not a stale
-#                           historic entry nobody's tracking anymore. This
-#                           is what actually gets you to "~25,000-30,000"
-#                           rather than the ~69,000+ SATCAT total, which
-#                           includes decades of decayed debris and rocket
-#                           bodies with no current TLE at all.
+# The query intentionally has no NORAD_CAT_ID cutoff. Space-Track returns
+# Alpha-5 identifiers in the fixed-width TLE lines for catalog IDs >= 100000;
+# _norad_from_tle() decodes those fields for validation and de-duplication.
+# decay_date/null-val excludes objects that have decayed or reentered, while
+# epoch/>now-10 selects recently updated GP records.
 
 def fetch_active_catalog(session_cookie=None, max_satellites=None, verbose=True):
     """
@@ -405,8 +441,7 @@ def fetch_active_catalog(session_cookie=None, max_satellites=None, verbose=True)
         return [], session_cookie
 
     url = ("https://www.space-track.org/basicspacedata/query/class/gp/"
-           "NORAD_CAT_ID/%3C100000/decay_date/null-val/epoch/%3Enow-10/"
-           "orderby/norad_cat_id")
+           "decay_date/null-val/epoch/%3Enow-10/orderby/norad_cat_id")
     if max_satellites is not None:
         url += f"/limit/{max_satellites}"
     url += "/format/json"

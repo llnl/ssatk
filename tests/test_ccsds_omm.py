@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 
 import numpy as np
@@ -9,7 +10,7 @@ from ssapy.compute import rv
 from ssapy.propagator import SGP4Propagator
 from ssapy.utils import teme_to_gcrf
 
-from ssatk.io.ccsds_omm import format_omm_xml, read_omm_xml
+from ssatk.io.ccsds_omm import format_omm_xml, read_omm, read_omm_json, read_omm_xml
 
 TERRA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <ndm>
@@ -19,9 +20,14 @@ TERRA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </ndm>
 """
 
+# Frozen flat-record response from CelesTrak's public
+# /NORAD/elements/gp.php?CATNR=100000&FORMAT=json endpoint.
+SARAMAGO_JSON = """[{"OBJECT_NAME":"SARAMAGO","OBJECT_ID":"2026-067CY","EPOCH":"2026-11-11T14:46:10.954848","MEAN_MOTION":15.2230114,"ECCENTRICITY":0.00065434,"INCLINATION":97.4792,"RA_OF_ASC_NODE":272.8406,"ARG_OF_PERICENTER":195.8082,"MEAN_ANOMALY":164.2951,"EPHEMERIS_TYPE":0,"CLASSIFICATION_TYPE":"U","NORAD_CAT_ID":100000,"ELEMENT_SET_NO":999,"REV_AT_EPOCH":3411,"BSTAR":0.0004760888,"MEAN_MOTION_DOT":0.00010909,"MEAN_MOTION_DDOT":0}]"""
+
 
 def test_celestrak_shaped_read_round_trip_and_comments():
     record = read_omm_xml(TERRA_XML)
+    assert read_omm(TERRA_XML).object_id == record.object_id
     assert record.object_name == "TERRA"
     assert record.comments == ("first", "second")
     assert record.extra_fields["HEADER_EXTRA"] == "kept"
@@ -46,6 +52,63 @@ def test_celestrak_shaped_read_round_trip_and_comments():
     assert restored.to_satrec().bstar == pytest.approx(record.to_satrec().bstar)
     constructed = replace(record, extra_fields={**record.extra_fields, "MANUAL_EXTRA": "kept"})
     assert read_omm_xml(format_omm_xml(constructed)).extra_fields["MANUAL_EXTRA"] == "kept"
+
+
+def test_official_celestrak_gp_json_record_uses_gp_units_and_metadata_defaults():
+    payload = json.loads(SARAMAGO_JSON)
+    assert len(payload) == 1 and len(payload[0]) == 17
+    record = read_omm(SARAMAGO_JSON)
+    assert read_omm_json(SARAMAGO_JSON).norad_cat_id == 100000
+    assert record.object_name == "SARAMAGO"
+    assert record.object_id == "2026-067CY"
+    assert record.norad_cat_id == 100000
+    assert record.center_name == "EARTH"
+    assert record.reference_frame == "TEME"
+    assert record.time_system == "UTC"
+    assert record.mean_element_theory == "SGP4"
+    assert record.creation_date is None
+    assert record.originator == ""
+    # Reference: the captured CelesTrak GP JSON values; JSON uses rev/day,
+    # degrees, and rev/day**2, converted here to rad/s and rad/s**2.
+    assert record.mean_motion == pytest.approx(15.2230114 * 2 * np.pi / 86400, rel=1e-12, abs=0)
+    assert record.mean_motion_dot == pytest.approx(0.00010909 * 2 * np.pi / 86400**2, rel=1e-12, abs=0)
+    assert record.mean_motion_ddot == 0.0
+    assert record.inclination == pytest.approx(np.deg2rad(97.4792), abs=1e-12)
+    assert record.raan == pytest.approx(np.deg2rad(272.8406), abs=1e-12)
+    assert record.eccentricity == pytest.approx(0.00065434, rel=0, abs=0)
+    assert record.to_satrec().satnum == 100000
+
+
+def test_json_single_object_and_catalog_list():
+    record = json.loads(SARAMAGO_JSON)[0]
+    assert read_omm(json.dumps(record)).norad_cat_id == 100000
+
+    second = dict(record, OBJECT_NAME="SARAMAGO TEST", NORAD_CAT_ID=100001)
+    catalog = read_omm(json.dumps([record, second]))
+    assert tuple(value.norad_cat_id for value in catalog) == (100000, 100001)
+
+
+def test_nine_digit_catalog_id_builds_and_propagates_native_ssapy_orbit():
+    record = replace(read_omm(SARAMAGO_JSON), norad_cat_id=999999999)
+    sat = record.to_satrec()
+    orbit = record.to_ssapy_orbit()
+    assert sat.satnum == orbit._sat.satnum == 999999999
+
+    # Use the accelerated implementation as the independent reference. The
+    # SGP4 catalog number is metadata, so a legal Alpha-5 surrogate leaves the
+    # propagated state unchanged.
+    reference_fields = dict(record._sgp4_fields, NORAD_CAT_ID="339999")
+    reference = Satrec()
+    omm.initialize(reference, reference_fields)
+    time = orbit.t + 600.0
+    actual_r, actual_v = rv(orbit, np.array([time]), propagator=SGP4Propagator())
+    error, r, v = reference.sgp4_tsince(10.0)
+    assert error == 0
+    rotation = teme_to_gcrf(time)
+    # Independent native SGP4 Satrec reference; state differences are bounded
+    # by 1e-8 m and 1e-11 m/s, respectively.
+    assert np.allclose(actual_r[0], rotation @ (np.asarray(r) * 1.0e3), rtol=0.0, atol=1e-8)
+    assert np.allclose(actual_v[0], rotation @ (np.asarray(v) * 1.0e3), rtol=0.0, atol=1e-11)
 
 
 def test_submicrosecond_epoch_and_empty_celestrak_header_are_preserved():
