@@ -316,6 +316,36 @@ or ordinal Coordinated Universal Time (UTC), ``GCRF``, ``EME2000``, and
 drag, solar-radiation-pressure, and thrust rows. Alternate XYZ covariance
 extensions from later message specifications are rejected explicitly.
 
+TLE Alpha-5 IDs and OMM JSON
+----------------------------
+
+TLE catalog IDs 100000 through 339999 use Alpha-5 encoding in the
+five-character field. Use
+:func:`ssatk.io.catalog_ids.decode_tle_catalog_id` to obtain the numeric ID;
+the fixed-width TLE reader and :func:`ssatk.io.tle_updater.verify_satellites`
+also decode these fields. :func:`ssatk.io.tle_updater.fetch_active_catalog`
+does not filter out Alpha-5 IDs when it queries Space-Track.
+
+CCSDS OMM XML and CelesTrak GP JSON can be read with
+:func:`ssatk.io.ccsds_omm.read_omm` or
+:func:`ssatk.io.ccsds_omm.read_omm_json`. For a single current object, fetch the
+CelesTrak JSON record directly with
+:func:`ssatk.io.tle_updater.fetch_omm_celestrak`. The returned
+:class:`ssatk.io.ccsds_omm.OMMRecord` accepts numeric catalog IDs through the
+CCSDS nine-digit limit; :meth:`ssatk.io.ccsds_omm.OMMRecord.to_ssapy_orbit`
+constructs its GCRF state and retains the native SGP4 record.
+
+.. code-block:: python
+
+   from ssatk.io.catalog_ids import decode_tle_catalog_id
+   from ssatk.io.ccsds_omm import read_omm
+   from ssatk.io.tle_updater import fetch_omm_celestrak
+
+   norad_id = decode_tle_catalog_id("A0000")  # 100000
+   catalog = read_omm("catalog.json")          # one OMMRecord or a tuple
+   saramago = fetch_omm_celestrak(norad_id)    # CelesTrak GP JSON
+   orbit = saramago.to_ssapy_orbit()           # GCRF state with native SGP4
+
 Minor Planet Center asteroid orbits
 -----------------------------------
 

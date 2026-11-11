@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Callable, Optional
+from .catalog_ids import decode_tle_catalog_id
 
 def _cast_value(raw: str, kind: str) -> object:
     """
@@ -18,6 +19,12 @@ def _cast_value(raw: str, kind: str) -> object:
         try:
             return int(s)
         except Exception:
+            return np.nan
+
+    if kind == "norad":
+        try:
+            return decode_tle_catalog_id(s)
+        except ValueError:
             return np.nan
 
     if kind == "float":
@@ -130,7 +137,7 @@ def parse_fixed_width_file(
 # Column ranges below are 0-based [start:end), matching the standard TLE spec.
 TLE_FIELDS: List[Dict] = [
     # Line 1
-    {"name": "satnum",           "line": 0, "start": 2,  "end": 7,  "type": "int"},
+    {"name": "satnum",           "line": 0, "start": 2,  "end": 7,  "type": "norad"},
     {"name": "classification",   "line": 0, "start": 7,  "end": 8,  "type": "str"},
     {"name": "intldes_year",     "line": 0, "start": 9,  "end": 11, "type": "int"},
     {"name": "intldes_launch",   "line": 0, "start": 11, "end": 14, "type": "int"},
