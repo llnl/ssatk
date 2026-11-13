@@ -42,6 +42,12 @@ Status
      - ``Spacecraft.to_orbit`` retains the current mass, area and force
        coefficients. A synthetic ascent/cutoff/coast example checks overlap
        against native SSAPy propagation; mission-level insertion remains open.
+   * - Integrated synthetic ascent and LEO acceptance
+     - Implemented on a topic branch
+     - ``demo_integrated_launch`` combines the existing pad, gravity, weather,
+       aerodynamics, mass, staging and control functions in one propagation.
+       Flight limits and final orbital elements are checked against declared
+       synthetic requirements; source-backed flight acceptance remains open.
    * - Minor Planet Center small-body orbits
      - On ``main``
      - :mod:`ssatk.io.mpc`: catalogs, parsing, heliocentric two-body states.
@@ -53,9 +59,11 @@ Status
 The documented limits remain: the event/control examples use synthetic phase
 boundaries, and the orbit-handoff reference starts above the atmosphere. The
 handoff example includes native SSAPy gravity and optional perturbations, but
-does not establish a pad-to-orbit mission. Three-axis launch guidance, an
-attitude estimator, a combined rotating-Earth/weather ascent, dispersions,
-slosh, flexibility and an acceptance mission remain separate work.
+does not establish a pad-to-orbit mission. The integrated example supplies a
+synthetic pad-to-LEO reference with bounded external attitude control and
+noiseless state sensors. Vehicle-specific guidance, an attitude estimator,
+dispersions, draining-tank slosh, flexibility and measured flight acceptance
+remain separate work.
 
 Remaining launch steps
 ----------------------
@@ -66,6 +74,8 @@ Step 10: integrated ascent dynamics
     aerodynamics, thrust, Step 8 events and Step 9 control. Reference: closed
     forms for reduced cases and an independent integration of the same
     equations.
+    The integrated synthetic reference is implemented in
+    ``demos.launch.demo_integrated_launch``; see :doc:`launch_baseline`.
 
 Step 11: launch vehicle definitions as data
     A schema and loader in :mod:`ssatk.launch` for complete vehicles: stages,
@@ -87,7 +97,8 @@ Step 13: insertion and orbit handoff
     to a complete launch mission with target-orbit acceptance criteria.
     ``Spacecraft.to_orbit`` and the synthetic shared-arc overlap reference
     already exist; achieving the requested insertion orbit from the pad
-    still depends on the integrated ascent and guidance work above.
+    is demonstrated for the integrated synthetic LEO scenario. Source-backed
+    vehicle performance and measured acceptance missions remain open.
 
 Step 14: Earth departure
     Parking-orbit coast, launch window and azimuth from the site and the
@@ -135,6 +146,23 @@ Constants
     ``EARTH_OBLIQUITY_J2000_DEG`` (23.439291) is rounded from the IAU value
     84381.448 arcsec; the difference moves ecliptic-to-equatorial positions by
     about 200 m at 1.4 au.
+
+Deferred launch improvements
+----------------------------
+
+The integrated ascent and mission acceptance checks take priority. Retain
+these next tasks in the order of the launch review:
+
+3. Complete sourced vehicle configurations using the existing stage assembly,
+   propulsion and data resolvers. Include geometry, inertia, aerodynamic
+   coefficients and per-value provenance in SSAPy-Data (Step 11 above). The
+   integrated Falcon 9 catalog sample still declares synthetic assumptions
+   and an unresolved catalog mass difference; it does not complete this task.
+4. Correct altitude interpolation in the local launch replay prototype.
+   Sample telemetry through the existing propagator and
+   coordinate functions while preserving staging discontinuities.
+5. Preserve the staging example's body-to-GCRF attitude history and pass it
+   through the existing satellite viewer's ``q`` argument.
 
 Data packages
 -------------

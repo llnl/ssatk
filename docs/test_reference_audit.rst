@@ -633,6 +633,9 @@ inventory geometry.
 An independently specified equal-material-velocity split checks transport in
 orbital angular momentum about the common pre-event origin (1e-10 kg m/s and
 kg m2/s), where using M*v instead would leave a nonzero moment.
+Surface-roundoff cases distinguish liftoff from contact using constant
+acceleration (1e-7 m and m/s). Constant-velocity flight-limit cases stop at a
+crossing or an already-violated initial condition (1e-8 s and m).
 
 Sampled launch guidance references
 -----------------------------------
@@ -651,6 +654,18 @@ qualification. Sensor covariance in the demo is measurement covariance.
 
 Launch integration references
 ------------------------------
+
+``tests/test_integrated_launch.py`` checks the Falcon 9 catalog example's
+depleted inventory and upper-stage constant-Isp flow using a closed-form
+slew/exponential throttle integral (1e-4 kg). Constant lower flow fixes its
+analytic depletion epoch (1e-7 s); inventory is checked separately because
+GPS timestamp rounding at this mass flow exceeds the mass budget. Separation
+checks the discarded dry/residual mass (1e-7 kg). Pad dynamic pressure follows
+the declared ENU wind (1e-3 Pa). Final orbit evidence matches independently
+computed Cartesian elements (1e-5 m and 1e-12 eccentricity/degrees).
+A radial 100 km flight fails orbital acceptance, and missing evidence remains
+``NOT RUN``. These R1/R4 references verify the synthetic model and report
+semantics, not Falcon performance against flight telemetry.
 
 ``tests/test_launch_integration.py`` compares DOP853, RK45 and Radau with
 isotropic free spin (1e-9 quaternion and raw norm drift; 1e-12 rad/s) and

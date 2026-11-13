@@ -51,6 +51,7 @@ __all__ = [
     "launch_site_state",
     "load_mission_contract",
     "run_launch_preflight",
+    "check_launch_requirements",
     "validate_mission_contract",
     "verify_data_resources",
 ]
@@ -896,6 +897,39 @@ def _hash_file(path: Path) -> tuple[str, int, bool]:
             byte_count += len(block)
             digest.update(block)
     return digest.hexdigest(), byte_count, prefix == _LFS_PREFIX
+
+
+def check_launch_requirements(requirements, evidence, *, profile="LEO"):
+    """Check measured/computed mission evidence against the existing contract.
+
+    ``requirements`` is the contract's requirements mapping. ``evidence`` maps
+    each dotted ``evidence_field`` to ``{"value": scalar, "unit": string}``.
+    Missing evidence remains NOT RUN; mismatched units or nonfinite values
+    raise instead of producing a pass. This checks supplied evidence, not its
+    provenance, sampling adequacy or flight qualification.
+    """
+    if profile not in _PROFILE_REQUIREMENTS:
+        raise MissionContractError("profile must be 'LEO' or 'GEO'")
+    errors = []
+    _validate_requirements(requirements, profile, errors)
+    if errors:
+        raise MissionContractError("Invalid launch requirements:\n- " + "\n- ".join(errors))
+    if not isinstance(evidence, Mapping):
+        raise ValueError("mission evidence must be a mapping")
+    checks = {}
+    for name, requirement in requirements.items():
+        field = requirement["evidence_field"]
+        if field not in evidence:
+            checks[name] = {"name": name, "status": "NOT RUN", "evidence_field": field,
+                            "detail": "mission evidence was not supplied"}
+            continue
+        observation = evidence[field]
+        if not isinstance(observation, Mapping) or observation.get("unit") != requirement["unit"]:
+            raise ValueError(f"{field}: evidence unit must match {requirement['unit']!r}")
+        value = _finite_number(observation.get("value"), field)
+        checks[name] = _residual_check(name, value, requirement)
+    return {"status": _combined_status(check["status"] for check in checks.values()),
+            "requirement_checks": checks, "qualification_status": "NOT RUN"}
 
 
 def _residual_check(name: str, residual: float, requirement: Mapping[str, Any]) -> dict[str, Any]:

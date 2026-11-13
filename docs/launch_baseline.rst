@@ -1424,3 +1424,78 @@ workflow for these examples. It freezes source revisions and staged changes,
 installed versions, data hashes, synthetic inputs, solver settings, seeds,
 histories, metrics and explicit missing-evidence statuses. It does not promote
 component checks or editable synthetic data to measured-flight validation.
+
+Integrated Falcon 9 catalog pad-to-LEO example
+-----------------------------------------------
+
+Run the combined reference through the existing launch event runner::
+
+   python -m demos.launch.demo_integrated_launch --output new-mission.json
+   python -m pytest tests/test_integrated_launch.py tests/test_launch_events.py -q
+
+The same propagation starts at the rotating WGS84 pad and covers release,
+powered ascent, first-stage depletion, conservative separation, upper-stage
+guidance, insertion cutoff and coast. It combines central gravity and the
+existing J2 model, a declared atmosphere and ENU wind, aerodynamic loads,
+changing propellant inventory, sampled sensors/control and bounded actuators.
+The target is a declared synthetic 200 km LEO, with explicit perigee, apogee,
+eccentricity, inclination, flight-load, reserve and duration requirements.
+
+The single vehicle sample is ``launch_vehicles["Falcon 9 Full Thrust"]``.
+The existing catalog supplies lower/upper dry masses of 25,600/3,900 kg,
+propellant inventories of 395,700/92,670 kg and engine counts. The lower stage
+uses nine engines at constant sea-level thrust/Isp (845 kN each, 282 s); the
+upper uses one engine at constant vacuum thrust/Isp (934 kN, 348 s).
+These endpoint values do not model ambient-pressure or throttle performance.
+The catalog has no per-value citations or resolved vehicle version. Its
+549,000 kg listed total exceeds its stage inventory by 31,130 kg; that
+unassigned mass is reported as metadata rather than inferred as payload.
+
+Declared synthetic assumptions are a 1,000 kg payload, residual inventory of
+0.1 percent per stage, a 10 m2 aerodynamic area and isotropic inertia equal to
+dry mass times 10 m2 (including the payload). Initial wet mass is 518,870 kg.
+The bodies use spherical drag, COM point tanks, noiseless instantaneous sensors
+and bounded external attitude torques. Upper guidance reserves acceleration
+for radial control before requesting tangential acceleration, and sampled PD
+gains scale with retained inertia after staging. These are demonstration
+controls, not a Falcon flight program. Its atmosphere is isothermal, with
+exponentially sampled pressure and constant wind over its declared domain.
+The heating observable is a reduced convective proxy with declared coefficient
+``1.83e-4`` SI and 1 m nose radius; it does not establish thermal validity.
+Angle of attack is the total air-relative incidence to body +Z in this example.
+Proper acceleration includes thrust and drag and excludes gravity. Propellant
+reserve includes retained residual inventory. The target orbit uses osculating
+two-body elements with altitudes above ``EARTH_RADIUS``; ground clearance uses
+WGS84 ellipsoidal height. These altitude definitions serve different purposes.
+
+Flight limits are descending event roots and terminate a violation during
+propagation, including an already-violated initial/reset condition through
+``LaunchEvent(trigger_below=True)``. The final orbit is checked separately:
+crossing 100 km alone cannot produce a pass. Failure to insert, upper-stage
+propellant exhaustion, ground contact or a mission timeout fails the mission.
+Retained load maxima
+use accepted control and output boundaries; roots guard crossings between
+those samples. Tangential or very narrow violations still require suitable
+solver refinement; a numerical pass is conditional on that resolution.
+The guidance cutoff uses half the declared orbit tolerance, leaving an
+internal margin for J2-driven osculating variation during the remaining coast;
+final acceptance still uses the unchanged complete mission budget.
+
+``check_launch_requirements(contract["requirements"], evidence, profile="LEO")``
+reuses the contract's comparison semantics. Evidence maps each dotted field to
+``{"value": scalar, "unit": string}``; units must match and values must be
+finite. Missing evidence remains ``NOT RUN`` and cannot yield a pass. It checks
+the supplied values, not their provenance or sampling completeness. The demo's
+Python ``run_reference(requirements=...)`` accepts the same requirements mapping
+and requires its documented evidence fields/units. Limits and targets are
+declared before propagation, never selected from its result.
+
+The JSON retains the catalog snapshot, unassigned catalog mass, synthetic
+assumptions, requirements, evidence, pad state, event/conservation ledger,
+control history and trajectory. The report is never overwritten; exit code 2
+reports failed/incomplete numerical acceptance. Flight qualification remains
+``NOT RUN``. This scenario is not a reconstruction of the launch associated
+with the pad epoch, and does not replace source-backed vehicle data, measured
+weather, thermal/attitude calibration, independent flight validation or
+dispersion studies. It is separate from the existing capability bundle's case
+inventory.

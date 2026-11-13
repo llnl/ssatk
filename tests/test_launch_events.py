@@ -337,3 +337,32 @@ def test_wgs84_clearance_against_equatorial_closed_form():
         point = ITRS(CartesianRepresentation([6378137.+123.,0.,0.]*u.m), obstime=epoch).transform_to(GCRS(obstime=epoch))
     y = np.r_[point.cartesian.xyz.to_value(u.m), np.zeros(10)]
     np.testing.assert_allclose(launch_ground_clearance(23.)(float(epoch.gps), y), 100., atol=1e-5, rtol=0)
+
+
+@pytest.mark.parametrize("acceleration", [-2., 2.])
+def test_surface_roundoff_preserves_liftoff_and_fall(acceleration):
+    """R1: signed 1 nm pad residual; constant acceleration, 1e-7 m/s and m."""
+    ground = 7e6
+    craft = Spacecraft(r=[ground-1e-9, 0., 0.], v=[0., 0., 0.], body=body())
+    result = propagate_launch(craft, [0., 1.], [LaunchPhase("flight")], initial_phase="flight",
+        ground_condition=lambda t,y:y[0]-ground, mu=0., max_step=.1,
+        acceleration=lambda *args:np.array([acceleration, 0., 0.]))
+    if acceleration < 0:
+        assert result.termination == "__ground"
+        np.testing.assert_allclose(result.state.v, [0., 0., 0.], atol=1e-7, rtol=0)
+    else:
+        assert result.termination == "__duration"
+        np.testing.assert_allclose(result.state.r, [ground+1., 0., 0.], atol=1e-7, rtol=0)
+        np.testing.assert_allclose(result.state.v, [2., 0., 0.], atol=1e-7, rtol=0)
+
+
+@pytest.mark.parametrize("initial_position, expected_time", [(0., 2.), (3., 0.)])
+def test_flight_limit_stops_at_crossing_or_initial_violation(initial_position, expected_time):
+    """R1: constant 1 m/s motion with 2 m limit; epoch/position within 1e-8 s/m."""
+    craft = Spacecraft(r=[7e6+initial_position, 0., 0.], v=[1., 0., 0.], body=body())
+    limit = LaunchEvent("position_limit", lambda t,y:7e6+2.-y[0], None, -1, trigger_below=True)
+    result = propagate_launch(craft, [0., 4.], [LaunchPhase("flight", events=(limit,))],
+        initial_phase="flight", ground_condition=lambda t,y:y[0]-6e6, mu=0., max_step=.1)
+    assert result.termination == "position_limit"
+    np.testing.assert_allclose(result.state.t, expected_time, atol=1e-8, rtol=0)
+    np.testing.assert_allclose(result.state.r[0], 7e6+initial_position+expected_time, atol=1e-8, rtol=0)

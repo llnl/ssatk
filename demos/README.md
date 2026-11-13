@@ -37,7 +37,7 @@ The `demos/` package is organized by workflow area:
 | `data_io/` | sampling, sphere generation, dictionary/HDF5 round trips, and OMM JSON ingestion |
 | `orbital_mechanics/` | orbit quantities, propagation/model comparisons, ellipse fitting, maneuvers, transfers, station keeping |
 | `six_dof/` | rigid-body attitude, gravity-gradient torque, facet solar-radiation pressure, and finite-burn coupling |
-| `launch/` | preflight, mass/propulsion, phase resets, sampled control, integration, ascent-to-orbit, coupled slosh, verification, calibration (`demo_launch_calibration --write-sample <new.json>`, then `--dataset <edited.json> --output <new-report.json>`) and reproducible capability bundles (`demo_launch_capability --output <new-external-directory>`; validation demos are excluded from the visual gallery) |
+| `launch/` | preflight, mass/propulsion, phase resets, sampled control, Falcon 9 catalog pad-to-LEO acceptance with declared synthetic assumptions (`demo_integrated_launch --output <new-report.json>`), ascent-to-orbit, coupled slosh, verification, calibration (`demo_launch_calibration --write-sample <new.json>`, then `--dataset <edited.json> --output <new-report.json>`) and reproducible capability bundles (`demo_launch_capability --output <new-external-directory>`; validation demos are excluded from the visual gallery) |
 | `orbit_visualization/` | orbit, cislunar, globe, Moon, and ground-track visualization workflows |
 | `sensor_coverage/` | satellite viewer and sensor field-of-view coverage demos |
 | `navigation/` | star-catalogue attitude, landmark-bearing position, synthetic geometric/radio orbit estimation with TDM ingestion, and joint force/bias parameter fitting |

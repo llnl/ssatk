@@ -44,6 +44,8 @@ class LaunchEvent:
     Resets receive the accepted Spacecraft, never a solver trial state.
     Conditions must be side-effect free during trial root evaluations.
     Use distinct named phases/events for each restart in a finite mission.
+    trigger_below fires immediately on a negative initial/reset condition,
+    for limits that are already violated before a crossing can occur.
     """
 
     name: str
@@ -53,6 +55,7 @@ class LaunchEvent:
     priority: int = 0
     tolerance: float = 1e-9
     reset: object = None
+    trigger_below: bool = False
 
     def __post_init__(self):
         if not self.name or not callable(self.condition):
@@ -61,6 +64,8 @@ class LaunchEvent:
             raise ValueError("event direction must be -1, 0 or 1; tolerance finite and nonnegative")
         if not isinstance(self.priority, int) or self.reset is not None and not callable(self.reset):
             raise ValueError("priority must be an integer and reset callable")
+        if not isinstance(self.trigger_below, bool):
+            raise ValueError("trigger_below must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -158,12 +163,13 @@ def _snapshot(state, transport):
 
 
 def _momentum(state, origin, velocity, transport):
-    linear = state.mass * state.v - transport
+    # Use the common moving frame before multiplying to avoid cancelling large momenta.
+    linear = state.mass * (state.v - velocity) - transport
     spin = state.body.current_inertia @ state.omega
     if state.wheel_momentum is not None:
         spin = spin + sum((wheel.axis_body * h for wheel, h in
                            zip(state.body.reaction_wheels, state.wheel_momentum)), np.zeros(3))
-    angular = rotate_vector(state.q, spin) + np.cross(state.r - origin, linear - state.mass*velocity)
+    angular = rotate_vector(state.q, spin) + np.cross(state.r - origin, linear)
     return linear, angular
 
 
@@ -192,8 +198,9 @@ def _conservation(before, reset, tolerances, before_transport=(0., 0., 0.), afte
                   zip((after_transport, *child_transports), states)]
     pre_p, pre_h = _momentum(before, before.r, before.v, before_transport)
     totals = [_momentum(state, before.r, before.v, transport) for state, transport in zip(states, transports)]
-    errors = {"mass_kg": sum(s.mass for s in states) - before.mass,
-              "linear_momentum_kg_m_s": sum((p for p, _ in totals), np.zeros(3)) - pre_p - impulse,
+    mass_error = sum(s.mass for s in states) - before.mass
+    errors = {"mass_kg": mass_error,
+              "linear_momentum_kg_m_s": sum((p for p, _ in totals), np.zeros(3)) - pre_p - impulse + mass_error*before.v,
               "angular_momentum_kg_m2_s": sum((h for _, h in totals), np.zeros(3)) - pre_h - angular_impulse}
     if any(np.max(np.abs(value)) > tolerances[key] for key, value in errors.items()):
         raise ValueError(f"event reset violates conservation: {errors}")
@@ -450,16 +457,21 @@ def propagate_launch(state, times, phases, *, initial_phase, ground_condition,
             return value
 
         # From rest on the surface, let the solver distinguish liftoff from a fall.
-        ready = [e for e in candidates if abs(evaluate(e, state.t, y)) <= e.tolerance
-                 and (e.name not in ("__ground", "__rail_bottom") or evaluate(e, state.t, y) < 0.
+        ready = [e for e in candidates if (e.trigger_below and evaluate(e, state.t, y) < 0.) or
+                 (abs(evaluate(e, state.t, y)) <= e.tolerance
+                 and (e.name not in ("__ground", "__rail_bottom") or evaluate(e, state.t, y) < -e.tolerance
                       or evaluate(e, state.t+1e-4, np.r_[y[:3]+y[3:6]*1e-4, y[3:]])
-                         < evaluate(e, state.t, y))]
+                         < evaluate(e, state.t, y)-e.tolerance))]
         if not ready:
             functions = []
             integration_events = [e for e in candidates if e.name != "__control"]
             for event in integration_events:
                 def root(t, y, event=event):
-                    return evaluate(event, t, y)
+                    value = evaluate(event, t, y)
+                    # Surface roundoff must permit both liftoff and a downward contact root.
+                    if event.name in ("__ground", "__rail_bottom") and abs(value) <= event.tolerance:
+                        return 0.
+                    return value
                 root.terminal, root.direction = True, event.direction
                 functions.append(root)
             end = min(times[-1], control.next_time) if control is not None else times[-1]
